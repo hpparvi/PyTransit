@@ -38,10 +38,6 @@
 #define CHUNK_SIZE 128
 #endif
 
-#ifndef FTYPE
-#define FTYPE 8  
-#endif
-
 module gimenez
   use, intrinsic :: ISO_C_BINDING
   use omp_lib
@@ -53,23 +49,22 @@ module gimenez
   real(8), parameter :: PI = 3.1415926525_fd
   real(8), parameter :: HALF_PI = 0.5_fd * PI
 
-  real(8), dimension(100000) :: tmp1d1, tmp1d2
-
 contains
-  subroutine init_arrays(npol, nldc, a_e_nm, a_e_vl, j_d, j_e)
+  subroutine init_arrays(npol, nldc, anm, avl, ajd, aje)
     implicit none
     integer, intent(in) :: npol, nldc
-    real(8), intent(out), dimension(npol, nldc+1) :: a_e_nm, a_e_vl
-    real(8), intent(out), dimension(4, npol, nldc+1) :: j_d, j_e
-    integer :: i, j
+    real(8), intent(out), dimension(npol, nldc+1) :: anm, avl
+    real(8), intent(out), dimension(4, npol, nldc+1) :: ajd, aje
+
     real(8) :: nu, nm1
+    integer :: i, j
 
     do j=1,nldc+1
        nu = (real(j-1,8)+2._fd)/2._fd
        do i = 0, npol-1
           nm1 = exp(log_gamma(nu+i+1._fd) - log_gamma(i+2._fd))
-          a_e_vl(i+1, j) = (-1)**(i) * (2._fd+2._fd*i+nu) * nm1
-          a_e_nm(i+1, j) = exp(log_gamma(i+1._fd) + log_gamma(nu+1._fd) - log_gamma(i+1._fd+nu))
+          avl(i+1, j) = (-1)**(i) * (2._fd+2._fd*i+nu) * nm1
+          anm(i+1, j) = exp(log_gamma(i+1._fd) + log_gamma(nu+1._fd) - log_gamma(i+1._fd+nu))
        end do
     end do
 
@@ -78,8 +73,8 @@ contains
     do j=1,nldc+1
        nu = (real(j-1,8)+2._fd)/2._fd
        do i = 0, npol-1
-          call j_coeff(0._fd, 1._fd+nu, real(i+1,8), j_d(:,i+1,j))
-          call j_coeff(   nu,    1._fd, real(i+1,8), j_e(:,i+1,j))
+          call j_coeff(0._fd, 1._fd+nu, real(i+1,8), ajd(:,i+1,j))
+          call j_coeff(   nu,    1._fd, real(i+1,8), aje(:,i+1,j))
        end do
     end do
   
@@ -96,7 +91,7 @@ contains
   end subroutine init_arrays
 
 
-  subroutine eval_lerp(z, k, u, b, contamination, nthreads, update, npol, npt, nldc, a_e_nm, a_e_vl, j_d, j_e, res)
+  subroutine eval_lerp(z, k, u, b, contamination, nthreads, update, npol, npt, nldc, anm, avl, ajd, aje, res)
     implicit none
     integer, intent(in) :: npt, nldc, nthreads, npol
     logical, intent(in) :: update
@@ -104,8 +99,8 @@ contains
     real(8), intent(in), dimension(nldc) :: u
     real(8), intent(in) :: k, b, contamination
     real(8), intent(out), dimension(npt) :: res
-    real(8), intent(in), dimension(npol, nldc+1) :: a_e_nm, a_e_vl
-    real(8), intent(in), dimension(4, npol, nldc+1) :: j_d, j_e
+    real(8), intent(in), dimension(npol, nldc+1) :: anm, avl
+    real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
 
     integer, parameter :: tsize = 512
     real(8), save, dimension(tsize) :: z_tbl, i_tbl
@@ -122,7 +117,7 @@ contains
        dz    = (1._fd+k - b)/real(tsize-1, fd)
        idz   = 1._fd/dz
        z_tbl = [(b + i*dz, i=0,tsize-1)]
-       call eval(z_tbl, k, u, contamination, nthreads, npol, tsize, nldc, a_e_nm, a_e_vl, j_d, j_e, i_tbl)
+       i_tbl = 1._fd + gimenez_m(z_tbl, k, u, npol, nldc, anm, avl, ajd, aje) * (1._fd - contamination)
     end if
 
     mask        = (z > 0._fd) .and. (z < 1._fd+k)
@@ -144,16 +139,17 @@ contains
   end subroutine eval_lerp
  
 
-  subroutine eval(z, k, u, contamination, nthreads, npol, npt, nldc, a_e_nm, a_e_vl, j_d, j_e, res)
+  subroutine eval(z, k, u, contamination, nthreads, npol, npt, nldc, anm, avl, ajd, aje, res)
     implicit none
     integer, intent(in) :: npt, nldc, nthreads, npol
     real(8), intent(in), dimension(npt) :: z
     real(8), intent(in), dimension(nldc) :: u
     real(8), intent(in) :: k, contamination
     real(8), intent(out), dimension(npt) :: res
-    real(8), intent(in), dimension(npol, nldc+1) :: a_e_nm, a_e_vl
-    real(8), intent(in), dimension(4, npol, nldc+1) :: j_d, j_e
+    real(8), intent(in), dimension(npol, nldc+1) :: anm, avl
+    real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
 
+    real(8), dimension(npt) :: tmp1, tmp2
     logical, dimension(npt) :: mask
     integer :: npt_t
     !real(8) :: t_start, t_finish
@@ -163,24 +159,25 @@ contains
     mask = (z > 0._fd) .and. (z < 1._fd+k)
     npt_t = count(mask)
 
-    tmp1d1(1:npt_t) = pack(z, mask)
-    tmp1d2(1:npt_t) = gimenez_v(tmp1d1(1:npt_t), k, u, npol, nldc, a_e_nm, a_e_vl, j_d, j_e)
+    tmp1(1:npt_t) = pack(z, mask)
+    tmp2(1:npt_t) = gimenez_m(tmp1(1:npt_t), k, u, npol, nldc, anm, avl, ajd, aje)
 
-    res = unpack(tmp1d2(1:npt_t), mask, res)
+    res = unpack(tmp2(1:npt_t), mask, res)
     res = 1._fd + res*(1._fd - contamination)
   end subroutine eval
 
-
-  function gimenez_v(z, k, u, npol, nldc, a_e_nm, a_e_vl, j_d, j_e)
+  !!--- Gimenez transit shape model ---
+  !!
+  function gimenez_m(z, k, u, npol, nldc, anm, avl, ajd, aje)
     implicit none
     real(8), intent(in), dimension(:) :: z
     real(8), intent(in), dimension(:) :: u    
     real(8), intent(in) :: k
     integer, intent(in) :: npol, nldc
-    real(8), intent(in), dimension(npol, nldc+1) :: a_e_nm, a_e_vl
-    real(8), intent(in), dimension(4, npol, nldc+1) :: j_d, j_e
+    real(8), intent(in), dimension(npol, nldc+1) :: anm, avl
+    real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
 
-    real(8), dimension(size(z)) :: gimenez_v
+    real(8), dimension(size(z)) :: gimenez_m
 
     real(8), dimension(size(z), size(u)+1) :: a 
     real(8), dimension(size(u)+1) :: n, Cn
@@ -203,7 +200,7 @@ contains
     end if
 
     do j=0,size(u)
-       call alpha(b, c, j, npol, nldc, a(:,j+1), a_e_nm, a_e_vl, j_d, j_e)
+       call alpha(b, c, j, npol, nldc, a(:,j+1), anm, avl, ajd, aje)
     end do
 
     if (size(u) > 0) then
@@ -211,22 +208,23 @@ contains
        Cn(2:) = uu / (1._fd - sum(n(2:) * uu / (n(2:)+2._fd)))
     end if
 
-    !$omp parallel do private(i), shared(z,gimenez_v, a, Cn) default(none)
+    !$omp parallel do private(i), shared(z,gimenez_m, a, Cn) default(none)
     do i=1,size(z)
-       gimenez_v(i) = -sum(a(i,:)*Cn)
+       gimenez_m(i) = -sum(a(i,:)*Cn)
     end do
     !$omp end parallel do
-  end function gimenez_v
+  end function gimenez_m
   
+
   !!--- Alpha ---
   !!
-  subroutine alpha(b, c, n, npol, nldc, a, a_e_nm, a_e_vl, j_d, j_e)
+  subroutine alpha(b, c, n, npol, nldc, a, anm, avl, ajd, aje)
     implicit none
     real(8), intent(in), dimension(:) :: b, c
     integer, intent(in) :: n, npol, nldc
     real(8), dimension(size(c)), intent(out) :: a
-    real(8), intent(in), dimension(npol, nldc+1) :: a_e_nm, a_e_vl
-    real(8), intent(in), dimension(4, npol, nldc+1) :: j_d, j_e
+    real(8), intent(in), dimension(npol, nldc+1) :: anm, avl
+    real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
 
     real(8), dimension(size(c)) :: norm, sm
     real(8), dimension(1, npol) :: e
@@ -245,9 +243,9 @@ contains
     !$omp end workshare
 
     !$omp single
-    call jacobi(npol,  nu,  1._fd,  1._fd-2._fd*(1._fd-b),  n+1,  j_e,  e)
+    call jacobi(npol,  nu,  1._fd,  1._fd-2._fd*(1._fd-b),  n+1,  aje,  e)
     do i = 1, npol
-       e(1,i) = e(1,i) * a_e_nm(i,n+1)
+       e(1,i) = e(1,i) * anm(i,n+1)
        e(1,i) = e(1,i)**2
     end do
     !$omp end single
@@ -256,18 +254,18 @@ contains
     do i_chunk = 0, n_chunks-1
        ic_s = 1+(i_chunk)*CHUNK_SIZE
        ic_e = (i_chunk+1)*CHUNK_SIZE
-       call jacobi(npol, 0._fd, 1._fd+nu, 1._fd-2._fd*c(ic_s:ic_e)**2, n+1, j_d, d)
+       call jacobi(npol, 0._fd, 1._fd+nu, 1._fd-2._fd*c(ic_s:ic_e)**2, n+1, ajd, d)
        do i = 1, npol
-          sm(ic_s:ic_e)  = sm(ic_s:ic_e) + (a_e_vl(i,n+1) * d(:,i) * e(1,i))
+          sm(ic_s:ic_e)  = sm(ic_s:ic_e) + (avl(i,n+1) * d(:,i) * e(1,i))
        end do
     end do
     !$omp end do
 
     !$omp single
     ic_s = n_chunks*CHUNK_SIZE + 1
-    call jacobi(npol, 0._fd, 1._fd+nu, 1._fd-2._fd*c(ic_s:)**2, n+1, j_d, d(:size(c)-ic_s+1,:))
+    call jacobi(npol, 0._fd, 1._fd+nu, 1._fd-2._fd*c(ic_s:)**2, n+1, ajd, d(:size(c)-ic_s+1,:))
     do i = 1, npol
-       sm(ic_s:)  = sm(ic_s:) + (a_e_vl(i,n+1) * d(:size(c)-ic_s+1,i) * e(1,i))
+       sm(ic_s:)  = sm(ic_s:) + (avl(i,n+1) * d(:size(c)-ic_s+1,i) * e(1,i))
     end do
     !$omp end single
 
@@ -275,8 +273,8 @@ contains
     a = norm * sm
     !$omp end workshare
     !$omp end parallel
+  end subroutine alpha
 
-end subroutine alpha
 
   !!--- Jacobi polynomials ---
   !!
