@@ -152,13 +152,12 @@ contains
     real(8), dimension(npt) :: tmp1, tmp2
     logical, dimension(npt) :: mask
     integer :: npt_t
-    !real(8) :: t_start, t_finish
 
     !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
     res  = 0._fd
     mask = (z > 0._fd) .and. (z < 1._fd+k)
     npt_t = count(mask)
-
+    
     tmp1(1:npt_t) = pack(z, mask)
     tmp2(1:npt_t) = gimenez_m(tmp1(1:npt_t), k, u, npol, nldc, anm, avl, ajd, aje)
 
@@ -183,7 +182,7 @@ contains
     real(8), dimension(size(u)+1) :: n, Cn
     real(8), dimension(1) :: b
     real(8), dimension(size(z)) :: c
-    real(8), dimension(size(u)) :: uu ! Change to quadratic
+    real(8), dimension(size(u)) :: uu ! Quadratic -> general
     integer :: i, j 
 
     a  = 0._fd
@@ -192,11 +191,10 @@ contains
     b  = k/(1._fd+k)
     c  = z/(1._fd+k)
 
-    !TODO: FIXME, I'M A HACK
     if (size(u) == 2) then
        uu = [u(1)+2._fd*u(2), -u(2)]
     else
-       uu = [u(1), 0.0d0]
+       uu = u
     end if
 
     do j=0,size(u)
