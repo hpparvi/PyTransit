@@ -33,6 +33,11 @@
 !! Date 
 !!  01.03.2011
 !!
+
+#ifndef CHUNK_SIZE
+#define CHUNK_SIZE 128
+#endif
+
 module gimenez
   use, intrinsic :: ISO_C_BINDING
   implicit none
@@ -137,7 +142,7 @@ contains
     ntr         = count(mask)
     ztmp(1:ntr) = pack(z, mask)
 
-    !$omp parallel do private(i, x, k) shared(npt, z, r, b, i_tbl, idz, ztmp, itmp) default(none)
+    !$omp parallel do private(i, x, k) shared(npt, z, ntr, r, b, i_tbl, idz, ztmp, itmp) default(none)
     do i=1,ntr
        x = (ztmp(i)-b)*idz
        k = 1 + int(floor(x))
@@ -226,19 +231,18 @@ contains
   !!
   subroutine alpha(b, c, n, npol, a)
     implicit none
-    integer, parameter :: chunk_size = 128
     real(8), intent(in), dimension(:) :: b, c
     integer, intent(in) :: n, npol
     real(8), dimension(size(c)), intent(out) :: a
 
     real(8), dimension(size(c)) :: norm, sm
     real(8), dimension(1, npol) :: e
-    real(8), dimension(chunk_size, npol) :: d
+    real(8), dimension(CHUNK_SIZE, npol) :: d
 
     real(8) :: nu
     integer :: i, n_chunks, i_chunk, ic_s, ic_e
 
-    n_chunks = size(c) / chunk_size
+    n_chunks = size(c) / CHUNK_SIZE
     nu   = (real(n,8)+2._fd)/2._fd
     sm = 0._fd
 
@@ -257,8 +261,8 @@ contains
 
     !$omp do
     do i_chunk = 0, n_chunks-1
-       ic_s = 1+(i_chunk)*chunk_size
-       ic_e = (i_chunk+1)*chunk_size
+       ic_s = 1+(i_chunk)*CHUNK_SIZE
+       ic_e = (i_chunk+1)*CHUNK_SIZE
        call jacobi(npol, 0._fd, 1._fd+nu, 1._fd-2._fd*c(ic_s:ic_e)**2, n+1, j_d, d)
        do i = 1, npol
           sm(ic_s:ic_e)  = sm(ic_s:ic_e) + (a_e_vl(i,n+1) * d(:,i) * e(1,i))
@@ -267,7 +271,7 @@ contains
     !$omp end do
 
     !$omp single
-    ic_s = n_chunks*chunk_size + 1
+    ic_s = n_chunks*CHUNK_SIZE + 1
     call jacobi(npol, 0._fd, 1._fd+nu, 1._fd-2._fd*c(ic_s:)**2, n+1, j_d, d(:size(c)-ic_s+1,:))
     do i = 1, npol
        sm(ic_s:)  = sm(ic_s:) + (a_e_vl(i,n+1) * d(:size(c)-ic_s+1,i) * e(1,i))
