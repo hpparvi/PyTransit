@@ -3,13 +3,25 @@ PyTransit
 
 Fast and easy-to-use tools for planet transit modelling using Python or Fortran.
 
-Transit models:
-  Optimized Fortran implementation of the transit model by A. Gimenez (A&A 450, 1231--1237, 2006).
+Modules
+-------
+Transit models
+  - Optimized Fortran implementation of the transit model by A. Gimenez (A&A 450, 1231--1237, 2006).
 
+Utilities
+  - Routines for the computation of projected planet-to-star distance for circular and eccentric orbits.
+  - Routines for the computation of the transit duration, etc.
 
 Author
-  Hannu Parviainen <hpparvi@gmail.com>
+------
+  - Hannu Parviainen <hpparvi@gmail.com>, Instituto de Astrofísica de Canarias (IAC)
 
+Publications using the code
+----------------------------
+  - Parviainen, Hannu, Hans Deeg, and Juan A. Belmonte. “Secondary Eclipses in the CoRoT Light Curves: A Homogeneous Search Based in Bayesian Model Selection.” Accepted to A&A (2012)
+  - Rouan, D., H. Parviainen, C. Moutou, Magali Deleuil, M. Fridlund, A Ofir, M. Havel, et al. “Transiting Exoplanets from the CoRoT Space Mission.” Astronomy & Astrophysics 537 (January 9, 2012): A54.
+  - Murgas, F., E. Pallé, A. Cabrera-Lavers, K. D. Colón, E. L. Martín, and H. Parviainen. “Narrow Band H α Photometry of the super-Earth GJ 1214b with GTC/OSIRIS Tunable Filters.” Astronomy & Astrophysics 544 (July 24, 2012): A41.
+  - Tingley, Brandon, E. Palle, H. Parviainen, H. J. Deeg, M. R. Zapatero Osorio, A. Cabrera-Lavers, J. a. Belmonte, P. M. Rodriguez, F. Murgas, and I. Ribas. “Detection of Transit Timing Variations in Excess of One Hour in the Kepler Multi-planet Candidate System KOI 806 with the GTC.” Astronomy & Astrophysics 536 (December 12, 2011): L9.
 
 Examples
 --------
