@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as pl
-from gimenez import Gimenez
+from pytransit.gimenez import Gimenez
 
 z = np.linspace(1e-7,1.5,1000)
 u = np.array([0.3, 0.1])
@@ -17,4 +17,5 @@ for i in range(1,len(npols)):
     print '\tN {:3d} -- Max deviation {:6.4f} ppm'.format(npols[i], 1e3*np.abs(I[0]-I[i]).max())
     ax.plot(I[i], c='0', alpha=la[i])
 
+ax.set_ylim(0.988, 1.001)
 pl.show()
