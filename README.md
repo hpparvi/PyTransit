@@ -23,7 +23,8 @@ The code should compile without major problems with other compilers also, but on
 
 Examples
 --------
-Calculate projected distance for a circular or eccentric orbit given time t:
+Calculate projected distance for a circular or eccentric orbit given time t, transit center time t0, period p, 
+scaled semi-major axis a, inclination i, eccentricity e, and argument of periastron w:
 
     import numpy as np
     import pytransit.orbits_f as of
@@ -40,12 +41,17 @@ Basic transit model usage:
     m = Gimenez() # Initialize the model, use quadratic limb darkening law and all available cores
     I = m(z,k,u)  # Evaluate the model for projected distance z, radius ratio k, and limb darkening coefficients u
       
-Use linear interpolation:
+Basic transit model usage with linear limb darkening law and lower precision:
+
+    m = Gimenez(npol=50, nldc=1)
+    ...
+      
+Transit model using linear interpolation:
 
     m = Gimenez(lerp=True) # Initialize the model
     I = m(z,k,u)           # Evaluate the model
 
-Use linear interpolation, two different sets of z:
+Transit model using linear interpolation, two different sets of z:
 
     m  = Gimenez(lerp=True)      # Initialize the model
     I1 = m(z1,k,u)               # Evaluate the model for z1, update the interpolation table
