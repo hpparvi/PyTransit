@@ -16,5 +16,6 @@ setup(name='PyTransit',
       extra_options = ['-fopenmp'],
       package_dir={'pytransit':'src'},
       packages=['pytransit'],
-      ext_modules=[Extension('pytransit.gimenez_f', ['src/gimenez.f90'], libraries=['gomp','m'], define_macros=[('DCHUNK_SIZE',128)], extra_f90_compile_args=['-cpp'])]
+      ext_modules=[Extension('pytransit.gimenez_f', ['src/gimenez.f90'], libraries=['gomp','m'], define_macros=[('DCHUNK_SIZE',128)], extra_f90_compile_args=['-cpp']),
+                   Extension('pytransit.orbits_f',  ['src/orbits.f90','src/orbits.pyf'], libraries=['gomp','m'], extra_f90_compile_args=['-cpp'])]
      )

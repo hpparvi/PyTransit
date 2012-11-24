@@ -1,0 +1,177 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module orbits_f ! in 
+    interface  ! in :orbits_f
+        module orbits ! in :orbits_f:orbits.f90
+            real(kind=8) parameter,optional,depend(pi) :: two_pi=2.0_fd*pi
+            integer parameter,optional :: fs=c_float
+            integer parameter,optional :: fd=c_double
+            real(kind=8) parameter,optional,depend(pi) :: half_pi=0.5_fd*pi
+            real(kind=8) parameter,optional :: pi=3.1415926525_fd
+            real(kind=8) parameter,optional,depend(pi) :: inv_pi=1.0_fd/pi
+            subroutine z_circular(t,t0,p,a,i,nthreads,nt,z) ! in :orbits:orbits.f90:orbits
+                real(kind=8) dimension(nt),intent(in) :: t
+                real(kind=8) intent(in) :: t0
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: a
+                real(kind=8) intent(in) :: i
+                integer intent(in) :: nthreads
+                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
+                real(kind=8) dimension(nt),intent(out),depend(nt) :: z
+            end subroutine z_circular
+            subroutine z_circular_mc(t,t0,t0npt,p,a,i,nthreads,nt,nt0,z) ! in :orbits:orbits.f90:orbits
+                real(kind=8) dimension(nt),intent(in) :: t
+                real(kind=8) dimension(nt0),intent(in) :: t0
+                integer intent(in),dimension(nt0) :: t0npt
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: a
+                real(kind=8) intent(in) :: i
+                integer intent(in) :: nthreads
+                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
+                integer optional,intent(in),check(len(t0)>=nt0),depend(t0) :: nt0=len(t0)
+                real(kind=8) dimension(nt),intent(out),depend(nt) :: z
+            end subroutine z_circular_mc
+            subroutine z_eccentric(t,t0,p,a,i,e,w,nthreads,nt,z) ! in :orbits:orbits.f90:orbits
+                real(kind=8) dimension(nt),intent(in) :: t
+                real(kind=8) intent(in) :: t0
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: a
+                real(kind=8) intent(in) :: i
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                integer intent(in) :: nthreads
+                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
+                real(kind=8) dimension(nt),intent(out),depend(nt) :: z
+            end subroutine z_eccentric
+            subroutine z_eccentric_s(t,t0,p,a,i,e,w,nthreads,nt,z) ! in :orbits:orbits.f90:orbits
+                real(kind=8) dimension(nt),intent(in) :: t
+                real(kind=8) intent(in) :: t0
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: a
+                real(kind=8) intent(in) :: i
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                integer intent(in) :: nthreads
+                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
+                real(kind=8) dimension(nt),intent(out),depend(nt) :: z
+            end subroutine z_eccentric_s
+            subroutine z_eccentric_ip(t,t0,p,a,i,e,w,nthreads,update,nt,z) ! in :orbits:orbits.f90:orbits
+                real(kind=8) dimension(nt),intent(in) :: t
+                real(kind=8) intent(in) :: t0
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: a
+                real(kind=8) intent(in) :: i
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                logical      intent(in) :: update
+                integer intent(in) :: nthreads
+                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
+                real(kind=8) dimension(nt),intent(out),depend(nt) :: z
+            end subroutine z_eccentric_ip
+            subroutine ta_circular(t,t0,p,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
+                real(kind=8) dimension(nt),intent(in) :: t
+                real(kind=8) intent(in) :: t0
+                real(kind=8) intent(in) :: p
+                integer intent(in) :: nthreads
+                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
+                real(kind=8) dimension(nt),intent(out),depend(nt) :: Ta
+            end subroutine ta_circular
+            subroutine ta_eccentric(t,t0,p,e,w,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
+                real(kind=8) dimension(nt),intent(in) :: t
+                real(kind=8) intent(in) :: t0
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                integer intent(in) :: nthreads
+                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
+                real(kind=8) dimension(nt),intent(out),depend(nt) :: Ta
+            end subroutine ta_eccentric
+            subroutine ta_eccentric_series(t,t0,p,e,w,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
+                real(kind=8) dimension(nt),intent(in) :: t
+                real(kind=8) intent(in) :: t0
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                integer intent(in) :: nthreads
+                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
+                real(kind=8) dimension(nt),intent(out),depend(nt) :: Ta
+            end subroutine ta_eccentric_series
+            subroutine ta_eccentric_ip(t,t0,p,e,w,nth,update,nt,Ta) ! in :orbits:orbits.f90:orbits
+                real(kind=8) dimension(nt),intent(in) :: t
+                real(kind=8) intent(in) :: t0
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                logical      intent(in) :: update
+                integer intent(in) :: nthreads
+                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
+                real(kind=8) dimension(nt),intent(out),depend(nt) :: Ta
+            end subroutine ta_eccentric_ip
+            function eclipse_shift_ap(p,i,e,w) ! in :orbits:orbits.f90:orbits
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: i
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                real(kind=8) :: eclipse_shift_ap
+            end function eclipse_shift_ap
+            function eclipse_shift_ex(p,i,e,w) ! in :orbits:orbits.f90:orbits
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: i
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                real(kind=8) :: eclipse_shift_ex
+            end function eclipse_shift_ex
+            function duration_circular(p,a,i) ! in :orbits:orbits.f90:orbits
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: a
+                real(kind=8) intent(in) :: i
+                real(kind=8) :: duration_circular
+            end function duration_circular
+            function duration_eccentric_w(p,k,a,i,e,w,tr_sign) ! in :orbits:orbits.f90:orbits
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: k
+                real(kind=8) intent(in) :: a
+                real(kind=8) intent(in) :: i
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                real(kind=8) intent(in) :: tr_sign
+                real(kind=8) :: duration_eccentric_w
+            end function duration_eccentric_w
+            function duration_eccentric_f(p,k,a,i,e,w,tr_sign) ! in :orbits:orbits.f90:orbits
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: k
+                real(kind=8) intent(in) :: a
+                real(kind=8) intent(in) :: i
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                real(kind=8) intent(in) :: tr_sign
+                real(kind=8) :: duration_eccentric_f
+            end function duration_eccentric_f
+            function duration_eccentric_ts(p,a,i,e,w) ! in :orbits:orbits.f90:orbits
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: a
+                real(kind=8) intent(in) :: i
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                real(kind=8) :: duration_eccentric_ts
+            end function duration_eccentric_ts
+            function impact_parameter(a,i) ! in :orbits:orbits.f90:orbits
+                real(kind=8) intent(in) :: a
+                real(kind=8) intent(in) :: i
+                real(kind=8) :: impact_parameter
+            end function impact_parameter
+            function impact_parameter_ec(a,i,e,w,tr_sign) ! in :orbits:orbits.f90:orbits
+                real(kind=8) intent(in) :: a
+                real(kind=8) intent(in) :: i
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                real(kind=8) intent(in) :: tr_sign
+                real(kind=8) :: impact_parameter_ec
+            end function impact_parameter_ec
+        end module orbits
+    end interface 
+end python module orbits_f
+
+! This file was auto-generated with f2py (version:1).
+! See http://cens.ioc.ee/projects/f2py2e/
