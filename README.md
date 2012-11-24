@@ -12,6 +12,15 @@ Utilities
   - Routines for the computation of projected planet-to-star distance for circular and eccentric orbits.
   - Routines for the computation of the transit duration, etc.
 
+Install
+-------
+Building and installing is simple using a fairly modern gfortran
+
+    python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast -ffast-math" --f90flags="-cpp -fopenmp -march=native" build
+    python setup.py install [--user]  # User --user for a local installation without root rights
+
+The code should compile without major problems with other compilers also, but only Intel fortran has been tested.
+
 Author
 ------
   - Hannu Parviainen <hpparvi@gmail.com>, Instituto de Astrofísica de Canarias (IAC)
