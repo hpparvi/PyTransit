@@ -1,33 +1,20 @@
 import numpy as np
 import matplotlib.pyplot as pl
-from gimenez import gimenez as g
+from gimenez import Gimenez
 
 z = np.linspace(1e-7,1.5,1000)
+u = np.array([0.3, 0.1])
+k = 0.10
 
-k=0.15
-nldc = 2
-u = np.array([0.0,0.0])
+npols = [800, 500, 200, 100, 50, 20, 10, 5]
+I = [Gimenez(npol, 2)(z,k,u) for npol in npols]
 
-g.init(800, nldc)
-I_800 = g.eval(z, k, u, 0, 800, 2)
+fig, ax = pl.subplots(1,1)
+la = 1-np.linspace(0,0.75,len(npols))
+ax.plot(I[0], c='0.0')
 
-g.init(500, nldc)
-I_500 = g.eval(z, k, u, 0, 500, 2)
+for i in range(1,len(npols)):
+    print '\tN {:3d} -- Max deviation {:6.4f} ppm'.format(npols[i], 1e3*np.abs(I[0]-I[i]).max())
+    ax.plot(I[i], c='0', alpha=la[i])
 
-g.init(200, nldc)
-I_200 = g.eval(z, k, u, 0, 200, 2)
-
-g.init(100, nldc)
-I_100 = g.eval(z, k, u, 0, 100, 2)
-
-g.init(50, nldc)
-I_50 = g.eval(z, k, u, 0, 50, 2)
-
-g.init(20, nldc)
-I_20 = g.eval(z, k, u, 0, 20, 2)
-
-print 1e3*np.abs(I_800-I_20).max()
-
-pl.plot(I_800, c='0.0')
-pl.plot(I_50, c='0.5')
 pl.show()
