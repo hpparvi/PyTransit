@@ -28,10 +28,12 @@ Calculate projected distance for a circular or eccentric orbit given time t:
     import numpy as np
     import pytransit.orbits_f as of
 
+    t0, p, a, i, e, w = 1, 4, 8, 0.48*np.pi, 0.2, 0.5
+
     t   = np.linspace(0.8,1.2,500)
-    zc  = of.orbits.z_circular( t, 1, 4, 8, 0.48*np.pi, nthreads=0)                  
-    zes = of.orbits.z_eccentric(t, 1, 4, 8, 0.48*np.pi, e=0.2, w=0.5, nthreads=0)    # Iteration
-    zel = of.orbits.z_eccentric_ip(t, 1, 4, 8, 0.48*np.pi, e=0.2, w=0.5, nthreads=0) # Linear interpolation
+    zc  = of.orbits.z_circular( t, t0, p, a, i, nthreads=0)                  
+    zes = of.orbits.z_eccentric(t, t0, p, a, i, e, w, nthreads=0)     # Calculated using iteration
+    zel = of.orbits.z_eccentric_ip(t, t0, p, a, i, e, w, nthreads=0)  # Faster for large LCs, uses linear interpolation
 
 Basic transit model usage:
 
