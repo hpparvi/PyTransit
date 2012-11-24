@@ -1,6 +1,5 @@
 from numpy.distutils.core import setup, Extension
 from numpy.distutils.misc_util import Configuration
-
 import distutils.sysconfig as ds
 
 import sys
@@ -15,6 +14,7 @@ setup(name='PyTransit',
       author_email='hpparvi@gmail.com',
       url='',
       extra_options = ['-fopenmp'],
-      py_modules=['gimenez'],
-      ext_modules=[Extension('gimenez_f',                    ['gimenez.f90'], libraries=['gomp','m'], define_macros=[('DCHUNK_SIZE',128)], extra_f90_compile_args=['-cpp'])]
+      package_dir={'pytransit':'src'},
+      packages=['pytransit'],
+      ext_modules=[Extension('pytransit.gimenez_f', ['src/gimenez.f90'], libraries=['gomp','m'], define_macros=[('DCHUNK_SIZE',128)], extra_f90_compile_args=['-cpp'])]
      )
