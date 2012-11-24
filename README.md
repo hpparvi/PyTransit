@@ -48,8 +48,8 @@ Basic transit model usage with linear limb darkening law and lower precision:
       
 Transit model using linear interpolation:
 
-    m = Gimenez(lerp=True) # Initialize the model
-    I = m(z,k,u)           # Evaluate the model
+    m = Gimenez(lerp=True)
+    ...
 
 Transit model using linear interpolation, two different sets of z:
 
