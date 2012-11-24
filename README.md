@@ -9,16 +9,16 @@ Transit models
   - Optimized Fortran implementation of the transit model by A. Gimenez (A&A 450, 1231--1237, 2006).
 
 Utilities
-  - Routines for the computation of projected planet-to-star distance for circular and eccentric orbits.
-  - Routines for the computation of the transit duration, etc.
+  - Routines to calculate the projected planet-to-star distance for circular and eccentric orbits.
+  - Routines to calculate the transit duration, etc.
 
 Install
 -------
-Building and installing is simple using a fairly modern gfortran
+Building and installing is simple using a fairly modern gfortran, use --user for a local installation without root rights.
 
     python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast -ffast-math" --f90flags="-cpp -fopenmp -march=native" build
-    python setup.py install [--user]  # User --user for a local installation without root rights
-
+    python setup.py install [--user]
+    
 The code should compile without major problems with other compilers also, but only Intel fortran has been tested.
 
 Author
