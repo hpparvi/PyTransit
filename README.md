@@ -27,17 +27,19 @@ Calculate projected distance for a circular or eccentric orbit given time t, tra
 scaled semi-major axis a, inclination i, eccentricity e, and argument of periastron w:
 
     import numpy as np
-    import pytransit.orbits_f as of
+    from pytransit.orbits_f import orbits as of
 
     t0, p, a, i, e, w = 1, 4, 8, 0.48*np.pi, 0.2, 0.5
 
     t   = np.linspace(0.8,1.2,500)
-    zc  = of.orbits.z_circular( t, t0, p, a, i, nthreads=0)                  
-    zes = of.orbits.z_eccentric(t, t0, p, a, i, e, w, nthreads=0)     # Calculated using iteration
-    zel = of.orbits.z_eccentric_ip(t, t0, p, a, i, e, w, nthreads=0)  # Faster for large LCs, uses linear interpolation
+    zc  = of.z_circular( t, t0, p, a, i, nthreads=0)                  
+    zes = of.z_eccentric(t, t0, p, a, i, e, w, nthreads=0)     # Calculated using iteration
+    zel = of.z_eccentric_ip(t, t0, p, a, i, e, w, nthreads=0)  # Faster for large LCs, uses linear interpolation
 
 Basic transit model usage:
 
+    from pytransit.gimenez import Gimenez
+    
     m = Gimenez() # Initialize the model, use quadratic limb darkening law and all available cores
     I = m(z,k,u)  # Evaluate the model for projected distance z, radius ratio k, and limb darkening coefficients u
       
