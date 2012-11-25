@@ -2,10 +2,8 @@ from numpy.distutils.core import setup, Extension
 from numpy.distutils.misc_util import Configuration
 import distutils.sysconfig as ds
 
-import sys
-sys.argv.extend(['config_fc','--fcompiler=gnu95', '--opt="-Ofast -ffast-math"', '--f90flags="-cpp -fopenmp -march=native"'])
-
-conf = Configuration()
+#import sys
+#sys.argv.extend(['config_fc','--fcompiler=gnu95', '--opt="-Ofast -ffast-math"', '--f90flags="-cpp -fopenmp -march=native"'])
 
 setup(name='PyTransit',
       version='0.5',
