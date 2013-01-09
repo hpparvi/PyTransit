@@ -237,7 +237,7 @@ contains
        do k = 1, 15
           ect   = ec(j)
           ec(j) = e*sin(Ma(j)+ec(j))
-          if (abs(ect-ec(j)) < 1e-2_fd) exit
+          if (abs(ect-ec(j)) < 1e-4_fd) exit
        end do
     end do
     !$omp end parallel do
@@ -294,8 +294,10 @@ contains
     integer, parameter :: tsize = 512
     real(fd), dimension(tsize), save :: t_table, ta_table
     real(fd), save :: dt, idt
-    real(fd) ::x
+    real(fd) ::x, ta_diff
     integer j, k
+
+    !! FIXME: This routine is unaccurate for large t (JDs)!! 
 
     !$ if (nth /= 0) call omp_set_num_threads(nth)
 
@@ -306,12 +308,20 @@ contains
        call ta_eccentric(t_table, t0, p, e, w, nth, tsize, ta_table)
     end if
 
-    !$omp parallel do private(j,x,k) shared(nt, t, p, idt, ta_table, ta) default(none) schedule(static)
+    !$omp parallel do private(j,x,k, ta_diff) shared(nt, t, p, idt, ta_table, ta) default(none) schedule(static)
     do j=1,nt
        x = mod(t(j), p)*idt
        k = int(floor(x)) + 1
        x = x - k + 1
-       ta(j) = (1._fd-x) * ta_table(k) + x * ta_table(k+1) 
+
+       ta_diff = ta_table(k+1) - ta_table(k)
+
+       if (ta_diff >= 0._fd) then
+          ta(j) = (1._fd-x) * ta_table(k) + x * ta_table(k+1)
+       else
+          ta(j) = (1._fd-x) * ta_table(k) + x * PI
+       end if
+
     end do
     !$omp end parallel do
   end subroutine ta_eccentric_ip
