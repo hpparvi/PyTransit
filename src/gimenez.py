@@ -6,6 +6,9 @@
    Author
      Hannu Parviainen <hpparvi@gmail.com>
 """
+
+import numpy as np
+
 from gimenez_f import gimenez as g
 
 class Gimenez(object):
@@ -54,7 +57,7 @@ class Gimenez(object):
           b    real   minimum impact parameter (for the interpolating model)
           update bool update the interpolation table (for the interpolating model)
         """
-        return self._eval(z, k, u, c, b, update)
+        return self._eval(z, k, np.reshape(u, [-1, self.nldc]).T, c, b, update)
 
 
     def _eval_nolerp(self, z, k, u, c, b, update):

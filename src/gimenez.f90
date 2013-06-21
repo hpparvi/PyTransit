@@ -96,22 +96,25 @@ contains
     integer, intent(in) :: npt, nldc, npb, nthreads, npol
     logical, intent(in) :: update
     real(8), intent(in), dimension(npt) :: z
-    real(8), intent(in), dimension(nldc) :: u
+    real(8), intent(in), dimension(nldc, npb) :: u
     real(8), intent(in) :: k, b, contamination
-    real(8), intent(out), dimension(npt) :: res
+    real(8), intent(out), dimension(npt, npb) :: res
     real(8), intent(in), dimension(npol, nldc+1) :: anm, avl
     real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
 
     integer, parameter :: tsize = 512
+    integer, parameter :: maxpb =  20
+
     real(8), save, dimension(tsize) :: z_tbl
-    real(8), save, dimension(tsize,1) :: i_tbl
+    real(8), save, dimension(tsize,maxpb) :: i_tbl
 
     real(8), save :: dz, idz 
     real(8) :: x
     integer :: i, j, ntr
 
     logical, dimension(npt) :: mask
-    real(8), dimension(npt) :: ztmp, itmp
+    real(8), dimension(npt) :: ztmp
+    real(8), dimension(npt, npb) :: itmp
 
     !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
  
@@ -119,25 +122,27 @@ contains
        dz    = (1._fd+k - b)/real(tsize-1, fd)
        idz   = 1._fd/dz
        z_tbl = [(b + i*dz, i=0,tsize-1)]
-       i_tbl = 1._fd + gimenez_m(z_tbl, k, u, npol, nldc, npb, anm, avl, ajd, aje) * (1._fd - contamination)
+       i_tbl(:,:npb) = 1._fd + gimenez_m(z_tbl, k, u, npol, nldc, npb, anm, avl, ajd, aje) * (1._fd - contamination)
     end if
 
     mask        = (z > 0._fd) .and. (z < 1._fd+k)
     ntr         = count(mask)
     ztmp(1:ntr) = pack(z, mask)
 
-    !$omp parallel do private(i, x, j) shared(ntr, b, i_tbl, idz, ztmp, itmp) default(none)
+    !$omp parallel do private(i, x, j) shared(ntr, b, npb, i_tbl, idz, ztmp, itmp) default(none)
     do i=1,ntr
        x = (ztmp(i)-b)*idz
        j = 1 + int(floor(x))
        x = x - j
        j = min(j, tsize-1)
-       itmp(i) = (1._fd-x) * i_tbl(j, 1) + x * i_tbl(j+1, 1)
+       itmp(i,:) = (1._fd-x) * i_tbl(j, :npb) + x * i_tbl(j+1, :npb)
     end do 
     !$omp end parallel do
  
     res = 1._fd
-    res = unpack(itmp(1:ntr), mask, res)
+    do i=1,npb
+       res(:,i) = unpack(itmp(1:ntr,i), mask, res(:,i))
+    end do
   end subroutine eval_lerp
  
 
