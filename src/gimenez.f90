@@ -91,9 +91,9 @@ contains
   end subroutine init_arrays
 
 
-  subroutine eval_lerp(z, k, u, b, contamination, nthreads, update, npol, npt, nldc, anm, avl, ajd, aje, res)
+  subroutine eval_lerp(z, k, u, b, contamination, nthreads, update, npol, npt, npb, nldc, anm, avl, ajd, aje, res)
     implicit none
-    integer, intent(in) :: npt, nldc, nthreads, npol
+    integer, intent(in) :: npt, nldc, npb, nthreads, npol
     logical, intent(in) :: update
     real(8), intent(in), dimension(npt) :: z
     real(8), intent(in), dimension(nldc) :: u
@@ -103,7 +103,9 @@ contains
     real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
 
     integer, parameter :: tsize = 512
-    real(8), save, dimension(tsize) :: z_tbl, i_tbl
+    real(8), save, dimension(tsize) :: z_tbl
+    real(8), save, dimension(tsize,1) :: i_tbl
+
     real(8), save :: dz, idz 
     real(8) :: x
     integer :: i, j, ntr
@@ -117,7 +119,7 @@ contains
        dz    = (1._fd+k - b)/real(tsize-1, fd)
        idz   = 1._fd/dz
        z_tbl = [(b + i*dz, i=0,tsize-1)]
-       i_tbl = 1._fd + gimenez_m(z_tbl, k, u, npol, nldc, anm, avl, ajd, aje) * (1._fd - contamination)
+       i_tbl = 1._fd + gimenez_m(z_tbl, k, u, npol, nldc, npb, anm, avl, ajd, aje) * (1._fd - contamination)
     end if
 
     mask        = (z > 0._fd) .and. (z < 1._fd+k)
@@ -130,7 +132,7 @@ contains
        j = 1 + int(floor(x))
        x = x - j
        j = min(j, tsize-1)
-       itmp(i) = (1._fd-x) * i_tbl(j) + x * i_tbl(j+1)
+       itmp(i) = (1._fd-x) * i_tbl(j, 1) + x * i_tbl(j+1, 1)
     end do 
     !$omp end parallel do
  
@@ -139,19 +141,20 @@ contains
   end subroutine eval_lerp
  
 
-  subroutine eval(z, k, u, contamination, nthreads, npol, npt, nldc, anm, avl, ajd, aje, res)
+  subroutine eval(z, k, u, contamination, nthreads, npol, npt, nldc, npb, anm, avl, ajd, aje, res)
     implicit none
-    integer, intent(in) :: npt, nldc, nthreads, npol
+    integer, intent(in) :: npt, nldc, npb, nthreads, npol
     real(8), intent(in), dimension(npt) :: z
-    real(8), intent(in), dimension(nldc) :: u
+    real(8), intent(in), dimension(nldc, npb) :: u
     real(8), intent(in) :: k, contamination
-    real(8), intent(out), dimension(npt) :: res
+    real(8), intent(out), dimension(npt, npb) :: res
     real(8), intent(in), dimension(npol, nldc+1) :: anm, avl
     real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
 
-    real(8), dimension(npt) :: tmp1, tmp2
+    real(8), dimension(npt) :: tmp1
+    real(8), dimension(npt,npb) :: tmp2
     logical, dimension(npt) :: mask
-    integer :: npt_t
+    integer :: npt_t, i
 
     !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
     res  = 0._fd
@@ -159,56 +162,65 @@ contains
     npt_t = count(mask)
     
     tmp1(1:npt_t) = pack(z, mask)
-    tmp2(1:npt_t) = gimenez_m(tmp1(1:npt_t), k, u, npol, nldc, anm, avl, ajd, aje)
+    tmp2(1:npt_t,:) = gimenez_m(tmp1(1:npt_t), k, u, npol, nldc, npb, anm, avl, ajd, aje)
 
-    res = unpack(tmp2(1:npt_t), mask, res)
+    do i=1,npb
+       res(:,i) = unpack(tmp2(1:npt_t,i), mask, res(:,i))
+    end do
     res = 1._fd + res*(1._fd - contamination)
   end subroutine eval
 
   !!--- Gimenez transit shape model ---
   !!
-  function gimenez_m(z, k, u, npol, nldc, anm, avl, ajd, aje)
+  function gimenez_m(z, k, u, npol, nldc, npb, anm, avl, ajd, aje)
     implicit none
     real(8), intent(in), dimension(:) :: z
-    real(8), intent(in), dimension(:) :: u    
+    real(8), intent(in), dimension(nldc,npb) :: u    
     real(8), intent(in) :: k
-    integer, intent(in) :: npol, nldc
+    integer, intent(in) :: npol, nldc, npb
     real(8), intent(in), dimension(npol, nldc+1) :: anm, avl
     real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
 
-    real(8), dimension(size(z)) :: gimenez_m
+    real(8), dimension(size(z), npb) :: gimenez_m
 
-    real(8), dimension(size(z), size(u)+1) :: a 
-    real(8), dimension(size(u)+1) :: n, Cn
+    real(8), dimension(size(z), size(u,1)+1) :: a 
+    real(8), dimension(size(u,1)+1) :: n
+    real(8), dimension(size(u,1)+1,npb) :: Cn
+
     real(8), dimension(1) :: b
     real(8), dimension(size(z)) :: c
-    real(8), dimension(size(u)) :: uu ! Quadratic -> general
-    integer :: i, j 
+    real(8), dimension(size(u,1), npb) :: uu ! Quadratic -> general
+    integer :: i, j, ui 
 
     a  = 0._fd
     Cn = 1._fd
-    n  = [(i, i=0,size(u))]
+    n  = [(i, i=0,size(u,1))]
     b  = k/(1._fd+k)
     c  = z/(1._fd+k)
 
-    if (size(u) == 2) then
-       uu = [u(1)+2._fd*u(2), -u(2)]
+    if (size(u,1) == 2) then
+       uu(1,:) =  u(1,:) + 2._fd*u(2,:)
+       uu(2,:) = -u(2,:)
     else
        uu = u
     end if
 
-    do j=0,size(u)
+    do j=0,size(u,1)
        call alpha(b, c, j, npol, nldc, a(:,j+1), anm, avl, ajd, aje)
     end do
 
-    if (size(u) > 0) then
-       Cn(1) = (1._fd - sum(uu)) / (1._fd - sum(uu*n(2:) / (n(2:)+2._fd)))
-       Cn(2:) = uu / (1._fd - sum(n(2:) * uu / (n(2:)+2._fd)))
+    if (size(u,1) > 0) then
+       do ui=1,npb
+          Cn(1,ui)  = (1._fd - sum(uu(:,ui))) / (1._fd - sum(uu(:,ui)*n(2:) / (n(2:)+2._fd)))
+          Cn(2:,ui) = uu(:,ui) / (1._fd - sum(n(2:) * uu(:,ui) / (n(2:)+2._fd)))
+       end do
     end if
-
-    !$omp parallel do private(i), shared(z,gimenez_m, a, Cn) default(none)
+    
+    !$omp parallel do private(i,j), shared(z,gimenez_m, a, Cn, npb) default(none)
     do i=1,size(z)
-       gimenez_m(i) = -sum(a(i,:)*Cn)
+       do j=1,npb
+          gimenez_m(i,j) = -sum(a(i,:)*Cn(:,j),1)
+       end do
     end do
     !$omp end parallel do
   end function gimenez_m
