@@ -17,7 +17,7 @@ us = [ [0.2,0.1],
 for u in us:
     for npol in [200, 100, 50, 20]:
         tstart = Wtime()
-        m = Gimenez(npol=npol)
+        m = Gimenez(npol=npol, lerp=True)
         for i in range(ni):
             m(z, 0.1, u)
         print "npb {:3d}:  npol {:3d}: {:8.6f} s/lc".format(len(u), npol, (Wtime()-tstart)/(ni))

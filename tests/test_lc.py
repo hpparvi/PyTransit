@@ -18,10 +18,10 @@ t = np.linspace(0.94,1.06,5000)
 t0, p, a, i = 1, 2, 7, 0.5*np.pi
 
 z = of.z_circular(t, t0, p, a, i, 0)
-u = [[uu,vv] for uu,vv in zip(np.linspace(0,0.8,20), np.linspace(0,0.4,20))]
+u = [[uu,vv] for uu,vv in zip(np.linspace(0,0.8,2), np.linspace(0,0.4,2))]
 
 pl.plot(m1(z, 0.1, u))
 pl.plot(m2(z, 0.1, u))
 
-pl.ylim(0.985, 1.001)
+#pl.ylim(0.985, 1.001)
 pl.show()
