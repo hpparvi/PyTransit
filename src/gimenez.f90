@@ -128,13 +128,14 @@ contains
 
     ft_table(:,:npb) = 1._fd + gimenez_m(ft_ztable, k, u, npol, nldc, npb, anm, avl, ajd, aje) * (1._fd - contamination)
     ie_table(:,:npb) = 1._fd + gimenez_m(ie_ztable, k, u, npol, nldc, npb, anm, avl, ajd, aje) * (1._fd - contamination)
+    ie_table(tsize,:npb) = 1._fd
 
     mask        = (z > 0._fd) .and. (z < 1._fd+k)
     ntr         = count(mask)
     ztmp(1:ntr) = pack(z, mask)
     
     !$omp parallel do private(i, x, j) shared(ntr, k, b, idz_ft, idz_ie, ft_ztable) &
-    !$omp shared(ie_ztable, ft_table, ie_table, npb, i_tbl, dz_ft, idz, ztmp, itmp) default(none)
+    !$omp shared(ie_ztable, ft_table, ie_table, npb, dz_ft, ztmp, itmp) default(none)
     do i=1,ntr
        if (ztmp(i) <= 1._fd-k) then
           x = ztmp(i)*idz_ft
