@@ -57,7 +57,12 @@ class Gimenez(object):
           b    real   minimum impact parameter (for the interpolating model)
           update bool update the interpolation table (for the interpolating model)
         """
-        return self._eval(z, k, np.reshape(u, [-1, self.nldc]).T, c, b, update)
+        flux = self._eval(z, k, np.reshape(u, [-1, self.nldc]).T, c, b, update)
+
+        if len(u) == self.nldc:
+            flux = flux.ravel()
+
+        return flux
 
 
     def _eval_nolerp(self, z, k, u, c, b, update):
