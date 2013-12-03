@@ -10,6 +10,7 @@
 .. moduleauthor:: Hannu Parviainen <parviainen@astro.ox.ac.uk>
 """
 
+from math import fabs
 import numpy as np
 from math import fabs
 
