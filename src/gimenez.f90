@@ -3,14 +3,10 @@
 !! This module implements the transit shape model by
 !! Alvaro Gimenez (A&A 450, 1231--1237, 2006).
 !!
-!! The code is adapted from the Fortran implementation
+!! The code is adapted from the original Fortran implementation
 !! at http://thor.ieec.uab.es/LRVCode. The major changes
-!! are in the parallelization and vectorization. 
-!!
-!! Instead of repeating the computations for each lightcurve point
-!! separately, we minimize the redundant calculations by
-!! computing the common factors for all lightcurve points.
-!! This can give us a speed up of several orders of magnitude. 
+!! are in the precalculation of coefficients and in separation
+!! of the limb darkening effects from rest of the computations.
 !!
 !! -GPL-
 !! This program is free software: you can redistribute it and/or modify
@@ -28,7 +24,7 @@
 !! -GPL-
 !!
 !! Author
-!!  Hannu Parviainen <hannu@iac.es>
+!!  Hannu Parviainen <parviainen@astro.ox.ac.uk>
 !!
 !! Date 
 !!  01.03.2011

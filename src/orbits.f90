@@ -19,7 +19,7 @@
 !! -GPL-
 !!
 !! Author
-!!  Hannu Parviainen <hannu@iac.es>
+!!  Hannu Parviainen <parviainen@astro.ox.ax.uk>
 !!
 !! Date 
 !!  13.04.2012
