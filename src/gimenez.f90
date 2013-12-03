@@ -170,7 +170,7 @@ contains
     real(8), dimension(npt,npb) :: tmp2
     logical, dimension(npt) :: mask
     integer :: npt_t, i
-
+    
     !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
     res  = 0._fd
     mask = (z > 0._fd) .and. (z < 1._fd+k)
