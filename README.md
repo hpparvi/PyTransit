@@ -61,7 +61,7 @@ Transit model using linear interpolation, two different sets of z:
     
 Author
 ------
-  - Hannu Parviainen <hpparvi@gmail.com>, Instituto de Astrofísica de Canarias (IAC)
+  - Hannu Parviainen <hpparvi@gmail.com>, University of Oxford
 
 Publications using the code
 ----------------------------
