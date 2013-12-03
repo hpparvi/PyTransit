@@ -7,9 +7,11 @@
      Hannu Parviainen <hpparvi@gmail.com>
 """
 
+from math import fabs
 import numpy as np
 
 from gimenez_f import gimenez as g
+from orbits_f import orbits as of
 
 class Gimenez(object):
     """Gimenez transit model
@@ -71,6 +73,15 @@ class Gimenez(object):
 
     def _eval_lerp(self, z, k, u, c, b, update):
         return g.eval_lerp(z, k, u, b, c, self.nthr, update, *self._coeff_arr)
+
+
+    def evaluate(self, t, k, u, t0, p, a, i, e=0, w=0, c=0., update=True):
+        if fabs(e) < 1e-3:
+            z = of.z_circular(t, t0, p, a, i, nthreads=self.nthr)
+        else:
+            z = of.z_eccentric(t, t0, p, a, i, e, w, nthreads=self.nthr)
+
+        return self.__call__(z, k, u, c, update)
 
 
 if __name__ == '__main__':
