@@ -19,8 +19,6 @@ from orbits_f import orbits as of
 
 class Gimenez(object):
     """
-    Test
-    ----
     Exoplanet transit light curve model by A. Gimenez (A&A 450, 1231--1237, 2006).
 
     :param npol: (optional)
@@ -80,11 +78,11 @@ class Gimenez(object):
         :param b: (optional)
         :param update: (optional)
         """
-        flux = self._eval(z, k, np.reshape(u, [-1, self.nldc]).T, c, b, update)
-        if len(u) == self.nldc:
-            flux = flux.ravel()
+        u = np.reshape(u, [-1, self.nldc]).T
+        
+        flux = self._eval(z, k, u, c, b, update)
 
-        return flux
+        return flux if u.shape[1] > 1 else flux.ravel()
 
 
     def _eval_nolerp(self, z, k, u, c, b, update):
