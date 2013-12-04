@@ -44,6 +44,18 @@ python module orbits_f ! in
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: z
             end subroutine z_eccentric
+           subroutine z_eccentric_s3(t,t0,p,a,i,e,w,nthreads,nt,z) ! in :orbits:orbits.f90:orbits
+                real(kind=8) dimension(nt),intent(in) :: t
+                real(kind=8) intent(in) :: t0
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: a
+                real(kind=8) intent(in) :: i
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                integer intent(in) :: nthreads
+                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
+                real(kind=8) dimension(nt),intent(out),depend(nt) :: z
+            end subroutine z_eccentric_s3
             subroutine z_eccentric_s(t,t0,p,a,i,e,w,nthreads,nt,z) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0
@@ -87,6 +99,16 @@ python module orbits_f ! in
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: Ta
             end subroutine ta_eccentric
+            subroutine ta_eccentric_s3(t,t0,p,e,w,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
+                real(kind=8) dimension(nt),intent(in) :: t
+                real(kind=8) intent(in) :: t0
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                integer intent(in) :: nthreads
+                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
+                real(kind=8) dimension(nt),intent(out),depend(nt) :: Ta
+            end subroutine ta_eccentric_s3
             subroutine ta_eccentric_series(t,t0,p,e,w,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0

@@ -139,6 +139,18 @@ contains
     call z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
   end subroutine z_eccentric
 
+  subroutine z_eccentric_s3(t, t0, p, a, i, e, w, nth, nt, z)
+    implicit none
+    integer, intent(in)  :: nt, nth
+    real(fd), intent(in)  :: t0, p, a, i, e, w
+    real(fd), intent(in),  dimension(nt) :: t
+    real(fd), intent(out), dimension(nt) :: z
+    real(fd), dimension(nt) :: Ta
+
+    call ta_eccentric_s3(t, t0, p, e, w, nth, nt, Ta)
+    call z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
+  end subroutine z_eccentric_s3
+
   subroutine z_eccentric_s(t, t0, p, a, i, e, w, nth, nt, z)
     implicit none
     integer, intent(in)  :: nt, nth
@@ -150,7 +162,6 @@ contains
     call ta_eccentric_series(t, t0, p, e, w, nth, nt, Ta)
     call z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
   end subroutine z_eccentric_s
-
 
   subroutine z_eccentric_ip(t, t0, p, a, i, e, w, nth, update, nt, z)
     implicit none
@@ -250,6 +261,35 @@ contains
 
   end subroutine ta_eccentric
 
+  subroutine ta_eccentric_s3(t, t0, p, e, w, nth, nt, Ta)
+    !! Calculates the true anomaly using a series expansion.
+    implicit none
+    integer, intent(in)  :: nt, nth
+    real(fd), intent(in)  :: t0, p, e, w
+    real(fd), intent(in),  dimension(nt) :: t
+    real(fd), intent(out), dimension(nt) :: Ta
+    
+    real(fd), dimension(nt) :: Ma  ! Mean anomaly
+    real(fd) :: m_offset
+
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
+
+    !! Calculate the time offset between the zero mean anomaly and transit
+    !! center knowing that t_tr = f_tr = pi/2 - w.
+    m_offset = atan2(sqrt(1._fd-e**2)*sin(half_pi - w), e + cos(half_pi - w))
+    m_offset = m_offset - e*sin(m_offset)
+
+    !! Calculate the mean anomaly
+    Ma = two_pi * (t - (t0 - m_offset*p/two_pi))/ p
+
+    !$omp parallel workshare
+    Ta = Ma + (2._fd*e - 0.25_fd*e**3)*sin(Ma) &
+         &  + 1.25_fd*e**2*sin(2*Ma) &
+         &  + 13._fd/12._fd*e**3*sin(3*Ma)
+    !$omp end parallel workshare
+
+  end subroutine ta_eccentric_s3
+
 
   subroutine ta_eccentric_series(t, t0, p, e, w, nth, nt, Ta)
     !! Calculates the true anomaly using a series expansion.
@@ -273,11 +313,14 @@ contains
     Ma = two_pi * (t - (t0 - m_offset*p/two_pi))/ p
 
     !! Calculate the true anomaly using a seriest expansion from Meeus (p. 222). 
+
+    !$omp parallel workshare
     Ta = Ma + (2._fd*e - 0.25_fd*e**3 + 5._fd/96._fd*e**5) * sin(Ma) &
          &  + (1.25_fd*e**2 - 11._fd/24._fd*e**44) * sin(2*Ma) &
          &  + (13._fd/12._fd * e**3 - 43._fd/64._fd * e**5) * sin(3*Ma) &
          &  + 103._fd/96._fd * e**4 * sin(4*Ma) &
          &  + 1097._fd/960._fd * e**5 * sin(5*Ma)
+    !$omp end parallel workshare
 
   end subroutine ta_eccentric_series
 
