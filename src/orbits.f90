@@ -139,6 +139,18 @@ contains
     call z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
   end subroutine z_eccentric
 
+  subroutine z_eccentric_newton(t, t0, p, a, i, e, w, nth, nt, z)
+    implicit none
+    integer, intent(in)  :: nt, nth
+    real(fd), intent(in)  :: t0, p, a, i, e, w
+    real(fd), intent(in),  dimension(nt) :: t
+    real(fd), intent(out), dimension(nt) :: z
+    real(fd), dimension(nt) :: Ta 
+
+    call ta_eccentric_newton(t, t0, p, e, w, nth, nt, Ta)
+    call z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
+  end subroutine z_eccentric_newton
+
   subroutine z_eccentric_s3(t, t0, p, a, i, e, w, nth, nt, z)
     implicit none
     integer, intent(in)  :: nt, nth
@@ -260,6 +272,49 @@ contains
     Ta  = atan2(sta, cta) 
 
   end subroutine ta_eccentric
+
+  subroutine ta_eccentric_newton(t, t0, p, e, w, nth, nt, Ta)
+    implicit none
+    integer, intent(in)  :: nt, nth
+    real(fd), intent(in)  :: t0, p, e, w
+    real(fd), intent(in),  dimension(nt) :: t
+    real(fd), intent(out), dimension(nt) :: Ta
+    
+    real(fd), dimension(nt) :: Ma  ! Mean anomaly
+    real(fd), dimension(nt) :: Ea  ! Eccentric anomaly
+    real(fd), dimension(nt) :: cta, sta  ! cos(Ta), sin(Ta)
+    
+    integer j
+    real(fd) :: m_offset, err
+
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
+
+    !! Calculate the time offset between the zero mean anomaly and transit
+    !! center knowing that t_tr = f_tr = pi/2 - w.
+    m_offset = atan2(sqrt(1._fd-e**2)*sin(half_pi - w), e + cos(half_pi - w))
+    m_offset = m_offset - e*sin(m_offset)
+
+    !! Calculate the mean anomaly
+    Ma = two_pi * (t - (t0 - m_offset*p/two_pi))/ p
+
+    !! Calculate the eccentric anomaly using the Newton's method
+    Ea = Ma
+    !$omp parallel do private(j,err) shared(nt,e,Ma,Ea) default(none) schedule(static)
+    do j = 1, nt
+       err = 0.05_fd
+       do while (abs(err) > 1.0e-8) 
+          err   = Ea(j) - e*sin(Ea(j)) - Ma(j)
+          Ea(j) = Ea(j) - err/(1._fd-e*cos(Ea(j)))
+       end do
+    end do
+    !$omp end parallel do
+
+    !! Calculate the true anomaly from the eccentric anomaly
+    sta = sqrt(1-e**2) * sin(Ea)/(1-e*cos(Ea))
+    cta = (cos(Ea)-e)/(1-e*cos(Ea))
+    Ta  = atan2(sta, cta) 
+
+  end subroutine ta_eccentric_newton
 
   subroutine ta_eccentric_s3(t, t0, p, e, w, nth, nt, Ta)
     !! Calculates the true anomaly using a series expansion.
