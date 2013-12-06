@@ -117,7 +117,7 @@ class Gimenez(object):
         if fabs(e) < 0.01:
             z = of.z_circular(self._time, t0, p, a, i, nthreads=self.nthr)
         elif fabs(e) < 0.2:
-            z = of.z_eccentric_s3(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
+            z = of.z_eccentric_ps3(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
         else:
             z = of.z_eccentric_newton(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
 

@@ -127,7 +127,7 @@ contains
   !!   nth  i      number of openmp threads
   !!   nt   i      number of points
 
-  subroutine z_eccentric(t, t0, p, a, i, e, w, nth, nt, z)
+  subroutine z_eccentric_iter(t, t0, p, a, i, e, w, nth, nt, z)
     implicit none
     integer, intent(in)  :: nt, nth
     real(fd), intent(in)  :: t0, p, a, i, e, w
@@ -135,9 +135,9 @@ contains
     real(fd), intent(out), dimension(nt) :: z
     real(fd), dimension(nt) :: Ta 
 
-    call ta_eccentric(t, t0, p, e, w, nth, nt, Ta)
+    call ta_eccentric_iter(t, t0, p, e, w, nth, nt, Ta)
     call z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
-  end subroutine z_eccentric
+  end subroutine z_eccentric_iter
 
   subroutine z_eccentric_newton(t, t0, p, a, i, e, w, nth, nt, z)
     implicit none
@@ -151,7 +151,7 @@ contains
     call z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
   end subroutine z_eccentric_newton
 
-  subroutine z_eccentric_s3(t, t0, p, a, i, e, w, nth, nt, z)
+  subroutine z_eccentric_ps3(t, t0, p, a, i, e, w, nth, nt, z)
     implicit none
     integer, intent(in)  :: nt, nth
     real(fd), intent(in)  :: t0, p, a, i, e, w
@@ -159,11 +159,11 @@ contains
     real(fd), intent(out), dimension(nt) :: z
     real(fd), dimension(nt) :: Ta
 
-    call ta_eccentric_s3(t, t0, p, e, w, nth, nt, Ta)
+    call ta_eccentric_ps3(t, t0, p, e, w, nth, nt, Ta)
     call z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
-  end subroutine z_eccentric_s3
+  end subroutine z_eccentric_ps3
 
-  subroutine z_eccentric_s(t, t0, p, a, i, e, w, nth, nt, z)
+  subroutine z_eccentric_ps5(t, t0, p, a, i, e, w, nth, nt, z)
     implicit none
     integer, intent(in)  :: nt, nth
     real(fd), intent(in)  :: t0, p, a, i, e, w
@@ -171,9 +171,9 @@ contains
     real(fd), intent(out), dimension(nt) :: z
     real(fd), dimension(nt) :: Ta
 
-    call ta_eccentric_series(t, t0, p, e, w, nth, nt, Ta)
+    call ta_eccentric_ps5(t, t0, p, e, w, nth, nt, Ta)
     call z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
-  end subroutine z_eccentric_s
+  end subroutine z_eccentric_ps5
 
   subroutine z_eccentric_ip(t, t0, p, a, i, e, w, nth, update, nt, z)
     implicit none
@@ -214,6 +214,16 @@ contains
     !$omp end parallel do
   end subroutine ta_circular 
 
+  !! Calculates the time offset between the zero mean anomaly and transit
+  !! center knowing that the true anomaly f is f(t_tr) = pi/2 - w.
+  real(fd) function mean_anomaly_offset(e, w)
+    implicit none
+    real(fd), intent(in) :: e, w
+
+    mean_anomaly_offset = atan2(sqrt(1._fd-e**2)*sin(half_pi - w), e + cos(half_pi - w))
+    mean_anomaly_offset = mean_anomaly_offset - e*sin(mean_anomaly_offset)
+  end function mean_anomaly_offset
+
 
   !! TA - ECCENTRIC ORBIT
   !! ====================
@@ -228,7 +238,7 @@ contains
   !!   w    d      argument of the periastron    [rad]
   !!   nth  i      number of openmp threads
   !!   nt   i      number of points
-  subroutine ta_eccentric(t, t0, p, e, w, nth, nt, Ta)
+  subroutine ta_eccentric_iter(t, t0, p, e, w, nth, nt, Ta)
     implicit none
     integer, intent(in)  :: nt, nth
     real(fd), intent(in)  :: t0, p, e, w
@@ -243,13 +253,9 @@ contains
     integer j, k
     real(fd) :: m_offset, ect
 
+    m_offset = mean_anomaly_offset(e,w)
+
     !$ if (nth /= 0) call omp_set_num_threads(nth)
-
-    !! Calculate the time offset between the zero mean anomaly and transit
-    !! center knowing that t_tr = f_tr = pi/2 - w.
-    m_offset = atan2(sqrt(1._fd-e**2)*sin(half_pi - w), e + cos(half_pi - w))
-    m_offset = m_offset - e*sin(m_offset)
-
     !$omp parallel private(j,k,ect) shared(ec,nt,t,t0,m_offset,p,e,Ma,Ea,sta,cta,Ta) default(none)
 
     !! Calculate the mean anomaly
@@ -277,7 +283,8 @@ contains
     Ta  = atan2(sta, cta) 
     !$omp end workshare
     !$omp end parallel
-  end subroutine ta_eccentric
+  end subroutine ta_eccentric_iter
+
 
   subroutine ta_eccentric_newton(t, t0, p, e, w, nth, nt, Ta)
     implicit none
@@ -293,13 +300,9 @@ contains
     integer j
     real(fd) :: m_offset, err
 
+    m_offset = mean_anomaly_offset(e,w)
+
     !$ if (nth /= 0) call omp_set_num_threads(nth)
-
-    !! Calculate the time offset between the zero mean anomaly and transit
-    !! center knowing that t_tr = f_tr = pi/2 - w.
-    m_offset = atan2(sqrt(1._fd-e**2)*sin(half_pi - w), e + cos(half_pi - w))
-    m_offset = m_offset - e*sin(m_offset)
-
     !$omp parallel private(j,err) shared(nt,t,t0,m_offset,p,e,Ma,Ea,sta,cta,Ta) default(none)
 
     !! Calculate the mean anomaly
@@ -328,7 +331,8 @@ contains
     !$omp end parallel
   end subroutine ta_eccentric_newton
 
-  subroutine ta_eccentric_s3(t, t0, p, e, w, nth, nt, Ta)
+
+  subroutine ta_eccentric_ps3(t, t0, p, e, w, nth, nt, Ta)
     !! Calculates the true anomaly using a series expansion.
     implicit none
     integer, intent(in)  :: nt, nth
@@ -339,15 +343,10 @@ contains
     real(fd), dimension(nt) :: Ma  ! Mean anomaly
     real(fd) :: m_offset
 
+    m_offset = mean_anomaly_offset(e,w)
+
     !$ if (nth /= 0) call omp_set_num_threads(nth)
-
-    !! Calculate the time offset between the zero mean anomaly and transit
-    !! center knowing that t_tr = f_tr = pi/2 - w.
-    m_offset = atan2(sqrt(1._fd-e**2)*sin(half_pi - w), e + cos(half_pi - w))
-    m_offset = m_offset - e*sin(m_offset)
-
-    !! Calculate the mean anomaly
-    !$omp parallel workshare
+    !$omp parallel workshare default(shared)
     Ma = two_pi * (t - (t0 - m_offset*p/two_pi))/ p
 
     Ta = Ma + (2._fd*e - 0.25_fd*e**3)*sin(Ma) &
@@ -355,10 +354,10 @@ contains
          &  + 13._fd/12._fd*e**3*sin(3*Ma)
     !$omp end parallel workshare
 
-  end subroutine ta_eccentric_s3
+  end subroutine ta_eccentric_ps3
 
 
-  subroutine ta_eccentric_series(t, t0, p, e, w, nth, nt, Ta)
+  subroutine ta_eccentric_ps5(t, t0, p, e, w, nth, nt, Ta)
     !! Calculate the true anomaly using a seriest expansion from Meeus (p. 222). 
     implicit none
     integer, intent(in)  :: nt, nth
@@ -369,13 +368,9 @@ contains
     real(fd), dimension(nt) :: Ma  ! Mean anomaly
     real(fd) :: m_offset
 
+    m_offset = mean_anomaly_offset(e,w)
+
     !$ if (nth /= 0) call omp_set_num_threads(nth)
-
-    !! Calculate the time offset between the zero mean anomaly and transit
-    !! center knowing that t_tr = f_tr = pi/2 - w.
-    m_offset = atan2(sqrt(1._fd-e**2)*sin(half_pi - w), e + cos(half_pi - w))
-    m_offset = m_offset - e*sin(m_offset)
-
     !$omp parallel workshare default(shared)
     Ma = two_pi * (t - (t0 - m_offset*p/two_pi))/ p
 
@@ -385,7 +380,7 @@ contains
          &  + 103._fd/96._fd * e**4 * sin(4*Ma) &
          &  + 1097._fd/960._fd * e**5 * sin(5*Ma)
     !$omp end parallel workshare
-  end subroutine ta_eccentric_series
+  end subroutine ta_eccentric_ps5
 
 
   subroutine ta_eccentric_ip(t, t0, p, e, w, nth, update, nt, ta)
@@ -411,7 +406,7 @@ contains
        dt  = p/real(tsize-1, fd)
        idt = 1._fd/dt
        t_table = [(dt*j, j=0,tsize-1)]
-       call ta_eccentric(t_table, t0, p, e, w, nth, tsize, ta_table)
+       call ta_eccentric_newton(t_table, t0, p, e, w, nth, tsize, ta_table)
     end if
 
     !$omp parallel do private(j,x,k, ta_diff) shared(nt, t, p, idt, ta_table, ta) default(none) schedule(static)

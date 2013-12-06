@@ -32,7 +32,7 @@ python module orbits_f ! in
                 integer optional,intent(in),check(len(t0)>=nt0),depend(t0) :: nt0=len(t0)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: z
             end subroutine z_circular_mc
-            subroutine z_eccentric(t,t0,p,a,i,e,w,nthreads,nt,z) ! in :orbits:orbits.f90:orbits
+            subroutine z_eccentric_iter(t,t0,p,a,i,e,w,nthreads,nt,z) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0
                 real(kind=8) intent(in) :: p
@@ -43,7 +43,7 @@ python module orbits_f ! in
                 integer intent(in) :: nthreads
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: z
-            end subroutine z_eccentric
+            end subroutine z_eccentric_iter
             subroutine z_eccentric_newton(t,t0,p,a,i,e,w,nthreads,nt,z) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0
@@ -56,7 +56,7 @@ python module orbits_f ! in
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: z
             end subroutine z_eccentric_newton
-           subroutine z_eccentric_s3(t,t0,p,a,i,e,w,nthreads,nt,z) ! in :orbits:orbits.f90:orbits
+            subroutine z_eccentric_ps3(t,t0,p,a,i,e,w,nthreads,nt,z) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0
                 real(kind=8) intent(in) :: p
@@ -67,8 +67,8 @@ python module orbits_f ! in
                 integer intent(in) :: nthreads
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: z
-            end subroutine z_eccentric_s3
-            subroutine z_eccentric_s(t,t0,p,a,i,e,w,nthreads,nt,z) ! in :orbits:orbits.f90:orbits
+            end subroutine z_eccentric_ps3
+            subroutine z_eccentric_ps5(t,t0,p,a,i,e,w,nthreads,nt,z) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0
                 real(kind=8) intent(in) :: p
@@ -79,7 +79,7 @@ python module orbits_f ! in
                 integer intent(in) :: nthreads
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: z
-            end subroutine z_eccentric_s
+            end subroutine z_eccentric_ps5
             subroutine z_eccentric_ip(t,t0,p,a,i,e,w,nthreads,update,nt,z) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0
@@ -101,7 +101,7 @@ python module orbits_f ! in
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: Ta
             end subroutine ta_circular
-            subroutine ta_eccentric(t,t0,p,e,w,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
+            subroutine ta_eccentric_iter(t,t0,p,e,w,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0
                 real(kind=8) intent(in) :: p
@@ -110,7 +110,7 @@ python module orbits_f ! in
                 integer intent(in) :: nthreads
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: Ta
-            end subroutine ta_eccentric
+            end subroutine ta_eccentric_iter
             subroutine ta_eccentric_newton(t,t0,p,e,w,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0
@@ -121,7 +121,7 @@ python module orbits_f ! in
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: Ta
             end subroutine ta_eccentric_newton
-            subroutine ta_eccentric_s3(t,t0,p,e,w,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
+            subroutine ta_eccentric_ps3(t,t0,p,e,w,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0
                 real(kind=8) intent(in) :: p
@@ -130,8 +130,8 @@ python module orbits_f ! in
                 integer intent(in) :: nthreads
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: Ta
-            end subroutine ta_eccentric_s3
-            subroutine ta_eccentric_series(t,t0,p,e,w,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
+            end subroutine ta_eccentric_ps3
+            subroutine ta_eccentric_ps5(t,t0,p,e,w,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0
                 real(kind=8) intent(in) :: p
@@ -140,7 +140,7 @@ python module orbits_f ! in
                 integer intent(in) :: nthreads
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: Ta
-            end subroutine ta_eccentric_series
+            end subroutine ta_eccentric_ps5
             subroutine ta_eccentric_ip(t,t0,p,e,w,nth,update,nt,Ta) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0
@@ -213,6 +213,11 @@ python module orbits_f ! in
                 real(kind=8) intent(in) :: tr_sign
                 real(kind=8) :: impact_parameter_ec
             end function impact_parameter_ec
+            function mean_anomaly_offset(e,w) ! in :orbits:orbits.f90:orbits
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                real(kind=8) :: mean_anomaly_offset
+            end function mean_anomaly_offset
         end module orbits
     end interface 
 end python module orbits_f
