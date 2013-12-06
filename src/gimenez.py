@@ -52,11 +52,18 @@ class Gimenez(object):
       I1 = m(z1,k,u)               # Evaluate the model for z1, update the interpolation table
       I2 = m(z2,k,u, update=False) # Evaluate the model for z2, don't update the interpolation table
     """
-    def __init__(self, npol=100, nldc=2, nthr=0, lerp=False):
+    def __init__(self, npol=100, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598):
         self._coeff_arr = g.init_arrays(npol, nldc)
         self.npol = npol
         self.nldc = nldc
         self.nthr = nthr
+
+        self.ss  = bool(supersampling)
+        self.nss = supersampling
+        self.exp = exptime
+
+        self.time = None
+
         self._eval = self._eval_lerp if lerp else self._eval_nolerp
 
 
@@ -78,8 +85,8 @@ class Gimenez(object):
         :param b: (optional)
         :param update: (optional)
         """
+
         u = np.reshape(u, [-1, self.nldc]).T
-        
         flux = self._eval(z, k, u, c, b, update)
 
         return flux if u.shape[1] > 1 else flux.ravel()
@@ -93,14 +100,33 @@ class Gimenez(object):
         return g.eval_lerp(z, k, u, b, c, self.nthr, update, *self._coeff_arr)
 
 
-    def evaluate(self, t, k, u, t0, p, a, i, e=0, w=0, c=0., update=True):
-        if fabs(e) < 1e-3:
-            z = of.z_circular(t, t0, p, a, i, nthreads=self.nthr)
+    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True):
+
+        ## Calculate the supersampling time array if not cached
+        ##
+        if t is not self.time:
+            self.time = t
+            self._time = np.asarray(t)
+            self.npt = self._time.size
+
+            if self.ss:
+                self.dt = self.exp / float(self.nss)
+                self._time = np.array([[tt + (-1)**(iss%2)*(0.5*self.dt + iss//2*self.dt) for iss in range(self.nss)] for tt in self._time]).ravel()
+        ## Calculate the normalised projected distance
+        ##
+        if fabs(e) < 0.01:
+            z = of.z_circular(self._time, t0, p, a, i, nthreads=self.nthr)
+        elif fabs(e) < 0.2:
+            z = of.z_eccentric_s3(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
         else:
-            z = of.z_eccentric(t, t0, p, a, i, e, w, nthreads=self.nthr)
+            z = of.z_eccentric_newton(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
 
-        return self.__call__(z, k, u, c, update)
+        flux = self.__call__(z, k, u, c, update)
+        if self.ss:
+            flux = flux.reshape((self.npt, self.nss)).mean(1)
 
+        return flux
+        
 
 if __name__ == '__main__':
     import numpy as np
