@@ -121,9 +121,12 @@ class Gimenez(object):
         else:
             z = of.z_eccentric_newton(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
 
+        u = np.asarray(u).reshape([-1, self.nldc]).T
+
         flux = self.__call__(z, k, u, c, update)
+        
         if self.ss:
-            flux = flux.reshape((self.npt, self.nss)).mean(1)
+            flux = flux.reshape((self.npt, self.nss, u.shape[1])).mean(1)
 
         return flux
         
