@@ -16,7 +16,7 @@ Modules
 Transit models
   - Optimized and parallelized Fortran implementation of the transit model by A. Gimenez (A&A 450, 1231--1237, 2006).
     - Can calculate the transit model simultaneously for several limb darkening coefficient sets.
-    - Built-in supersampling in time.
+    - Built-in supersampling.
 
 Utilities
   - Routines to calculate the projected planet-to-star distance for circular and eccentric orbits.
