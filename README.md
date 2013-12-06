@@ -16,7 +16,7 @@ Modules
 Transit models
   - Optimized and parallelized Fortran implementation of the transit model by A. Gimenez (A&A 450, 1231--1237, 2006).
     - Can calculate the transit model simultaneously for several limb darkening coefficient sets.
-    - Built-in supersampling in time.
+    - Built-in supersampling.
 
 Utilities
   - Routines to calculate the projected planet-to-star distance for circular and eccentric orbits.
@@ -29,7 +29,7 @@ Building and installing is simple using a fairly modern gfortran, use --user for
     python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast -ffast-math" --f90flags="-cpp -fopenmp -march=native" build
     python setup.py install [--user]
     
-The code should compile without major problems with other compilers also, but only gfortran and Intel fortran have been tested.
+The code should compile with other compilers also, but only gfortran and Intel fortran have been tested.
 
 Examples
 --------
@@ -125,7 +125,8 @@ Author
 
 Publications using the code
 ----------------------------
-  - Parviainen, Hannu, Hans Deeg, and Juan A. Belmonte. “Secondary Eclipses in the CoRoT Light Curves: A Homogeneous Search Based in Bayesian Model Selection.” Accepted to A&A (2012)
+  - Gandolfi, Davide, H. Parviainen, et al. Kepler-77b: a very low albedo, Saturn-mass transiting planet around a metal-rich solar-like star. Astron. Astrophys. 557, A74 (2013).
+  - Parviainen, Hannu, H.J. Deeg, and J.A. Belmonte. “Secondary Eclipses in the CoRoT Light Curves: A Homogeneous Search Based in Bayesian Model Selection.” Accepted to A&A (2012)
   - Rouan, D., H. Parviainen, C. Moutou, Magali Deleuil, M. Fridlund, A Ofir, M. Havel, et al. “Transiting Exoplanets from the CoRoT Space Mission.” Astronomy & Astrophysics 537 (January 9, 2012): A54.
   - Murgas, F., E. Pallé, A. Cabrera-Lavers, K. D. Colón, E. L. Martín, and H. Parviainen. “Narrow Band H α Photometry of the super-Earth GJ 1214b with GTC/OSIRIS Tunable Filters.” Astronomy & Astrophysics 544 (July 24, 2012): A41.
   - Tingley, Brandon, E. Palle, H. Parviainen, H. J. Deeg, M. R. Zapatero Osorio, A. Cabrera-Lavers, J. a. Belmonte, P. M. Rodriguez, F. Murgas, and I. Ribas. “Detection of Transit Timing Variations in Excess of One Hour in the Kepler Multi-planet Candidate System KOI 806 with the GTC.” Astronomy & Astrophysics 536 (December 12, 2011): L9.
