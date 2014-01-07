@@ -5,7 +5,6 @@ Fast and easy-to-use tools for exoplanet transit light curve modelling using Pyt
 
 
     from pytransit.gimenez import Gimenez
-    
     m = Gimenez()
     f = m.evaluate(t, *pv)
 
@@ -24,11 +23,17 @@ Utilities
 
 Installation
 ------------
-Building and installing is simple using a fairly modern gfortran, use --user for a local installation without root rights.
+First clone the repository from github:
 
-    python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast -ffast-math" --f90flags="-cpp -fopenmp -march=native" build
-    python setup.py install [--user]
-    
+    git clone https://github.com/hpparvi/PyTransit.git
+    cd PyTransit
+
+and then do the normal python package build & installation. For example, building with a fairly modern gfortran
+and then installing the package locally (without root rights) would take:
+
+    python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native" build
+    python setup.py install --user
+
 The code should compile with other compilers also, but only gfortran and Intel fortran have been tested.
 
 Examples
