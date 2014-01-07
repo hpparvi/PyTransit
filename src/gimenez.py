@@ -100,7 +100,7 @@ class Gimenez(object):
         return g.eval_lerp(z, k, u, b, c, self.nthr, update, *self._coeff_arr)
 
 
-    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True):
+    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, lerp_z=False):
 
         ## Calculate the supersampling time array if not cached
         ##
@@ -114,12 +114,15 @@ class Gimenez(object):
                 self._time = np.array([[tt + (-1)**(iss%2)*(0.5*self.dt + iss//2*self.dt) for iss in range(self.nss)] for tt in self._time]).ravel()
         ## Calculate the normalised projected distance
         ##
-        if fabs(e) < 0.01:
-            z = of.z_circular(self._time, t0, p, a, i, nthreads=self.nthr)
-        elif fabs(e) < 0.2:
-            z = of.z_eccentric_ps3(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
+        if lerp_z:
+            z = of.z_eccentric_ip(self._time, t0, p, a, i, e, w, nthreads=self.nthr, update=True)
         else:
-            z = of.z_eccentric_newton(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
+            if fabs(e) < 0.01:
+                z = of.z_circular(self._time, t0, p, a, i, nthreads=self.nthr)
+            elif fabs(e) < 0.2:
+                z = of.z_eccentric_ps3(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
+            else:
+                z = of.z_eccentric_newton(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
 
         u = np.asarray(u).reshape([-1, self.nldc]).T
 

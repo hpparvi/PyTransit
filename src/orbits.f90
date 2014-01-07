@@ -188,7 +188,46 @@ contains
     call z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
   end subroutine z_eccentric_ip
 
+  !! =================
+  !! ECCENTRIC ANOMALY
+  !! =================
 
+  subroutine ea_eccentric_newton(t, t0, p, e, w, nth, nt, Ea)
+    implicit none
+    integer, intent(in)  :: nt, nth
+    real(fd), intent(in)  :: t0, p, e, w
+    real(fd), intent(in),  dimension(nt) :: t
+    real(fd), intent(out), dimension(nt) :: Ea
+    
+    real(fd), dimension(nt) :: Ma  ! Mean anomaly
+    
+    integer j
+    real(fd) :: m_offset, err
+
+    m_offset = mean_anomaly_offset(e,w)
+
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
+    !$omp parallel private(j,err) shared(nt,t,t0,m_offset,p,e,Ma,Ea) default(none)
+
+    !! Calculate the mean anomaly
+    !$omp workshare
+    Ma = two_pi * (t - (t0 - m_offset*p/two_pi))/ p
+    !$omp end workshare
+
+    !! Calculate the eccentric anomaly using the Newton's method
+    Ea = Ma
+    !$omp do schedule(guided)
+    do j = 1, nt
+       err = 0.05_fd
+       do while (abs(err) > 1.0e-8) 
+          err   = Ea(j) - e*sin(Ea(j)) - Ma(j)
+          Ea(j) = Ea(j) - err/(1._fd-e*cos(Ea(j)))
+       end do
+    end do
+    !$omp end do
+    !$omp end parallel
+
+  end subroutine ea_eccentric_newton
 
   !! ============
   !! TRUE ANOMALY
@@ -406,7 +445,7 @@ contains
        dt  = p/real(tsize-1, fd)
        idt = 1._fd/dt
        t_table = [(dt*j, j=0,tsize-1)]
-       call ta_eccentric_newton(t_table, t0, p, e, w, nth, tsize, ta_table)
+       call ta_eccentric_iter(t_table, t0, p, e, w, nth, tsize, ta_table)
     end if
 
     !$omp parallel do private(j,x,k, ta_diff) shared(nt, t, p, idt, ta_table, ta) default(none) schedule(static)
