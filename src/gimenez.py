@@ -7,7 +7,7 @@
    light curves with thousands to millions of datapoints.
 
 
-.. moduleauthor:: Hannu Parviainen <parviainen@astro.ox.ac.uk>
+.. moduleauthor:: Hannu Parviainen <hannu.parviainen@astro.ox.ac.uk>
 """
 
 from math import fabs
@@ -101,6 +101,38 @@ class Gimenez(object):
 
 
     def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, lerp_z=False):
+        """Evaluates the transit model for the given parameters.
+
+        :param t:
+            Array of time values
+
+        :param k:
+            Radius ratio(s), can be a single float or an array of values for each passband
+
+        :param u:
+            Array of limb darkening coefficients
+        
+        :param t0:
+            Zero epoch
+
+        :param p:
+            Orbital period
+
+        :param a:
+            Scaled semi-major axis
+
+        :param i:
+            Inclination
+
+        :param e: (optional, default=0)
+            Eccentricity
+
+        :param w: (optional, default=0)
+            Argument of periastron
+
+        :param c: (optional, default=0)
+            Contamination factor
+        """
 
         ## Calculate the supersampling time array if not cached
         ##
@@ -111,7 +143,9 @@ class Gimenez(object):
 
             if self.ss:
                 self.dt = self.exp / float(self.nss)
-                self._time = np.array([[tt + (-1)**(iss%2)*(0.5*self.dt + iss//2*self.dt) for iss in range(self.nss)] for tt in self._time]).ravel()
+                self._time = np.array([[tt + (-1)**(iss%2)*(0.5*self.dt + iss//2*self.dt)
+                                        for iss in range(self.nss)] for tt in self._time]).ravel()
+
         ## Calculate the normalised projected distance
         ##
         if lerp_z:
@@ -126,10 +160,22 @@ class Gimenez(object):
 
         u = np.asarray(u).reshape([-1, self.nldc]).T
 
-        flux = self.__call__(z, k, u, c, update)
+        ## Check if we have multiple radius ratio (k) values, approximate the k with their
+        ## mean if yes, and calculate the area ratio factors.
+        ## 
+        if isinstance(k, np.ndarray):
+            _k = k.mean()
+            kf = (k/_k)**2
+        else:
+            _k = k
+            kf = 1.
+            
+        flux = self.__call__(z, _k, u, c, update)
         
         if self.ss:
             flux = flux.reshape((self.npt, self.nss, u.shape[1])).mean(1)
+
+        flux = kf*(flux-1.)+1.
 
         return flux
         
