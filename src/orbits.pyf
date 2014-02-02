@@ -103,6 +103,16 @@ python module orbits_f ! in
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: Ea
             end subroutine ea_eccentric_newton
+            subroutine ea_eccentric_newton2(t,m0,p,e,w,nthreads,nt,Ea) ! in :orbits:orbits.f90:orbits
+                real(kind=8) dimension(nt),intent(in) :: t
+                real(kind=8) intent(in) :: m0
+                real(kind=8) intent(in) :: p
+                real(kind=8) intent(in) :: e
+                real(kind=8) intent(in) :: w
+                integer intent(in) :: nthreads
+                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
+                real(kind=8) dimension(nt),intent(out),depend(nt) :: Ea
+            end subroutine ea_eccentric_newton2
             subroutine ta_circular(t,t0,p,nthreads,nt,Ta) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0

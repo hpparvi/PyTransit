@@ -229,6 +229,41 @@ contains
 
   end subroutine ea_eccentric_newton
 
+ subroutine ea_eccentric_newton2(t, m0, p, e, w, nth, nt, Ea)
+    implicit none
+    integer, intent(in)  :: nt, nth
+    real(fd), intent(in)  :: m0, p, e, w
+    real(fd), intent(in),  dimension(nt) :: t
+    real(fd), intent(out), dimension(nt) :: Ea
+    
+    real(fd), dimension(nt) :: Ma  ! Mean anomaly
+    
+    integer j
+    real(fd) :: err
+
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
+    !$omp parallel private(j,err) shared(nt,t,m0,p,e,Ma,Ea) default(none)
+
+    !! Calculate the mean anomaly
+    !$omp workshare
+    Ma = two_pi*t/p + m0
+    !$omp end workshare
+
+    !! Calculate the eccentric anomaly using the Newton's method
+    Ea = Ma
+    !$omp do schedule(guided)
+    do j = 1, nt
+       err = 0.05_fd
+       do while (abs(err) > 1.0e-8) 
+          err   = Ea(j) - e*sin(Ea(j)) - Ma(j)
+          Ea(j) = Ea(j) - err/(1._fd-e*cos(Ea(j)))
+       end do
+    end do
+    !$omp end do
+    !$omp end parallel
+
+  end subroutine ea_eccentric_newton2
+
   !! ============
   !! TRUE ANOMALY
   !! ============
