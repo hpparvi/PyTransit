@@ -2,9 +2,9 @@ from __future__ import division
 import numpy as np
 import matplotlib.pyplot as pl
 
-#from mpi4py.MPI import Wtime
+
 from pytransit.gimenez import Gimenez
-#from pytransit.gimenez_cl import GimenezCL
+
 from pytransit.orbits_cl import Orbit
 from pytransit.orbits_f import orbits as of
 
