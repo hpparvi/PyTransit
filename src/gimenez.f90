@@ -93,7 +93,8 @@ contains
     logical, intent(in) :: update
     real(8), intent(in), dimension(npt) :: z
     real(8), intent(in), dimension(nldc, npb) :: u
-    real(8), intent(in) :: k, b, contamination
+    real(8), intent(in), dimension(npb) :: contamination
+    real(8), intent(in) :: k, b
     real(8), intent(out), dimension(npt, npb) :: res
     real(8), intent(in), dimension(npol, nldc+1) :: anm, avl
     real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
@@ -122,8 +123,13 @@ contains
     ft_ztable = [(0._fd   + dz_ft*i, i=0,tsize-1)]
     ie_ztable = [(1._fd-k + dz_ie*i, i=0,tsize-1)]
 
-    ft_table(:,:npb) = 1._fd + gimenez_m(ft_ztable, k, u, npol, nldc, npb, anm, avl, ajd, aje) * (1._fd - contamination)
-    ie_table(:,:npb) = 1._fd + gimenez_m(ie_ztable, k, u, npol, nldc, npb, anm, avl, ajd, aje) * (1._fd - contamination)
+    ft_table(:,:npb) = gimenez_m(ft_ztable, k, u, npol, nldc, npb, anm, avl, ajd, aje)
+    ie_table(:,:npb) = gimenez_m(ie_ztable, k, u, npol, nldc, npb, anm, avl, ajd, aje)
+
+    do i=1,npb
+       ft_table(:,i) = 1._fd + ft_table(:,i) * (1._fd - contamination(i))
+       ie_table(:,i) = 1._fd + ft_table(:,i) * (1._fd - contamination(i))
+    end do
     ie_table(tsize,:npb) = 1._fd
 
     mask        = (z > 0._fd) .and. (z < 1._fd+k)
@@ -161,7 +167,8 @@ contains
     integer, intent(in) :: npt, nldc, npb, nthreads, npol
     real(8), intent(in), dimension(npt) :: z
     real(8), intent(in), dimension(nldc, npb) :: u
-    real(8), intent(in) :: k, contamination
+    real(8), intent(in), dimension(npb) :: contamination
+    real(8), intent(in) :: k
     real(8), intent(out), dimension(npt, npb) :: res
     real(8), intent(in), dimension(npol, nldc+1) :: anm, avl
     real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
@@ -181,8 +188,9 @@ contains
 
     do i=1,npb
        res(:,i) = unpack(tmp2(1:npt_t,i), mask, res(:,i))
+       res(:,i) = 1._fd + res(:,i)*(1._fd - contamination(i))
     end do
-    res = 1._fd + res*(1._fd - contamination)
+
   end subroutine eval
 
   !!--- Gimenez transit shape model ---

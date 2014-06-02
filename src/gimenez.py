@@ -10,10 +10,9 @@
 .. moduleauthor:: Hannu Parviainen <hannu.parviainen@astro.ox.ac.uk>
 """
 
-from math import fabs
 import numpy as np
-from math import fabs
 
+from math import fabs
 from gimenez_f import gimenez as g
 from orbits_f import orbits as of
 
@@ -31,6 +30,12 @@ class Gimenez(object):
 
     :param  lerp: (optional)
         Switch telling if linear interpolation be used (default = False).
+
+    :param supersampling: (optional)
+        Number of subsamples to calculate for each light curve point
+
+    :param exptime: (optional)
+        Integration time for a single exposure, used in supersampling
 
 
     Examples
@@ -59,7 +64,7 @@ class Gimenez(object):
         self.nthr = nthr
 
         self.ss  = bool(supersampling)
-        self.nss = supersampling
+        self.nss = int(supersampling)
         self.exp = exptime
 
         self.time = None
@@ -83,6 +88,8 @@ class Gimenez(object):
             Contamination factor (fraction of third light)
             
         :param b: (optional)
+            Not used, ignore for now.
+
         :param update: (optional)
         """
 
@@ -110,8 +117,10 @@ class Gimenez(object):
             Radius ratio(s), can be a single float or an array of values for each passband
 
         :param u:
-            Array of limb darkening coefficients
-        
+            Either 1D (nldc) or 2D (npb,nldc) array of limb darkening coefficients (ldcs).
+            If 2D, the model returns ``npb`` light curves, each corresponding to an ldc set
+            described by a row of the ldc array.
+
         :param t0:
             Zero epoch
 
@@ -131,10 +140,12 @@ class Gimenez(object):
             Argument of periastron
 
         :param c: (optional, default=0)
-            Contamination factor
+            Contamination factor(s) ``c`` as a float or an array with ``c`` for each passband
         """
 
-        u = np.asfortranarray(u)
+        u   = np.asfortranarray(u)
+        npb = 1 if u.ndim == 1 else u.shape[0]
+        c   = np.ones(npb)*c
 
         ## Calculate the supersampling time array if not cached
         ##
@@ -173,19 +184,9 @@ class Gimenez(object):
         flux = self.__call__(z, _k, u, c, update)
 
         if self.ss:
-            flux = flux.reshape((self.npt, self.nss, u.shape[0])).mean(1)
+            flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
 
         flux = kf*(flux-1.)+1.
 
         return flux
         
-
-if __name__ == '__main__':
-    import numpy as np
-    import matplotlib.pyplot as pl
-
-    z = np.linspace(1e-7,1.3,1000)
-    for nldc,ldc,ls in zip([0,1,2], [[], [0], [0.3,0]], ['-','--',':']):
-        pl.plot(Gimenez(nldc=nldc, lerp=True)(z, 0.1, ldc), ls=ls,  c='0.0')
-    pl.ylim(0.988, 1.001)
-    pl.show()
