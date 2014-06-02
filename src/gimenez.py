@@ -134,6 +134,8 @@ class Gimenez(object):
             Contamination factor
         """
 
+        u = np.asfortranarray(u)
+
         ## Calculate the supersampling time array if not cached
         ##
         if t is not self.time:
@@ -158,8 +160,6 @@ class Gimenez(object):
             else:
                 z = of.z_eccentric_newton(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
 
-        u = np.asarray(u).reshape([-1, self.nldc]).T
-
         ## Check if we have multiple radius ratio (k) values, approximate the k with their
         ## mean if yes, and calculate the area ratio factors.
         ## 
@@ -171,9 +171,9 @@ class Gimenez(object):
             kf = 1.
             
         flux = self.__call__(z, _k, u, c, update)
-        
+
         if self.ss:
-            flux = flux.reshape((self.npt, self.nss, u.shape[1])).mean(1)
+            flux = flux.reshape((self.npt, self.nss, u.shape[0])).mean(1)
 
         flux = kf*(flux-1.)+1.
 
