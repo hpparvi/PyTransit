@@ -128,7 +128,7 @@ contains
 
     do i=1,npb
        ft_table(:,i) = 1._fd + ft_table(:,i) * (1._fd - contamination(i))
-       ie_table(:,i) = 1._fd + ft_table(:,i) * (1._fd - contamination(i))
+       ie_table(:,i) = 1._fd + ie_table(:,i) * (1._fd - contamination(i))
     end do
     ie_table(tsize,:npb) = 1._fd
 

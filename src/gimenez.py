@@ -94,6 +94,7 @@ class Gimenez(object):
         """
 
         u = np.reshape(u, [-1, self.nldc]).T
+        c = np.ones(u.shape[1])*c
         flux = self._eval(z, k, u, c, b, update)
 
         return flux if u.shape[1] > 1 else flux.ravel()
@@ -145,7 +146,6 @@ class Gimenez(object):
 
         u   = np.asfortranarray(u)
         npb = 1 if u.ndim == 1 else u.shape[0]
-        c   = np.ones(npb)*c
 
         ## Calculate the supersampling time array if not cached
         ##
