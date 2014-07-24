@@ -17,6 +17,10 @@ contains
     real(8) :: k,k2,z2,lam,x1,x2,x3,z,omega,kap0,kap1,q,Kk,Ek,Pk,n
     integer :: i
 
+    real(8), dimension(nz) :: ztmp, ftmp
+    logical, dimension(nz) :: mask
+    integer :: npt_t
+
     if(abs(k-0.5) < 1.d-3) then 
        k=0.5
     end if
@@ -24,11 +28,15 @@ contains
     k2 = k**2
     omega=1.-u(1)/3.d0-u(2)/6.d0
 
+    mask = (z0 > 0.d0) .and. (z0 < 1.d0+k)
+    npt_t = count(mask)    
+    ztmp(1:npt_t) = pack(z, mask)
+
     !$ call omp_set_num_threads(nthr)
-    !$omp parallel do default(none) shared(z0,flux,u,c,omega,k,k2,nz,mu, lambdad, etad, lambdae) &
+    !$omp parallel do default(none) shared(z0,flux,u,c,omega,k,k2,nz,npt_t,ztmp,ftmp,mu, lambdad, etad, lambdae) &
     !$omp private(z2,lam,x1,x2,x3,z,kap0,kap1,q,Kk,Ek,Pk,n)
-    do i=1,nz
-       z=z0(i)
+    do i=1,npt_t
+       z=ztmp(i)
        z2 = z**2
        x1=(k-z)**2
        x2=(k+z)**2
@@ -123,10 +131,11 @@ contains
           end if
           etad(i)=k2/2.0*(k2+2.0*z2)
        end if
-       flux(i) = 1.0-((1.0-u(1)-2.0*u(2))*lambdae(i)+(u(1)+2.0*u(2))*lambdad(i)+u(2)*etad(i))/omega
-       flux(i) = c + (1.0-c)*flux(i)
+       ftmp(i) = 1.0-((1.0-u(1)-2.0*u(2))*lambdae(i)+(u(1)+2.0*u(2))*lambdad(i)+u(2)*etad(i))/omega
+       ftmp(i) = c + (1.0-c)*flux(i)
     end do
     !$omp end parallel do
+    
   end subroutine eval
 
   real(8) function rc(x,y)
