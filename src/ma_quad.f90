@@ -1,4 +1,4 @@
-module ma_quad
+module mandelagol
   use omp_lib
   implicit none
 
@@ -7,7 +7,47 @@ module ma_quad
   real(8), parameter :: INV_PI = 1.d0/PI
 
 contains
-  subroutine eval(z0,k,u,c,nthr,nz,flux)
+
+  subroutine eval_uniform(z0,k,c,nthr,nz,flux)
+    implicit none
+    integer, intent(in) :: nz,nthr
+    real(8), intent(in) :: z0(nz), c
+    real(8), intent(out) :: flux(nz)
+    real(8) :: k,z,lambdae,kap0,kap1
+    integer :: i
+    
+    if(abs(k-0.5d0) < 1.d-3) then
+       k=0.5d0
+    end if
+
+    !$ call omp_set_num_threads(nthr)
+    !$omp parallel do default(none) shared(z0,k,c,nthr,nz,flux) &
+    !$omp private(i,z,lambdae,kap0,kap1)
+    do i=1,nz
+       z=z0(i)
+       if(z > 0.d0 .and. z > 1.d0+k) then
+          flux(i)=1.d0
+          
+       else if(k > 1.d0 .and. z < k-1.d0) then
+          flux(i)=0.d0
+          
+       else if(z > abs(1.d0-k) .and. z < 1.d0+k) then
+          kap1=acos(min((1.d0-k*k+z*z)/2.d0/z,1.d0))
+          kap0=acos(min((k*k+z*z-1.d0)/2.d0/k/z,1.d0))
+          lambdae=k*k*kap0+kap1
+          lambdae=(lambdae-0.5d0*sqrt(max(4.d0*z*z-(1.d0+z*z-k*k)**2,0.d0)))/pi
+          flux(i)=1.d0-lambdae
+
+       else if(z < 1.d0-k) then
+          flux(i)=1.d0-k*k
+       end if
+
+       flux(i) = c + (1.d0 - c)*flux(i)
+    end do
+    !$omp end parallel do
+  end subroutine eval_uniform
+
+  subroutine eval_quad(z0,k,u,c,nthr,nz,flux)
     implicit none
     integer, intent(in) :: nthr, nz
     real(8), intent(in), dimension(nz) :: z0
@@ -127,7 +167,7 @@ contains
        flux(i) = c + (1.0-c)*flux(i)
     end do
     !$omp end parallel do
-  end subroutine eval
+  end subroutine eval_quad
 
   real(8) function rc(x,y)
     real(8), intent(in) :: x,y
@@ -285,4 +325,4 @@ contains
     ek2=(b0+m1*(b1+m1*(b2+m1*(b3+m1*b4))))*log(m1)
     ellk=ek1-ek2
   end function ellk
-end module ma_quad
+end module mandelagol
