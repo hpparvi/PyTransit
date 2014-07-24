@@ -2,7 +2,6 @@ from __future__ import division
 import numpy as np
 import matplotlib.pyplot as pl
 
-
 from pytransit.gimenez import Gimenez
 
 from pytransit.orbits_cl import Orbit
@@ -17,8 +16,8 @@ t = np.linspace(0,5,500)
 
 t0, p, a, i = 1, 2, 7, 0.49*np.pi
 
-pl.plot(o.z_circular(t, t0, p, a, i))
-pl.plot(of.z_circular(t, t0, p, a, i, 0))
+#pl.plot(o.z_circular(t, t0, p, a, i))
+pl.plot(t, of.z_circular(t, t0, p, a, i, 0))
 
 pl.show()
 exit()

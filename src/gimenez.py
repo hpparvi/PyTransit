@@ -118,7 +118,7 @@ class Gimenez(object):
             Radius ratio(s), can be a single float or an array of values for each passband
 
         :param u:
-            Either 1D (nldc) or 2D (npb,nldc) array of limb darkening coefficients (ldcs).
+            Either 1D (nldc or npb*nldc) or 2D (npb,nldc) array of limb darkening coefficients (ldcs).
             If 2D, the model returns ``npb`` light curves, each corresponding to an ldc set
             described by a row of the ldc array.
 
@@ -184,7 +184,8 @@ class Gimenez(object):
         flux = self.__call__(z, _k, u, c, update)
 
         if self.ss:
-            flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
+            #flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
+            flux = flux.reshape((self.npt, self.nss)).mean(1)
 
         flux = kf*(flux-1.)+1.
 
