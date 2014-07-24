@@ -34,7 +34,6 @@ class TransitModel(object):
         self.nss = int(supersampling)
         self.exp = exptime
         self.time = None
-        self._eval = self._eval_lerp if lerp else self._eval_nolerp
 
 
     def __call__(self, z, k, u, c=0., update=True):

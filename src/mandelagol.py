@@ -6,7 +6,7 @@
 
 import numpy as np
 
-from ma_quad_f import ma_quad as ma
+from mandelagol_f import mandelagol as ma
 from orbits_f import orbits as of
 from tm import TransitModel
 
@@ -52,13 +52,23 @@ class MandelAgol(TransitModel):
       I2 = m(z2,k,u, update=False) # Evaluate the model for z2, don't update the interpolation table
     """
     def __init__(self, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598):
-        if nldc != 2:
-            raise NotImplementedError('Only the quadratic Mandel-Agol model is currently supported.')
+        if not (nldc == 0 or nldc == 2):
+            raise NotImplementedError('Only the uniform and quadratic Mandel-Agol models are currently supported.')
         super(MandelAgol, self).__init__(nldc, nthr, lerp, supersampling, exptime)
+    
+        if nldc == 0:
+            self._eval_nolerp = self._eval_nolerp_uniform
+        else:
+            self._eval_nolerp = self._eval_nolerp_quadratic
+
+        self._eval = self._eval_lerp if lerp else self._eval_nolerp
 
 
-    def _eval_nolerp(self, z, k, u, c, update):
-        return ma.eval(z, k, u, c, self.nthr)
+    def _eval_nolerp_quadratic(self, z, k, u, c, update):
+        return ma.eval_quad(z, k, u, c, self.nthr)
+
+    def _eval_nolerp_uniform(self, z, k, u, c, update):
+        return ma.eval_uniform(z, k, c, self.nthr)
 
 
     def _eval_lerp(self, z, k, u, c, update):

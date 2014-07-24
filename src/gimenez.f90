@@ -42,7 +42,7 @@ module gimenez
   integer, parameter :: FS = C_FLOAT
   integer, parameter :: FD = C_DOUBLE
 
-  real(8), parameter :: PI = 3.1415926525_fd
+  real(8), parameter :: PI = acos(-1.0d0)
   real(8), parameter :: HALF_PI = 0.5_fd * PI
 
 contains
