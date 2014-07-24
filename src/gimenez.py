@@ -15,8 +15,9 @@ import numpy as np
 from math import fabs
 from gimenez_f import gimenez as g
 from orbits_f import orbits as of
+from tm import TransitModel
 
-class Gimenez(object):
+class Gimenez(TransitModel):
     """
     Exoplanet transit light curve model by A. Gimenez (A&A 450, 1231--1237, 2006).
 
@@ -58,18 +59,9 @@ class Gimenez(object):
       I2 = m(z2,k,u, update=False) # Evaluate the model for z2, don't update the interpolation table
     """
     def __init__(self, npol=100, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598):
+        super(Gimenez,self).__init__(nldc,nthr,lerp,supersampling,exptime)
         self._coeff_arr = g.init_arrays(npol, nldc)
         self.npol = npol
-        self.nldc = nldc
-        self.nthr = nthr
-
-        self.ss  = bool(supersampling)
-        self.nss = int(supersampling)
-        self.exp = exptime
-
-        self.time = None
-
-        self._eval = self._eval_lerp if lerp else self._eval_nolerp
 
 
     def __call__(self, z, k, u, c=0., b=1e-8, update=True):
@@ -96,7 +88,6 @@ class Gimenez(object):
         u = np.reshape(u, [-1, self.nldc]).T
         c = np.ones(u.shape[1])*c
         flux = self._eval(z, k, u, c, b, update)
-
         return flux if u.shape[1] > 1 else flux.ravel()
 
 
@@ -147,30 +138,6 @@ class Gimenez(object):
         u   = np.asfortranarray(u)
         npb = 1 if u.ndim == 1 else u.shape[0]
 
-        ## Calculate the supersampling time array if not cached
-        ##
-        if t is not self.time:
-            self.time = t
-            self._time = np.asarray(t)
-            self.npt = self._time.size
-
-            if self.ss:
-                self.dt = self.exp / float(self.nss)
-                self._time = np.array([[tt + (-1)**(iss%2)*(0.5*self.dt + iss//2*self.dt)
-                                        for iss in range(self.nss)] for tt in self._time]).ravel()
-
-        ## Calculate the normalised projected distance
-        ##
-        if lerp_z:
-            z = of.z_eccentric_ip(self._time, t0, p, a, i, e, w, nthreads=self.nthr, update=True)
-        else:
-            if fabs(e) < 0.01:
-                z = of.z_circular(self._time, t0, p, a, i, nthreads=self.nthr)
-            elif fabs(e) < 0.2:
-                z = of.z_eccentric_ps3(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
-            else:
-                z = of.z_eccentric_newton(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
-
         ## Check if we have multiple radius ratio (k) values, approximate the k with their
         ## mean if yes, and calculate the area ratio factors.
         ## 
@@ -181,13 +148,13 @@ class Gimenez(object):
             _k = k
             kf = 1.
             
+        z = self._calculate_z(t, t0, p, a, i, e, w, lerp_z)
         flux = self.__call__(z, _k, u, c, update)
 
         if self.ss:
-            #flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
-            flux = flux.reshape((self.npt, self.nss)).mean(1)
+            if npb == 1:
+                flux = flux.reshape((self.npt, self.nss)).mean(1)
+            else:
+                flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
 
-        flux = kf*(flux-1.)+1.
-
-        return flux
-        
+        return kf*(flux-1.)+1.
