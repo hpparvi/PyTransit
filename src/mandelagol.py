@@ -65,7 +65,11 @@ class MandelAgol(TransitModel):
 
 
     def _eval_nolerp_quadratic(self, z, k, u, c, update):
-        return ma.eval_quad(z, k, u, c, self.nthr)
+        if np.asarray(u).size != self.nldc:
+            u = np.reshape(u, [-1, self.nldc]).T
+            return ma.eval_quad_multiband(z, k, u, c, self.nthr)
+        else:
+            return ma.eval_quad(z, k, u, c, self.nthr)
 
     def _eval_nolerp_uniform(self, z, k, u, c, update):
         return ma.eval_uniform(z, k, c, self.nthr)
