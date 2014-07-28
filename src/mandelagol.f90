@@ -284,6 +284,7 @@ contains
     real(8), intent(in) :: k, u(2,npb), c, edt(nk,nz), ldt(nk,nz), let(nk,nz), kt(nk), zt(nz)
     real(8), intent(out), dimension(npt, npb) :: flux
     real(8) :: ak, az, dk, dz, ed, le, ld, omega(npb)
+    real(8), dimension(2,:npt) :: ed2, le2, ld2
     integer :: ik, iz, i, j
 
     if (k<kt(1) .or. k>kt(nk)) then
@@ -297,7 +298,12 @@ contains
        ik = floor((k-kt(1))/dk) + 1
        ak = (k-kt(ik))/dk
 
-       !$omp parallel do default(none) private(i,j,iz,az,ed,le,ld) shared(z,zt,dz,u,c,npt,k,flux,ik,ak,edt,let,ldt,npb,omega)
+       ed2 = edt(ik:ik+1,:)
+       le2 = let(ik:ik+1,:)
+       ld2 = ldt(ik:ik+1,:)
+
+       !$omp parallel do default(none) private(i,j,iz,az,ed,le,ld)
+       !$omp shared(z,zt,dz,u,c,npt,k,flux,ik,ak,edt,let,ldt,npb,omega,ed2,le2,ld2)
        do i=1,npt
           if (z(i) >= 1.d0+k) then
              flux(i,:) = 1.d0
@@ -305,20 +311,20 @@ contains
              iz = floor((z(i)-zt(1))/dz) + 1
              az = (z(i)-zt(iz))/dz
 
-             ed =     edt(ik,  iz  )*(1.d0-ak)*(1.d0-az) &
-                  & + edt(ik+1,iz  )*ak*(1.d0-az) &
-                  & + edt(ik,  iz+1)*(1.d0-ak)*az &
-                  & + edt(ik+1,iz+1)*ak*az
+             ed =     ed2(ik,  iz  )*(1.d0-ak)*(1.d0-az) &
+                  & + ed2(ik+1,iz  )*ak*(1.d0-az) &
+                  & + ed2(ik,  iz+1)*(1.d0-ak)*az &
+                  & + ed2(ik+1,iz+1)*ak*az
 
-             le =     let(ik,  iz  )*(1.d0-ak)*(1.d0-az) &
-                  & + let(ik+1,iz  )*ak*(1.d0-az) &
-                  & + let(ik,  iz+1)*(1.d0-ak)*az &
-                  & + let(ik+1,iz+1)*ak*az
+             le =     le2(ik,  iz  )*(1.d0-ak)*(1.d0-az) &
+                  & + le2(ik+1,iz  )*ak*(1.d0-az) &
+                  & + le2(ik,  iz+1)*(1.d0-ak)*az &
+                  & + le2(ik+1,iz+1)*ak*az
 
-             ld =     ldt(ik,  iz  )*(1.d0-ak)*(1.d0-az) &
-                  & + ldt(ik+1,iz  )*ak*(1.d0-az) &
-                  & + ldt(ik,  iz+1)*(1.d0-ak)*az &
-                  & + ldt(ik+1,iz+1)*ak*az
+             ld =     ld2(ik,  iz  )*(1.d0-ak)*(1.d0-az) &
+                  & + ld2(ik+1,iz  )*ak*(1.d0-az) &
+                  & + ld2(ik,  iz+1)*(1.d0-ak)*az &
+                  & + ld2(ik+1,iz+1)*ak*az
 
              do j=1,npb
                 flux(i,j) = 1.0-((1.0-u(1,j)-2.0*u(2,j))*le+(u(1,j)+2.0*u(2,j))*ld+u(2,j)*ed)/omega(j)
