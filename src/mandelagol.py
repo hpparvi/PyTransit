@@ -51,15 +51,22 @@ class MandelAgol(TransitModel):
       I1 = m(z1,k,u)               # Evaluate the model for z1, update the interpolation table
       I2 = m(z2,k,u, update=False) # Evaluate the model for z2, don't update the interpolation table
     """
-    def __init__(self, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598):
+    def __init__(self, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598, klims=(0.07,0.13), nk=128, nz=256):
         if not (nldc == 0 or nldc == 2):
             raise NotImplementedError('Only the uniform and quadratic Mandel-Agol models are currently supported.')
         super(MandelAgol, self).__init__(nldc, nthr, lerp, supersampling, exptime)
-    
+
+        if lerp:
+            self.ed,self.le,self.ld,self.kt,self.zt = ma.calculate_interpolation_tables(klims[0],klims[1],nk,nz,4)
+            self.klims = klims
+            self.nk = nk
+            self.nz = nz
+            
         if nldc == 0:
             self._eval_nolerp = self._eval_nolerp_uniform
         else:
             self._eval_nolerp = self._eval_nolerp_quadratic
+            self._eval_lerp   = self._eval_lerp_quadratic
 
         self._eval = self._eval_lerp if lerp else self._eval_nolerp
 
@@ -74,9 +81,10 @@ class MandelAgol(TransitModel):
     def _eval_nolerp_uniform(self, z, k, u, c, update):
         return ma.eval_uniform(z, k, c, self.nthr)
 
-
-    def _eval_lerp(self, z, k, u, c, update):
-        return ma.eval_lerp(z, k, u, c, self.nthr, update, *self._coeff_arr)
+    def _eval_lerp_quadratic(self, z, k, u, c, update):
+        if np.asarray(u).size != self.nldc:
+            u = np.reshape(u, [-1, self.nldc]).T
+        return ma.eval_quad_bilerp(z,k,u,c,self.nthr, self.ed,self.ld,self.le,self.kt,self.zt)
 
 
     def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, lerp_z=False):

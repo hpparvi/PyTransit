@@ -5,6 +5,7 @@ module mandelagol
   real(8), parameter :: PI = acos(-1.d0)
   real(8), parameter :: HALF_PI = 0.5d0*PI
   real(8), parameter :: INV_PI = 1.d0/PI
+  integer, parameter :: MAXITER = 500
 
 contains
 
@@ -288,6 +289,7 @@ contains
     if (k<kt(1) .or. k>kt(nk)) then
        flux = 0.d0
     else
+       !$ call omp_set_num_threads(nthr)
        omega=1.-u(1,:)/3.d0-u(2,:)/6.d0
        dk = kt(2) - kt(1)
        dz = zt(2) - zt(1)
@@ -295,6 +297,7 @@ contains
        ik = floor((k-kt(1))/dk) + 1
        ak = (k-kt(ik))/dk
 
+       !$omp parallel do default(none) private(i,j,iz,az,ed,le,ld) shared(z,zt,dz,u,c,npt,k,flux,ik,ak,edt,let,ldt,npb,omega)
        do i=1,npt
           if (z(i) >= 1.d0+k) then
              flux(i,:) = 1.d0
@@ -323,6 +326,7 @@ contains
              flux(i,:) = c + (1.0-c)*flux(i,:)
           end if
        end do
+       !$omp end parallel do
     end if
 
   end subroutine eval_quad_bilerp
@@ -331,7 +335,7 @@ contains
     implicit none
     integer, intent(in) :: nk,nz,nthr
     real(8), intent(in) :: kmin,kmax
-    real(8), intent(out), dimension(nk,nz) :: ed,ld,le
+    real(8), intent(out), dimension(nk,nz) :: ed,le,ld
     real(8), intent(out) :: zt(nz), kt(nk)
     real(8) :: k,z,k2,z2,lam,x1,x2,x3,omega,kap0,kap1,q,Kk,Ek,Pk,n
     integer :: i,j
@@ -339,7 +343,7 @@ contains
     !! FIXME: The code stalls for some combinations of k and z. Find out why and fix.
 
     zt = [((1+kmax)/real(nz-1,8)*i, i=0,nz-1)]
-    kt = [(kmin+1.d-4 + (kmax-kmin)/real(nk-1,8)*i, i=0,nk-1)]
+    kt = [(kmin + (kmax-kmin)/real(nk-1,8)*i, i=0,nk-1)]
     
     !$ call omp_set_num_threads(1)
     do j=1,nk
@@ -445,6 +449,7 @@ contains
     real(8), intent(in) :: x,y
     real(8), parameter :: ERRTOL=0.040, THIRD=1.0/3.0, C1=0.30, C2=1.0/7.0, C3=0.3750, C4=9.0/22.0
     real(8) :: alamb,ave,s,w,xt,yt
+    integer :: i
 
     if(y > 0.0) then
        xt=x
@@ -457,12 +462,13 @@ contains
     end if
 
     s = 1.d3
-    do while(abs(s) > ERRTOL)
+    do while(abs(s) > ERRTOL .and. i<MAXITER)
        alamb=2.0*sqrt(xt)*sqrt(yt)+yt
        xt=0.250*(xt+alamb)
        yt=0.250*(yt+alamb)
        ave=THIRD*(xt+yt+yt)
        s=(yt-ave)/ave
+       i=i+1
     end do
 
     rc=w*(1.0+s*s*(C1+s*(C2+s*(C3+s*C4))))/sqrt(ave)
@@ -477,6 +483,8 @@ contains
 
     real(8) :: a,alamb,alpha,ave,b,beta,delp,delx,dely,delz,ea,eb,ec,ed,ee,&
          & fac,pt,rcx,rho,sqrtx,sqrty,sqrtz,sum,tau,xt,yt,zt
+
+    integer :: i
 
     sum=0.0
     fac=1.0
@@ -498,7 +506,7 @@ contains
     end if
 
     delx = 1.d3
-    do while(max(abs(delx),abs(dely),abs(delz),abs(delp)) > ERRTOL)
+    do while(max(abs(delx),abs(dely),abs(delz),abs(delp)) > ERRTOL .and. i<MAXITER)
        sqrtx=sqrt(xt)
        sqrty=sqrt(yt)
        sqrtz=sqrt(zt)
@@ -516,6 +524,7 @@ contains
        dely=(ave-yt)/ave
        delz=(ave-zt)/ave
        delp=(ave-pt)/ave
+       i = i+1
     end do
 
     ea=delx*(dely+delz)+dely*delz
@@ -531,12 +540,13 @@ contains
     real(8), intent(in) :: x,y,z
     real(8), parameter :: ERRTOL=.080,THIRD=1.0/3.0,C1=1.0/24.0,C2=.10,C3=3.0/44.0,C4=1.0/14.0
     real(8) :: alamb,ave,delx,dely,delz,e2,e3,sqrtx,sqrty,sqrtz,xt,yt,zt
+    integer :: i
     xt=x
     yt=y
     zt=z
 
     delx = 1.d3
-    do while(max(abs(delx),abs(dely),abs(delz)) > ERRTOL)
+    do while(max(abs(delx),abs(dely),abs(delz)) > ERRTOL .and. i<MAXITER)
        sqrtx=sqrt(xt)
        sqrty=sqrt(yt)
        sqrtz=sqrt(zt)
