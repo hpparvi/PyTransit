@@ -276,6 +276,170 @@ contains
     !$omp end parallel do
   end subroutine eval_quad_multiband
 
+  subroutine eval_quad_bilerp(z,k,u,c,nthr,edt,ldt,let,kt,zt,npt,npb,nk,nz,flux)
+    implicit none
+    integer, intent(in) :: nthr, npt, npb, nk, nz
+    real(8), intent(in), dimension(npt) :: z
+    real(8), intent(in) :: k, u(2,npb), c, edt(nk,nz), ldt(nk,nz), let(nk,nz), kt(nk), zt(nz)
+    real(8), intent(out), dimension(npt, npb) :: flux
+    real(8) :: ak, az, dk, dz, ed, le, ld, omega(npb)
+    integer :: ik, iz, i, j
+
+    if (k<kt(1) .or. k>kt(nk)) then
+       flux = 0.d0
+    else
+       omega=1.-u(1,:)/3.d0-u(2,:)/6.d0
+       dk = kt(2) - kt(1)
+       dz = zt(2) - zt(1)
+
+       ik = floor((k-kt(1))/dk) + 1
+       ak = (k-kt(ik))/dk
+
+       do i=1,npt
+          if (z(i) >= 1.d0+k) then
+             flux(i,:) = 1.d0
+          else
+             iz = floor((z(i)-zt(1))/dz) + 1
+             az = (z(i)-zt(iz))/dz
+
+             ed =     edt(ik,  iz  )*(1.d0-ak)*(1.d0-az) &
+                  & + edt(ik+1,iz  )*ak*(1.d0-az) &
+                  & + edt(ik,  iz+1)*(1.d0-ak)*az &
+                  & + edt(ik+1,iz+1)*ak*az
+
+             le =     let(ik,  iz  )*(1.d0-ak)*(1.d0-az) &
+                  & + let(ik+1,iz  )*ak*(1.d0-az) &
+                  & + let(ik,  iz+1)*(1.d0-ak)*az &
+                  & + let(ik+1,iz+1)*ak*az
+
+             ld =     ldt(ik,  iz  )*(1.d0-ak)*(1.d0-az) &
+                  & + ldt(ik+1,iz  )*ak*(1.d0-az) &
+                  & + ldt(ik,  iz+1)*(1.d0-ak)*az &
+                  & + ldt(ik+1,iz+1)*ak*az
+
+             do j=1,npb
+                flux(i,j) = 1.0-((1.0-u(1,j)-2.0*u(2,j))*le+(u(1,j)+2.0*u(2,j))*ld+u(2,j)*ed)/omega(j)
+             end do
+             flux(i,:) = c + (1.0-c)*flux(i,:)
+          end if
+       end do
+    end if
+
+  end subroutine eval_quad_bilerp
+
+  subroutine calculate_interpolation_tables(kmin,kmax,nk,nz,nthr,ed,le,ld,kt,zt)
+    implicit none
+    integer, intent(in) :: nk,nz,nthr
+    real(8), intent(in) :: kmin,kmax
+    real(8), intent(out), dimension(nk,nz) :: ed,ld,le
+    real(8), intent(out) :: zt(nz), kt(nk)
+    real(8) :: k,z,k2,z2,lam,x1,x2,x3,omega,kap0,kap1,q,Kk,Ek,Pk,n
+    integer :: i,j
+
+    !! FIXME: The code stalls for some combinations of k and z. Find out why and fix.
+
+    zt = [((1+kmax)/real(nz-1,8)*i, i=0,nz-1)]
+    kt = [(kmin+1.d-4 + (kmax-kmin)/real(nk-1,8)*i, i=0,nk-1)]
+    
+    !$ call omp_set_num_threads(1)
+    do j=1,nk
+       k = kt(j)
+       k2 = k**2
+       !$omp parallel do default(none) shared(omega,kt,zt,k,k2,nz,j,ed,ld,le) &
+       !$omp private(z,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n)
+       do i=1,nz
+          z=zt(i)
+          z2=z**2
+          x1=(k-z)**2
+          x2=(k+z)**2
+          x3=k**2-z**2
+
+          if(z < 0.d0 .or. z > 1.d0+k) then
+             ld(j,i)=0.d0
+             ed(j,i)=0.d0
+             le(j,i)=0.d0
+
+          else if(k > 1.d0 .and. z < k-1.d0) then
+             ld(j,i)=1.d0
+             ed(j,i)=1.d0
+             le(j,i)=1.d0
+
+          ! the source is partly occulted and the occulting object crosses the limb:
+          ! Equation (26):
+          else if(z > abs(1.d0-k) .and. z < 1.d0+k) then
+             kap1=acos(min((1.d0-k2+z2)/2.d0/z,1.d0))
+             kap0=acos(min((k2+z2-1.d0)/2.d0/k/z,1.d0))
+             le(j,i) = k2*kap0+kap1
+             le(j,i) = (le(j,i)-0.5d0*sqrt(max(4.d0*z2-(1.d0+z2-k2)**2,0.d0)))*INV_PI
+          end if
+
+          ! the occulting object transits the source star (but doesn't completely cover it):
+          if(z < 1.d0-k) then
+             le(j,i)=k2
+          end if
+
+          ! the edge of the occulting star lies at the origin- special expressions in this case:
+          if(abs(z-k) < 1.d0-4*(z+k)) then
+             ! Table 3, Case V.:
+             if(z > 0.5d0) then
+                lam=HALF_PI
+                q=0.5d0/k
+                Kk=ellk(q)
+                Ek=ellec(q)
+                ld(j,i)= 1.d0/3.d0+16.d0*k/9.d0*INV_PI * (2.d0*k2-1.d0)*Ek-(32.d0*k**4-20.d0*k2+3.d0)/9.d0*INV_PI/k*Kk
+                ed(j,i)= 1.d0/2.d0*INV_PI * (kap1+k2*(k2+2.d0*z2)*kap0-(1.d0+5.d0*k2+z2)/4.d0*sqrt((1.d0-x1)*(x2-1.d0)))
+                if(k == 0.5d0) then
+                   ld(j,i)=1.d0/3.d0-4.d0*INV_PI/9.d0
+                   ed(j,i)=3.d0/32.d0
+                end if
+             else
+                ! Table 3, Case VI.:
+                lam=HALF_PI
+                q=2.d0*k
+                Kk=ellk(q)
+                Ek=ellec(q)
+                ld(j,i)=1.d0/3.d0+2.d0/9.d0*INV_PI*(4.d0*(2.d0*k2-1.d0)*Ek+(1.d0-4.d0*k2)*Kk)
+                ed(j,i)=k2/2.d0*(k2+2.d0*z2)
+             end if
+          end if
+
+          ! the occulting star partly occults the source and crosses the limb:
+          ! Table 3, Case III:
+          if((z > 0.5d0+abs(k-0.5d0) .and. z < 1.d0+k).or.(k > 0.5d0 .and. z > abs(1.d0-k)*1.0001d0 .and. z < k)) then
+             lam=HALF_PI
+             q=sqrt((1.d0-(k-z)**2)/4.d0/z/k)
+             Kk=ellk(q)
+             Ek=ellec(q)
+             n=1.d0/x1-1.d0
+             Pk=Kk-n/3.d0*rj(0.d0, 1.d0-q*q, 1.d0, 1.d0+n)
+             ld(j,i)= 1.d0/9.d0*INV_PI/sqrt(k*z) * (((1.d0-x2)*(2.d0*x2+x1-3.d0)-3.d0*x3*(x2-2.d0)) &
+                  & *Kk+4.d0*k*z*(z2+7.d0*k2-4.d0)*Ek-3.d0*x3/x1*Pk)
+             if(z < k) then
+                ld(j,i)=ld(j,i)+2.d0/3.d0
+             end if
+             ed(j,i)= 1.d0/2.d0*INV_PI * (kap1+k2*(k2+2.d0*z2)*kap0-(1.d0+5.d0*k2+z2)/4.d0*sqrt((1.d0-x1)*(x2-1.d0)))
+          end if
+
+          ! the occulting star transits the source:
+          ! Table 3, Case IV.:
+          if(k < 1.d0 .and. z < (1.d0-k)*1.0001d0) then
+             lam=HALF_PI
+             q=sqrt((x2-x1)/(1.d0-x1))
+             Kk=ellk(q)
+             Ek=ellec(q)
+             n=x2/x1-1.d0
+             Pk=Kk-n/3.d0*rj(0.0d0,1.d0-q*q,1.d0,1.d0+n)
+             ld(j,i)=2.d0/9.d0*INV_PI/sqrt(1.d0-x1)*((1.d0-5.d0*z2+k2+x3*x3)*Kk+(1.d0-x1)*(z2+7.d0*k2-4.d0)*Ek-3.d0*x3/x1*Pk)
+             if(z < k) ld(j,i)=ld(j,i)+2.d0/3.d0
+             if(abs(k+z-1.d0) < 1.d-4) then
+                ld(j,i)= 2.d0/3.d0*INV_PI*acos(1.d0-2.d0*k)-4.d0/9.d0*INV_PI*sqrt(k*(1.d0-k))*(3.d0+2.d0*k-8.d0*k2)
+             end if
+             ed(j,i)= k2/2.d0*(k2+2.d0*z2)
+          end if
+       end do
+       !$omp end parallel do
+    end do
+  end subroutine calculate_interpolation_tables
 
   real(8) function rc(x,y)
     real(8), intent(in) :: x,y
