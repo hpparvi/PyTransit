@@ -72,19 +72,41 @@ class MandelAgol(TransitModel):
 
 
     def _eval_nolerp_quadratic(self, z, k, u, c, update):
-        if np.asarray(u).size != self.nldc:
-            u = np.reshape(u, [-1, self.nldc]).T
-            return ma.eval_quad_multiband(z, k, u, c, self.nthr)
-        else:
-            return ma.eval_quad(z, k, u, c, self.nthr)
+        u = np.asarray(u, order='F').T
+        if u.ndim == 1:
+            u = u[:,np.newaxis]
+
+        return ma.eval_quad_multiband(z, k, u, c, self.nthr)
 
     def _eval_nolerp_uniform(self, z, k, u, c, update):
         return ma.eval_uniform(z, k, c, self.nthr)
 
     def _eval_lerp_quadratic(self, z, k, u, c, update):
-        if np.asarray(u).size != self.nldc:
-            u = np.reshape(u, [-1, self.nldc]).T
+        u = np.asarray(u, order='F').T
+        if u.ndim == 1:
+            u = u[:,np.newaxis]
+
         return ma.eval_quad_bilerp(z,k,u,c,self.nthr, self.ed,self.ld,self.le,self.kt,self.zt)
+
+
+    def __call__(self, z, k, u, c=0., b=1e-8, update=True):
+        """Evaluate the model
+
+        :param z:
+            Array of normalised projected distances
+        
+        :param k:
+            Planet to star radius ratio
+        
+        :param u:
+            Array of limb darkening coefficients
+        
+        :param c:
+            Contamination factor (fraction of third light)
+            
+        """
+        flux = self._eval(z, k, u, c, update)
+        return flux if np.asarray(u).ndim > 1 else flux.ravel()
 
 
     def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, lerp_z=False):

@@ -182,7 +182,7 @@ contains
     res  = 0._fd
     mask = (z > 0._fd) .and. (z < 1._fd+k)
     npt_t = count(mask)
-    
+
     tmp1(1:npt_t) = pack(z, mask)
     tmp2(1:npt_t,:) = gimenez_m(tmp1(1:npt_t), k, u, npol, nldc, npb, anm, avl, ajd, aje)
 

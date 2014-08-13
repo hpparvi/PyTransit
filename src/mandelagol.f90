@@ -175,7 +175,7 @@ contains
     end if
 
     k2 = k**2
-    omega=1.-u(1,:)/3.d0-u(2,:)/6.d0
+    omega=1.d0-u(1,:)/3.d0-u(2,:)/6.d0
 
     !$ call omp_set_num_threads(nthr)
     !$omp parallel do default(none) shared(z0,flux,u,c,omega,k,k2,npt,npb) &
@@ -270,7 +270,7 @@ contains
        end if
 
        do j=1,npb
-          flux(i,j) = 1.0-((1.0-u(1,j)-2.0*u(2,j))*le+(u(1,j)+2.0*u(2,j))*ld+u(2,j)*ed)/omega(j)
+          flux(i,j) = 1.d0 - ((1.d0-u(1,j)-2.d0*u(2,j))*le + (u(1,j)+2.d0*u(2,j))*ld + u(2,j)*ed)/omega(j)
        end do
        flux(i,:) = c + (1.0-c)*flux(i,:)
     end do
@@ -291,15 +291,15 @@ contains
        flux = 0.d0
     else
        !$ call omp_set_num_threads(nthr)
-       omega=1.-u(1,:)/3.d0-u(2,:)/6.d0
+       omega=1.d0 - u(1,:)/3.d0 - u(2,:)/6.d0
        dk = kt(2) - kt(1)
        dz = zt(2) - zt(1)
 
        ik = floor((k-kt(1))/dk) + 1
        ak = (k-kt(ik))/dk
 
-       !! Copy the k-rows into smaller interpolation arrays, better for memory access
-       !! (yes, this actually increases the computations notably)
+       !! Copy the k-rows into smaller interpolation arrays for better memory access
+       !! (yes, this actually speeds up the code notably)
        ed2 = edt(ik:ik+1,:)
        le2 = let(ik:ik+1,:)
        ld2 = ldt(ik:ik+1,:)
@@ -329,7 +329,7 @@ contains
                   & + ld2(2,iz+1)*ak*az
 
              do j=1,npb
-                flux(i,j) = 1.0-((1.0-u(1,j)-2.0*u(2,j))*le+(u(1,j)+2.0*u(2,j))*ld+u(2,j)*ed)/omega(j)
+                flux(i,j) = 1.d0 - ((1.d0-u(1,j)-2.d0*u(2,j))*le + (u(1,j)+2.d0*u(2,j))*ld + u(2,j)*ed)/omega(j)
              end do
              flux(i,:) = c + (1.0-c)*flux(i,:)
           end if
@@ -345,7 +345,7 @@ contains
     real(8), intent(in) :: kmin,kmax
     real(8), intent(out), dimension(nk,nz) :: ed,le,ld
     real(8), intent(out) :: zt(nz), kt(nk)
-    real(8) :: k,z,k2,z2,lam,x1,x2,x3,omega,kap0,kap1,q,Kk,Ek,Pk,n
+    real(8) :: k,z,k2,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n
     integer :: i,j
 
     !! FIXME: The code stalls for some combinations of k and z. Find out why and fix.
@@ -357,7 +357,7 @@ contains
     do j=1,nk
        k = kt(j)
        k2 = k**2
-       !$omp parallel do default(none) shared(omega,kt,zt,k,k2,nz,j,ed,ld,le) &
+       !$omp parallel do default(none) shared(kt,zt,k,k2,nz,j,ed,ld,le) &
        !$omp private(z,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n)
        do i=1,nz
           z=zt(i)
