@@ -1,11 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as pl
-from pytransit import Gimenez, MandelAgol
-from pytransit.mandelagol_f import mandelagol as ma
+from pytransit import Gimenez, MandelAgol, z_circular
 
 m_mad = MandelAgol()
 m_mal = MandelAgol(lerp=True)
 m_gmd = Gimenez()
+
+t = np.linspace(0,2,100)
+pl.plot(t, z_circular(t, 1, 1, 3, 0.5*np.pi, nthreads=4))
+pl.show()
 
 u = [[0.1,0.1],[0.2,0.2],[0.6,0.3]]
 #u = [0.2,0.2]
