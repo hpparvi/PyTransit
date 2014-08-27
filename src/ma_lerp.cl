@@ -18,9 +18,6 @@ __kernel void ma(__global const float *z, __global const float *u,
   const float u1 = u[  2*ipb];
   const float u2 = u[1+2*ipb];
 
-  //const float u1 = u[ipb];
-  //const float u2 = u[ipb + 2*npb];
-
   if (k<k0 | k>k1 | z[ipt] >= 1.f+k){
     flux[oid] = 1.0f;
   }

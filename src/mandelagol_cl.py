@@ -48,7 +48,7 @@ class MandelAgolCL(TransitModel):
         self.nz    = np.int32(nz)
         self.nptb  = 0
         self.npb   = 0
-        self.u     = None 
+        self.u     = np.array([])
         self.f     = None
         self.k0, self.k1 = map(np.float32, self.kt[[0,-1]])
         self.dk = np.float32(self.kt[1]-self.kt[0])
@@ -68,11 +68,11 @@ class MandelAgolCL(TransitModel):
         self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'ma_lerp.cl'),'r').read()).build()
 
 
-    def _eval(self, z, k, u, *nargs, **kwargs):
+    def _eval(self, z, k, u, c, update=True, copy_f_buffer=True, copy_z_buffer=True, *nargs, **kwargs):
         z = np.asarray(z, np.float32)
-        u = np.asarray(u, np.float32, order='C').T
+        u = np.array(u, np.float32, order='C').T
 
-        if (z.size != self.nptb) or (u.shape[1] != self.npb):
+        if (z.size != self.nptb) or (u.size != self.u.size):
             if self._b_z is not None:
                 self._b_z.release()
                 self._b_f.release()
@@ -89,7 +89,8 @@ class MandelAgolCL(TransitModel):
             self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.f.nbytes)
             self._b_u = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.u)
 
-        cl.enqueue_copy(self.queue, self._b_z, z)
+        if copy_z_buffer:
+            cl.enqueue_copy(self.queue, self._b_z, z)
         cl.enqueue_copy(self.queue, self._b_u, u)
 
         self.prg.ma(self.queue, self.f.shape, None, self._b_z, self._b_u,
@@ -97,11 +98,12 @@ class MandelAgolCL(TransitModel):
                     np.float32(k), self.k0, self.k1,
                     self.nk, self.nz, self.dk, self.dz, self._b_f)
 
-        cl.enqueue_copy(self.queue, self.f, self._b_f)
+        if copy_f_buffer:
+            cl.enqueue_copy(self.queue, self.f, self._b_f)
         return self.f
 
 
-    def __call__(self, z, k, u, c=0., b=1e-8, update=True):
+    def __call__(self, z, k, u, c=0., b=1e-8, update=True, **kwargs):
         """Evaluate the model
 
         :param z:
@@ -120,7 +122,7 @@ class MandelAgolCL(TransitModel):
 
         #u = np.reshape(u, [-1, self.nldc]).T
         #c = np.ones(u.shape[1])*c
-        flux = self._eval(z, k, u, c, update)
+        flux = self._eval(z, k, u, c, update, **kwargs)
         return flux if np.asarray(u).ndim > 1 else flux.ravel()
 
     def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, lerp_z=False):
