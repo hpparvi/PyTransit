@@ -4,7 +4,7 @@ PyTransit
 Fast and easy-to-use tools for exoplanet transit light curve modelling using Python or Fortran.
 
 
-    from pytransit.gimenez import Gimenez
+    from pytransit import Gimenez
     m = Gimenez()
     f = m.evaluate(t, *pv)
 
@@ -13,8 +13,13 @@ Fast and easy-to-use tools for exoplanet transit light curve modelling using Pyt
 Modules
 -------
 Transit models
-  - Optimized and parallelized Fortran implementation of the transit model by A. Gimenez (A&A 450, 1231--1237, 2006).
+  - Series-expansion based transit model by A. Gimenez (A&A 450, 1231--1237, 2006).
+  - Quadratic limb-darkening transit model by Mandel & Agol (ApJ 580, L171–L175, 2002).
+ 
+  - Common features
+    - Optimized and parallelized Fortran implementatios. 
     - Can calculate the transit model simultaneously for several limb darkening coefficient sets.
+    - Built-in model interpolation for the modelling of large datasets.
     - Built-in supersampling.
 
 Utilities
@@ -41,9 +46,16 @@ Examples
 ### Basics
 Basic usage is simple:
 
-    from pytransit.gimenez import Gimenez
+    from pytransit import Gimenez
     
     m = Gimenez()
+    f = m.evaluate(t, *pv)
+
+or
+
+    from pytransit import MandelAgol
+    
+    m = MandelAgol()
     f = m.evaluate(t, *pv)
 
 Here we first initialize the model accepting the defaults (quadratic limb darkening law, no supersampling, 
@@ -53,7 +65,7 @@ a list containing the system parameters.
 For a slightly more useful example, we can do:
 
     import numpy as np
-    from pytransit.gimenez import Gimenez
+    from pytransit import Gimenez
     
     t = np.linspace(0.8,1.2,500)
     k, t0, p, a, i, e, w = 0.1, 1.01, 4, 8, 0.48*np.pi, 0.2, 0.5*np.pi
