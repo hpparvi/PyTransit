@@ -501,8 +501,6 @@ contains
     !$omp end parallel do
   end subroutine ta_eccentric_ip
 
-
-
   !! Approximate shift of the minima (quite good for e < 0.5)
   !! Kallrath, J., "Eclipsing Binary Stars: Modeling and Analysis", p. 85
   real(fd) function eclipse_shift_ap(p, i, e, w)
@@ -592,6 +590,5 @@ contains
     real(fd), intent(in) :: a, i, e, w, tr_sign
     impact_parameter_ec = a * cos(i) * ((1-e**2) / (1+tr_sign*e*sin(w)))
   end function impact_parameter_ec
-
 
 end module orbits

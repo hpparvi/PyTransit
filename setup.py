@@ -3,7 +3,7 @@ from numpy.distutils.misc_util import Configuration
 import distutils.sysconfig as ds
 
 setup(name='PyTransit',
-      version='0.9',
+      version='1.0',
       description='Fast and painless exoplanet transit light curve modelling.',
       author='Hannu Parviainen',
       author_email='hpparvi@gmail.com',
@@ -25,6 +25,7 @@ setup(name='PyTransit',
           "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
           "Operating System :: OS Independent",
           "Programming Language :: Python",
-          "Programming Language :: Fortran"
+          "Programming Language :: Fortran",
+          "Programming Language :: OpenCL"
       ]
      )

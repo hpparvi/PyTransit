@@ -22,6 +22,13 @@ Contents:
 
 .. automethod:: pytransit.gimenez.Gimenez.__call__
 
+.. automodule:: pytransit.mandelagol
+
+.. autoclass:: pytransit.mandelagol.MandelAgol
+   :members:
+
+.. automethod:: pytransit.mandelagol.MandelAgol.__call__
+
 
 Indices and tables
 ==================
