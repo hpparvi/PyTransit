@@ -165,7 +165,7 @@ contains
     implicit none
     integer, intent(in) :: nthr, npt, npb
     real(8), intent(in), dimension(npt) :: z0
-    real(8), intent(in) :: u(2,npb), c
+    real(8), intent(in) :: u(2,npb), c(npb)
     real(8), intent(out), dimension(npt, npb) :: flux
     real(8) :: k,k2,z2,lam,x1,x2,x3,z,omega(npb),kap0,kap1,q,Kk,Ek,Pk,n,ed,le,ld
     integer :: i,j
@@ -179,7 +179,7 @@ contains
 
     !$ call omp_set_num_threads(nthr)
     !$omp parallel do default(none) shared(z0,flux,u,c,omega,k,k2,npt,npb) &
-    !$omp private(z,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n,ed,ld,le)
+    !$omp private(i,j,z,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n,ed,ld,le)
     do i=1,npt
        z=z0(i)
        z2=z**2
@@ -272,7 +272,7 @@ contains
        do j=1,npb
           flux(i,j) = 1.d0 - ((1.d0-u(1,j)-2.d0*u(2,j))*le + (u(1,j)+2.d0*u(2,j))*ld + u(2,j)*ed)/omega(j)
        end do
-       flux(i,:) = c + (1.0-c)*flux(i,:)
+       flux(i,:) = c + (1.d0-c)*flux(i,:)
     end do
     !$omp end parallel do
   end subroutine eval_quad_multiband
@@ -281,7 +281,7 @@ contains
     implicit none
     integer, intent(in) :: nthr, npt, npb, nk, nz
     real(8), intent(in), dimension(npt) :: z
-    real(8), intent(in) :: k, u(2,npb), c, edt(nk,nz), ldt(nk,nz), let(nk,nz), kt(nk), zt(nz)
+    real(8), intent(in) :: k, u(2,npb), c(npb), edt(nk,nz), ldt(nk,nz), let(nk,nz), kt(nk), zt(nz)
     real(8), intent(out), dimension(npt, npb) :: flux
     real(8) :: ak, az, dk, dz, ed, le, ld, omega(npb)
     real(8), dimension(2,nz) :: ed2, le2, ld2
@@ -331,7 +331,7 @@ contains
              do j=1,npb
                 flux(i,j) = 1.d0 - ((1.d0-u(1,j)-2.d0*u(2,j))*le + (u(1,j)+2.d0*u(2,j))*ld + u(2,j)*ed)/omega(j)
              end do
-             flux(i,:) = c + (1.0-c)*flux(i,:)
+             flux(i,:) = c + (1.d0-c)*flux(i,:)
           end if
        end do
        !$omp end parallel do
