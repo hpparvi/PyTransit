@@ -1,5 +1,4 @@
-"""Mandel-Agol transit model
-
+"""Mandel-Agol transit model (ApJ 580, L171–L175 2002).
 
 .. moduleauthor:: Hannu Parviainen <hannu.parviainen@astro.ox.ac.uk>
 """
@@ -31,25 +30,6 @@ class MandelAgol(TransitModel):
     :param exptime: (optional)
         Integration time for a single exposure, used in supersampling
 
-
-    Examples
-    --------
-
-    Basic case::
-
-      m = MandelAgol() # Initialize the model, use quadratic limb darkening law and all available cores
-      I = m(z,k,u)     # Evaluate the model for projected distance z, radius ratio k, and limb darkening coefficients u
-      
-    Use linear interpolation::
-
-      m = MandelAgol(lerp=True) # Initialize the model
-      I = m(z,k,u)           # Evaluate the model
-
-    Use linear interpolation, two different sets of z::
-
-      m  = MandelAgol(lerp=True)   # Initialize the model
-      I1 = m(z1,k,u)               # Evaluate the model for z1, update the interpolation table
-      I2 = m(z2,k,u, update=False) # Evaluate the model for z2, don't update the interpolation table
     """
     def __init__(self, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598, klims=(0.07,0.13), nk=128, nz=256):
         if not (nldc == 0 or nldc == 2):

@@ -38,25 +38,6 @@ class Gimenez(TransitModel):
     :param exptime: (optional)
         Integration time for a single exposure, used in supersampling
 
-
-    Examples
-    --------
-
-    Basic case::
-
-      m = Gimenez() # Initialize the model, use quadratic limb darkening law and all available cores
-      I = m(z,k,u)  # Evaluate the model for projected distance z, radius ratio k, and limb darkening coefficients u
-      
-    Use linear interpolation::
-
-      m = Gimenez(lerp=True) # Initialize the model
-      I = m(z,k,u)           # Evaluate the model
-
-    Use linear interpolation, two different sets of z::
-
-      m  = Gimenez(lerp=True)      # Initialize the model
-      I1 = m(z1,k,u)               # Evaluate the model for z1, update the interpolation table
-      I2 = m(z2,k,u, update=False) # Evaluate the model for z2, don't update the interpolation table
     """
     def __init__(self, npol=100, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598):
         super(Gimenez,self).__init__(nldc,nthr,lerp,supersampling,exptime)
@@ -66,7 +47,8 @@ class Gimenez(TransitModel):
 
 
     def __call__(self, z, k, u, c=0., b=1e-8, update=True):
-        """Evaluate the model
+        """
+        Evaluate the model
 
         :param z:
             Array of normalised projected distances
