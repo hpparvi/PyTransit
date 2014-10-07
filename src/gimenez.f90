@@ -100,11 +100,10 @@ contains
     real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
 
     integer, parameter :: tsize =  32
-    integer, parameter :: maxpb =  20
 
     real(8) :: dz_ft, dz_ie, idz_ft, idz_ie
     real(8), dimension(tsize) :: ft_ztable, ie_ztable
-    real(8), dimension(tsize,maxpb) :: ft_table, ie_table
+    real(8), dimension(:,:), allocatable :: ft_table, ie_table
 
     real(8) :: x
     integer :: i, j, ntr
@@ -113,7 +112,10 @@ contains
     real(8), dimension(npt) :: ztmp
     real(8), dimension(npt, npb) :: itmp
 
-     !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
+    allocate(ft_table(tsize,npb), &
+         &   ie_table(tsize,npb))
+   
+    !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
  
     dz_ft = (1._fd-k)/real(tsize-1,8)
     dz_ie = 2*k/real(tsize-1,8)
@@ -159,6 +161,9 @@ contains
     do i=1,npb
        res(:,i) = unpack(itmp(1:ntr,i), mask, res(:,i))
     end do
+
+    deallocate(ft_table)
+    deallocate(ie_table)
   end subroutine eval_lerp
  
 
