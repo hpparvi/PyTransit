@@ -53,7 +53,7 @@ class MandelAgol(TransitModel):
 
 
     def _eval_uniform(self, z, k, u, c, update=True):
-       """Wraps the Fortran implementation of a transit over a uniform disk
+        """Wraps the Fortran implementation of a transit over a uniform disk
 
            :param z: 
                Array of normalised projected distances
