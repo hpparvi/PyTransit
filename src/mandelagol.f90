@@ -48,138 +48,28 @@ contains
     !$omp end parallel do
   end subroutine eval_uniform
 
-  subroutine eval_quad(z0,k,u,c,nthr,nz,flux)
-    implicit none
-    integer, intent(in) :: nthr, nz
-    real(8), intent(in), dimension(nz) :: z0
-    real(8), intent(in) :: u(2), c
-    real(8), intent(out), dimension(nz) :: flux
-    real(8) :: k,k2,z2,lam,x1,x2,x3,z,omega,kap0,kap1,q,Kk,Ek,Pk,n,ed,le,ld
-    integer :: i
 
-    if(abs(k-0.5) < 1.d-3) then 
-       k=0.5
-    end if
-
-    k2 = k**2
-    omega=1.-u(1)/3.d0-u(2)/6.d0
-
-    !$ call omp_set_num_threads(nthr)
-    !$omp parallel do default(none) shared(z0,flux,u,c,omega,k,k2,nz) &
-    !$omp private(z,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n,ed,ld,le)
-    do i=1,nz
-       z=z0(i)
-       z2=z**2
-       x1=(k-z)**2
-       x2=(k+z)**2
-       x3=k**2-z**2
-
-       if(z < 0.0 .or. z > 1.0+k) then
-          ld=0.0
-          ed=0.0
-          le=0.0
-
-       else if(k > 1.0 .and. z < k-1.0) then
-          ld=1.0
-          ed=1.0
-          le=1.0
-
-       ! the source is partly occulted and the occulting object crosses the limb:
-       ! Equation (26):
-       else if(z > abs(1.0-k) .and. z < 1.0+k) then
-          kap1=acos(min((1.0-k2+z2)/2.0/z,1.0))
-          kap0=acos(min((k2+z2-1.0)/2.0/k/z,1.0))
-          le = k2*kap0+kap1
-          le = (le-0.50*sqrt(max(4.0*z2-(1.0+z2-k2)**2,0.0)))*INV_PI
-       end if
-
-       ! the occulting object transits the source star (but doesn't completely cover it):
-       if(z < 1.0-k) then
-          le=k2
-       end if
-
-       ! the edge of the occulting star lies at the origin- special expressions in this case:
-       if(abs(z-k) < 1.d-4*(z+k)) then
-          ! Table 3, Case V.:
-          if(z > 0.50) then
-             lam=HALF_PI
-             q=0.50/k
-             Kk=ellk(q)
-             Ek=ellec(q)
-             ld= 1.0/3.0+16.0*k/9.0*INV_PI * (2.0*k2-1.0)*Ek-(32.0*k**4-20.0*k2+3.0)/9.0*INV_PI/k*Kk
-             ed= 1.0/2.0*INV_PI * (kap1+k2*(k2+2.0*z2)*kap0-(1.0+5.0*k2+z2)/4.0*sqrt((1.0-x1)*(x2-1.0)))
-             if(k.eq.0.50) then
-                ld=1.0/3.0-4.0*INV_PI/9.0
-                ed=3.0/32.0
-             end if
-          else
-             ! Table 3, Case VI.:
-             lam=HALF_PI
-             q=2.0*k
-             Kk=ellk(q)
-             Ek=ellec(q)
-             ld=1.0/3.0+2.0/9.0*INV_PI*(4.0*(2.0*k2-1.0)*Ek+(1.0-4.0*k2)*Kk)
-             ed=k2/2.0*(k2+2.0*z2)
-          end if
-       end if
-
-       ! the occulting star partly occults the source and crosses the limb:
-       ! Table 3, Case III:
-       if((z > 0.50+abs(k-0.50) .and. z < 1.0+k).or.(k > 0.50 .and. z > abs(1.0-k)*1.0001 .and. z < k)) then
-          lam=HALF_PI
-          q=sqrt((1.0-(k-z)**2)/4.0/z/k)
-          Kk=ellk(q)
-          Ek=ellec(q)
-          n=1.0/x1-1.0
-          Pk=Kk-n/3.0*rj(0.d0, 1.0-q*q, 1.0d0, 1.0+n)
-          ld= 1.0/9.0*INV_PI/sqrt(k*z) * (((1.0-x2)*(2.0*x2+x1-3.0)-3.0*x3*(x2-2.0))*Kk+4.0*k*z*(z2+7.0*k2-4.0)*Ek-3.0*x3/x1*Pk)
-          if(z < k) then
-             ld=ld+2.0/3.0
-          end if
-          ed= 1.0/2.0*INV_PI * (kap1+k2*(k2+2.0*z2)*kap0-(1.0+5.0*k2+z2)/4.0*sqrt((1.0-x1)*(x2-1.0)))
-       end if
-
-       ! the occulting star transits the source:
-       ! Table 3, Case IV.:
-       if(k < 1.0 .and. z < (1.0-k)*1.0001) then
-          lam=HALF_PI
-          q=sqrt((x2-x1)/(1.0-x1))
-          Kk=ellk(q)
-          Ek=ellec(q)
-          n=x2/x1-1.0
-          Pk=Kk-n/3.0*rj(0.0d0,1.0-q*q,1.0d0,1.0+n)
-          ld=2.0/9.0*INV_PI/sqrt(1.0-x1)*((1.0-5.0*z2+k2+x3*x3)*Kk+(1.0-x1)*(z2+7.0*k2-4.0)*Ek-3.0*x3/x1*Pk)
-          if(z < k) ld=ld+2.0/3.0
-          if(abs(k+z-1.0) < 1.d-4) then
-             ld= 2.0/3.0*INV_PI*acos(1.0-2.0*k)-4.0/9.0*INV_PI*sqrt(k*(1.0-k))*(3.0+2.0*k-8.0*k2)
-          end if
-          ed= k2/2.0*(k2+2.0*z2)
-       end if
-       flux(i) = 1.0-((1.0-u(1)-2.0*u(2))*le+(u(1)+2.0*u(2))*ld+u(2)*ed)/omega
-       flux(i) = c + (1.0-c)*flux(i)
-    end do
-    !$omp end parallel do
-  end subroutine eval_quad
-
-  subroutine eval_quad_multiband(z0,k,u,c,nthr,npt,npb,flux)
+  subroutine eval_quad(z0,k,u,c,nthr,npt,npb,flux)
     implicit none
     integer, intent(in) :: nthr, npt, npb
     real(8), intent(in), dimension(npt) :: z0
-    real(8), intent(in) :: u(2,npb), c(npb)
+    real(8), intent(in) :: u(2*npb), c(npb)
     real(8), intent(out), dimension(npt, npb) :: flux
     real(8) :: k,k2,z2,lam,x1,x2,x3,z,omega(npb),kap0,kap1,q,Kk,Ek,Pk,n,ed,le,ld
-    integer :: i,j
+    integer :: i,j,iu,iv
 
     if(abs(k-0.5) < 1.d-3) then 
        k=0.5
     end if
 
     k2 = k**2
-    omega=1.d0-u(1,:)/3.d0-u(2,:)/6.d0
+    do i=1,npb
+       omega(i) = 1.d0 - u(2*i-1)/3.d0 - u(2*i)/6.d0
+    end do
 
     !$ call omp_set_num_threads(nthr)
     !$omp parallel do default(none) shared(z0,flux,u,c,omega,k,k2,npt,npb) &
-    !$omp private(i,j,z,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n,ed,ld,le)
+    !$omp private(i,j,iu,iv,z,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n,ed,ld,le)
     do i=1,npt
        z=z0(i)
        z2=z**2
@@ -270,28 +160,34 @@ contains
        end if
 
        do j=1,npb
-          flux(i,j) = 1.d0 - ((1.d0-u(1,j)-2.d0*u(2,j))*le + (u(1,j)+2.d0*u(2,j))*ld + u(2,j)*ed)/omega(j)
+          iu = 2*j-1
+          iv = 2*j
+          flux(i,j) = 1.d0 - ((1.d0-u(iu)-2.d0*u(iv))*le + (u(iu)+2.d0*u(iv))*ld + u(iv)*ed)/omega(j)
        end do
        flux(i,:) = c + (1.d0-c)*flux(i,:)
     end do
     !$omp end parallel do
-  end subroutine eval_quad_multiband
+  end subroutine eval_quad
+
 
   subroutine eval_quad_bilerp(z,k,u,c,nthr,edt,ldt,let,kt,zt,npt,npb,nk,nz,flux)
     implicit none
     integer, intent(in) :: nthr, npt, npb, nk, nz
     real(8), intent(in), dimension(npt) :: z
-    real(8), intent(in) :: k, u(2,npb), c(npb), edt(nk,nz), ldt(nk,nz), let(nk,nz), kt(nk), zt(nz)
+    real(8), intent(in) :: k, u(2*npb), c(npb), edt(nk,nz), ldt(nk,nz), let(nk,nz), kt(nk), zt(nz)
     real(8), intent(out), dimension(npt, npb) :: flux
     real(8) :: ak, az, dk, dz, ed, le, ld, omega(npb)
     real(8), dimension(2,nz) :: ed2, le2, ld2
-    integer :: ik, iz, i, j
+    integer :: ik, iz, i, j, iu, iv
 
     if (k<kt(1) .or. k>kt(nk)) then
        flux = 0.d0
     else
        !$ call omp_set_num_threads(nthr)
-       omega=1.d0 - u(1,:)/3.d0 - u(2,:)/6.d0
+       do i=1,npb
+          omega(i) = 1.d0 - u(2*i-1)/3.d0 - u(2*i)/6.d0
+       end do
+
        dk = kt(2) - kt(1)
        dz = zt(2) - zt(1)
 
@@ -304,7 +200,7 @@ contains
        le2 = let(ik:ik+1,:)
        ld2 = ldt(ik:ik+1,:)
 
-       !$omp parallel do default(none) private(i,j,iz,az,ed,le,ld) &
+       !$omp parallel do default(none) private(i,j,iz,iu,iv,az,ed,le,ld) &
        !$omp shared(z,zt,dz,u,c,npt,k,flux,ik,ak,edt,let,ldt,npb,omega,ed2,le2,ld2)
        do i=1,npt
           if (z(i) >= 1.d0+k) then
@@ -329,7 +225,9 @@ contains
                   & + ld2(2,iz+1)*ak*az
 
              do j=1,npb
-                flux(i,j) = 1.d0 - ((1.d0-u(1,j)-2.d0*u(2,j))*le + (u(1,j)+2.d0*u(2,j))*ld + u(2,j)*ed)/omega(j)
+                iu = 2*j-1
+                iv = 2*j
+                flux(i,j) = 1.d0 - ((1.d0-u(iu)-2.d0*u(iv))*le + (u(iu)+2.d0*u(iv))*ld + u(iv)*ed)/omega(j)
              end do
              flux(i,:) = c + (1.d0-c)*flux(i,:)
           end if
