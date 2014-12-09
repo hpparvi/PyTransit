@@ -4,7 +4,7 @@ import numpy as np
 import numpy.testing as npt
 import matplotlib.pyplot as pl
 
-from pytransit import Gimenez
+from pytransit.gimenez import Gimenez
 
 #m1 = Gimenez(npol=500, lerp=False)
 #m2 = Gimenez(npol=500, lerp=True)

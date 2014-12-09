@@ -2,5 +2,6 @@
 *.so
 *.mod
 *.log
+*.pyc
 *~
 build

@@ -3,14 +3,10 @@
 !! This module implements the transit shape model by
 !! Alvaro Gimenez (A&A 450, 1231--1237, 2006).
 !!
-!! The code is adapted from the Fortran implementation
+!! The code is adapted from the original Fortran implementation
 !! at http://thor.ieec.uab.es/LRVCode. The major changes
-!! are in the parallelization and vectorization. 
-!!
-!! Instead of repeating the computations for each lightcurve point
-!! separately, we minimize the redundant calculations by
-!! computing the common factors for all lightcurve points.
-!! This can give us a speed up of several orders of magnitude. 
+!! are in the precalculation of coefficients and in separation
+!! of the limb darkening effects from rest of the computations.
 !!
 !! -GPL-
 !! This program is free software: you can redistribute it and/or modify
@@ -28,7 +24,7 @@
 !! -GPL-
 !!
 !! Author
-!!  Hannu Parviainen <hannu@iac.es>
+!!  Hannu Parviainen <parviainen@astro.ox.ac.uk>
 !!
 !! Date 
 !!  01.03.2011
@@ -46,7 +42,7 @@ module gimenez
   integer, parameter :: FS = C_FLOAT
   integer, parameter :: FD = C_DOUBLE
 
-  real(8), parameter :: PI = 3.1415926525_fd
+  real(8), parameter :: PI = acos(-1.0d0)
   real(8), parameter :: HALF_PI = 0.5_fd * PI
 
 contains
@@ -97,17 +93,17 @@ contains
     logical, intent(in) :: update
     real(8), intent(in), dimension(npt) :: z
     real(8), intent(in), dimension(nldc, npb) :: u
-    real(8), intent(in) :: k, b, contamination
+    real(8), intent(in), dimension(npb) :: contamination
+    real(8), intent(in) :: k, b
     real(8), intent(out), dimension(npt, npb) :: res
     real(8), intent(in), dimension(npol, nldc+1) :: anm, avl
     real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
 
     integer, parameter :: tsize =  32
-    integer, parameter :: maxpb =  20
 
     real(8) :: dz_ft, dz_ie, idz_ft, idz_ie
     real(8), dimension(tsize) :: ft_ztable, ie_ztable
-    real(8), dimension(tsize,maxpb) :: ft_table, ie_table
+    real(8), dimension(:,:), allocatable :: ft_table, ie_table
 
     real(8) :: x
     integer :: i, j, ntr
@@ -116,7 +112,10 @@ contains
     real(8), dimension(npt) :: ztmp
     real(8), dimension(npt, npb) :: itmp
 
-     !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
+    allocate(ft_table(tsize,npb), &
+         &   ie_table(tsize,npb))
+   
+    !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
  
     dz_ft = (1._fd-k)/real(tsize-1,8)
     dz_ie = 2*k/real(tsize-1,8)
@@ -126,8 +125,13 @@ contains
     ft_ztable = [(0._fd   + dz_ft*i, i=0,tsize-1)]
     ie_ztable = [(1._fd-k + dz_ie*i, i=0,tsize-1)]
 
-    ft_table(:,:npb) = 1._fd + gimenez_m(ft_ztable, k, u, npol, nldc, npb, anm, avl, ajd, aje) * (1._fd - contamination)
-    ie_table(:,:npb) = 1._fd + gimenez_m(ie_ztable, k, u, npol, nldc, npb, anm, avl, ajd, aje) * (1._fd - contamination)
+    ft_table(:,:npb) = gimenez_m(ft_ztable, k, u, npol, nldc, npb, anm, avl, ajd, aje)
+    ie_table(:,:npb) = gimenez_m(ie_ztable, k, u, npol, nldc, npb, anm, avl, ajd, aje)
+
+    do i=1,npb
+       ft_table(:,i) = 1._fd + ft_table(:,i) * (1._fd - contamination(i))
+       ie_table(:,i) = 1._fd + ie_table(:,i) * (1._fd - contamination(i))
+    end do
     ie_table(tsize,:npb) = 1._fd
 
     mask        = (z > 0._fd) .and. (z < 1._fd+k)
@@ -157,6 +161,9 @@ contains
     do i=1,npb
        res(:,i) = unpack(itmp(1:ntr,i), mask, res(:,i))
     end do
+
+    deallocate(ft_table)
+    deallocate(ie_table)
   end subroutine eval_lerp
  
 
@@ -165,7 +172,8 @@ contains
     integer, intent(in) :: npt, nldc, npb, nthreads, npol
     real(8), intent(in), dimension(npt) :: z
     real(8), intent(in), dimension(nldc, npb) :: u
-    real(8), intent(in) :: k, contamination
+    real(8), intent(in), dimension(npb) :: contamination
+    real(8), intent(in) :: k
     real(8), intent(out), dimension(npt, npb) :: res
     real(8), intent(in), dimension(npol, nldc+1) :: anm, avl
     real(8), intent(in), dimension(4, npol, nldc+1) :: ajd, aje
@@ -174,19 +182,20 @@ contains
     real(8), dimension(npt,npb) :: tmp2
     logical, dimension(npt) :: mask
     integer :: npt_t, i
-
+    
     !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
     res  = 0._fd
     mask = (z > 0._fd) .and. (z < 1._fd+k)
     npt_t = count(mask)
-    
+
     tmp1(1:npt_t) = pack(z, mask)
     tmp2(1:npt_t,:) = gimenez_m(tmp1(1:npt_t), k, u, npol, nldc, npb, anm, avl, ajd, aje)
 
     do i=1,npb
        res(:,i) = unpack(tmp2(1:npt_t,i), mask, res(:,i))
+       res(:,i) = 1._fd + res(:,i)*(1._fd - contamination(i))
     end do
-    res = 1._fd + res*(1._fd - contamination)
+
   end subroutine eval
 
   !!--- Gimenez transit shape model ---

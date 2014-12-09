@@ -1,63 +1,77 @@
 """Gimenez transit model
 
-   Includes a class offering an easy access to the Fortran implementation of the
-   transit model by A. Gimenez (A&A 450, 1231--1237, 2006).
+   A package offering an easy access to the Fortran implementation of the
+   transit model by A. Gimenez (A&A 450, 1231--1237, 2006). The Fortran code is
+   adapted from the original implementation at http://thor.ieec.uab.es/LRVCode,
+   and includes several optimisations that make it several orders faster for
+   light curves with thousands to millions of datapoints.
 
-   Author
-     Hannu Parviainen <hpparvi@gmail.com>
+
+.. moduleauthor:: Hannu Parviainen <hannu.parviainen@astro.ox.ac.uk>
 """
 
 import numpy as np
 
+from math import fabs
 from gimenez_f import gimenez as g
+from orbits_f import orbits as of
+from tm import TransitModel
 
-class Gimenez(object):
-    """Gimenez transit model
-
-    Examples
-    --------
-    Basic case:
-      m = Gimenez() # Initialize the model, use quadratic limb darkening law and all available cores
-      I = m(z,k,u)  # Evaluate the model for projected distance z, radius ratio k, and limb darkening coefficients u
-      
-    Use linear interpolation:
-      m = Gimenez(lerp=True) # Initialize the model
-      I = m(z,k,u)           # Evaluate the model
-
-    Use linear interpolation, two different sets of z:
-      m  = Gimenez(lerp=True)      # Initialize the model
-      I1 = m(z1,k,u)               # Evaluate the model for z1, update the interpolation table
-      I2 = m(z2,k,u, update=False) # Evaluate the model for z2, don't update the interpolation table
+class Gimenez(TransitModel):
     """
+    Exoplanet transit light curve model by A. Gimenez (A&A 450, 1231--1237, 2006).
 
-    def __init__(self, npol=100, nldc=2, nthr=0, lerp=False):
-        """
-        Parameters
-          npol  int   number of 
-          nldc  int   number of limb darkening coefficients (2 == quadratic)
-          nthr  int   number of threads
-          lerp  bool  use linear interpolation, useful for large light curves
-        """
+    :param npol: (optional)
+
+    :param nldc: (optional)
+        Number of limb darkening coefficients (1 = linear limb darkening, 2 = quadratic)
+
+    :param nthr: (optional)
+        Number of threads (default = number of cores)
+
+    :param  lerp: (optional)
+        Switch telling if linear interpolation be used (default = False).
+
+    :param supersampling: (optional)
+        Number of subsamples to calculate for each light curve point
+
+    :param exptime: (optional)
+        Integration time for a single exposure, used in supersampling
+
+    """
+    def __init__(self, npol=100, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598):
+        super(Gimenez,self).__init__(nldc,nthr,lerp,supersampling,exptime)
+        self._eval = self._eval_lerp if lerp else self._eval_nolerp
         self._coeff_arr = g.init_arrays(npol, nldc)
         self.npol = npol
-        self.nldc = nldc
-        self.nthr = nthr
-
-        self._eval = self._eval_lerp if lerp else self._eval_nolerp
 
 
     def __call__(self, z, k, u, c=0., b=1e-8, update=True):
-        """Evaluate the model
-
-        Parameters
-          z    real   projected distance
-          k    real   planet to star radius ratio
-          u  n*real   limb darkening coefficients
-          c    real   contamination (fraction of third light)
-          b    real   minimum impact parameter (for the interpolating model)
-          update bool update the interpolation table (for the interpolating model)
         """
-        return self._eval(z, k, np.reshape(u, [-1, self.nldc]).T, c, b, update)
+        Evaluate the model
+
+        :param z:
+            Array of normalised projected distances
+        
+        :param k:
+            Planet to star radius ratio
+        
+        :param u:
+            Array of limb darkening coefficients
+        
+        :param c:
+            Contamination factor (fraction of third light)
+            
+        :param b: (optional)
+            Not used, ignore for now.
+
+        :param update: (optional)
+        """
+
+        u = np.reshape(u, [-1, self.nldc]).T
+        c = np.ones(u.shape[1])*c
+        flux = self._eval(z, k, u, c, b, update)
+        return flux if u.shape[1] > 1 else flux.ravel()
 
 
     def _eval_nolerp(self, z, k, u, c, b, update):
@@ -68,12 +82,62 @@ class Gimenez(object):
         return g.eval_lerp(z, k, u, b, c, self.nthr, update, *self._coeff_arr)
 
 
-if __name__ == '__main__':
-    import numpy as np
-    import matplotlib.pyplot as pl
+    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, lerp_z=False):
+        """Evaluates the transit model for the given parameters.
 
-    z = np.linspace(1e-7,1.3,1000)
-    for nldc,ldc,ls in zip([0,1,2], [[], [0], [0.3,0]], ['-','--',':']):
-        pl.plot(Gimenez(nldc=nldc, lerp=True)(z, 0.1, ldc), ls=ls,  c='0.0')
-    pl.ylim(0.988, 1.001)
-    pl.show()
+        :param t:
+            Array of time values
+
+        :param k:
+            Radius ratio(s), can be a single float or an array of values for each passband
+
+        :param u:
+            Either 1D (nldc or npb*nldc) or 2D (npb,nldc) array of limb darkening coefficients (ldcs).
+            If 2D, the model returns ``npb`` light curves, each corresponding to an ldc set
+            described by a row of the ldc array.
+
+        :param t0:
+            Zero epoch
+
+        :param p:
+            Orbital period
+
+        :param a:
+            Scaled semi-major axis
+
+        :param i:
+            Inclination
+
+        :param e: (optional, default=0)
+            Eccentricity
+
+        :param w: (optional, default=0)
+            Argument of periastron
+
+        :param c: (optional, default=0)
+            Contamination factor(s) ``c`` as a float or an array with ``c`` for each passband
+        """
+
+        u   = np.asfortranarray(u)
+        npb = 1 if u.ndim == 1 else u.shape[0]
+
+        ## Check if we have multiple radius ratio (k) values, approximate the k with their
+        ## mean if yes, and calculate the area ratio factors.
+        ## 
+        if isinstance(k, np.ndarray):
+            _k = k.mean()
+            kf = (k/_k)**2
+        else:
+            _k = k
+            kf = 1.
+            
+        z = self._calculate_z(t, t0, p, a, i, e, w, lerp_z)
+        flux = self.__call__(z, _k, u, c, update)
+
+        if self.ss:
+            if npb == 1:
+                flux = flux.reshape((self.npt, self.nss)).mean(1)
+            else:
+                flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
+
+        return kf*(flux-1.)+1.
