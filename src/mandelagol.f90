@@ -26,7 +26,7 @@ contains
     !$omp private(i,z,lambdae,kap0,kap1)
     do i=1,nz
        z=z0(i)
-       if(z > 0.d0 .and. z > 1.d0+k) then
+       if(z < 0.d0 .or. z > 1.d0+k) then
           flux(i)=1.d0
           
        else if(k > 1.d0 .and. z < k-1.d0) then
@@ -71,6 +71,11 @@ contains
     !$omp parallel do default(none) shared(z0,flux,u,c,omega,k,k2,npt,npb) &
     !$omp private(i,j,iu,iv,z,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n,ed,ld,le)
     do i=1,npt
+       if (z0(i) > 1.d0+k .or. z0(i)<0.d0) then
+          flux(i,:) = 1.d0
+          cycle
+       end if
+
        z=z0(i)
        z2=z**2
        x1=(k-z)**2
@@ -203,7 +208,7 @@ contains
        !$omp parallel do default(none) private(i,j,iz,iu,iv,az,ed,le,ld) &
        !$omp shared(z,zt,dz,u,c,npt,k,flux,ik,ak,edt,let,ldt,npb,omega,ed2,le2,ld2)
        do i=1,npt
-          if (z(i) >= 1.d0+k) then
+          if ((z(i) >= 1.d0+k) .or. (z(i)<0.d0)) then
              flux(i,:) = 1.d0
           else
              iz = floor((z(i)-zt(1))/dz) + 1
