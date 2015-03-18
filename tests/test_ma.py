@@ -4,14 +4,10 @@ from pytransit import Gimenez, MandelAgol, z_circular
 
 m_mad = MandelAgol()
 m_mal = MandelAgol(lerp=True)
-m_gmd = Gimenez()
+m_gmd = Gimenez(lerp=False)
+m_gml = Gimenez(lerp=True)
 
-t = np.linspace(0,2,100)
-pl.plot(t, z_circular(t, 1, 1, 3, 0.5*np.pi, nthreads=4))
-pl.show()
-
-u = [[0.1,0.1],[0.2,0.2],[0.6,0.3]]
-#u = [0.2,0.2]
+u = np.array([[0.1,0.1],[0.2,0.2],[0.6,0.3]])
 
 t = np.linspace(-0.2, 0.2, 500)
 pl.plot(t, m_mad.evaluate(t, 0.1, u, 0.0, 5, 5, 0.47*np.pi), 'b-',  alpha=0.5)
