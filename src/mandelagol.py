@@ -31,10 +31,10 @@ class MandelAgol(TransitModel):
         Integration time for a single exposure, used in supersampling
 
     """
-    def __init__(self, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598, klims=(0.07,0.13), nk=128, nz=256):
+    def __init__(self, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598, eclipse=False, klims=(0.07,0.13), nk=128, nz=256):
         if not (nldc == 0 or nldc == 2):
             raise NotImplementedError('Only the uniform and quadratic Mandel-Agol models are currently supported.')
-        super(MandelAgol, self).__init__(nldc, nthr, lerp, supersampling, exptime)
+        super(MandelAgol, self).__init__(nldc, nthr, lerp, supersampling, exptime, eclipse)
         self.lerp = lerp
             
         ## Uniform stellar disk
