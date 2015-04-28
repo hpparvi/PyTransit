@@ -144,7 +144,7 @@ Author
 
 Publications using the code
 ----------------------------
-  - Tingley, Brandon, H. Parviainen, et al. Confirmation of an exoplanet using the transit color signature : Kepler-418b , a blended giant planet in a multiplanet system. Astron. Astrophys. 567, (2014).
+  - Tingley, Brandon, H. Parviainen, et al. Confirmation of an exoplanet using the transit color signature: Kepler-418b, a blended giant planet in a multiplanet system. Astron. Astrophys. 567, (2014).
   - Gandolfi, Davide, H. Parviainen, et al. Kepler-423b: a half-Jupiter mass planet transiting a very old solar-like star. Astron. Astrophys. 576, A11 (2015).
   - Parviainen, H. et al. Transiting exoplanets from the CoRoT space mission. Astron. Astrophys. 562, A140 (2014).
   - Gandolfi, Davide, H. Parviainen, et al. Kepler-77b: a very low albedo, Saturn-mass transiting planet around a metal-rich solar-like star. Astron. Astrophys. 557, A74 (2013).
