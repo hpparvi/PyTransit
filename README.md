@@ -3,10 +3,11 @@ PyTransit
 
 Fast and easy-to-use tools for exoplanet transit light curve modelling using Python or Fortran.
 
-
-    from pytransit import Gimenez
-    m = Gimenez()
-    f = m.evaluate(t, *pv)
+```Python
+from pytransit import MandelAgol
+m = MandelAgol()
+f = m.evaluate(t, *pv)
+```
 
 ![](notebooks/model_example_1.png)
 
@@ -46,34 +47,35 @@ Examples
 ### Basics
 Basic usage is simple:
 
-    from pytransit import Gimenez
-    
-    m = Gimenez()
-    f = m.evaluate(t, *pv)
+```Python
+from pytransit import Gimenez
 
+m = Gimenez()
+f = m.evaluate(t, *pv)
+```
 or
+```Python
+from pytransit import MandelAgol
 
-    from pytransit import MandelAgol
-    
-    m = MandelAgol()
-    f = m.evaluate(t, *pv)
-
+m = MandelAgol()
+f = m.evaluate(t, *pv)
+```
 Here we first initialize the model accepting the defaults (quadratic limb darkening law, no supersampling, 
 and the use of all available cores), and then calculate the model for times in the time array `t`, `pv` being 
 a list containing the system parameters.
 
 For a slightly more useful example, we can do:
+```Python
+import numpy as np
+from pytransit import Gimenez
 
-    import numpy as np
-    from pytransit import Gimenez
-    
-    t = np.linspace(0.8,1.2,500)
-    k, t0, p, a, i, e, w = 0.1, 1.01, 4, 8, 0.48*np.pi, 0.2, 0.5*np.pi
-    u = [0.25,0.10]
+t = np.linspace(0.8,1.2,500)
+k, t0, p, a, i, e, w = 0.1, 1.01, 4, 8, 0.48*np.pi, 0.2, 0.5*np.pi
+u = [0.25,0.10]
 
-    m = Gimenez()
-    f = m.evaluate(t, k, u, t0, p, a, i, e, w)
-
+m = Gimenez()
+f = m.evaluate(t, k, u, t0, p, a, i, e, w)
+```
 where `k` is the planet-star radius ratio, `t0` the transit center, `p` the orbital period, `a` the scaled
 semi-major axis, `i` the orbital inclination, `e` the orbital eccentricity, `w` the argument of periastron,
 and `u` contains the quadratic limb darkening coefficients.
@@ -142,6 +144,9 @@ Author
 
 Publications using the code
 ----------------------------
+  - Tingley, Brandon, H. Parviainen, et al. Confirmation of an exoplanet using the transit color signature : Kepler-418b , a blended giant planet in a multiplanet system. Astron. Astrophys. 567, (2014).
+  - Gandolfi, Davide, H. Parviainen, et al. Kepler-423b: a half-Jupiter mass planet transiting a very old solar-like star. Astron. Astrophys. 576, A11 (2015).
+  - Parviainen, H. et al. Transiting exoplanets from the CoRoT space mission. Astron. Astrophys. 562, A140 (2014).
   - Gandolfi, Davide, H. Parviainen, et al. Kepler-77b: a very low albedo, Saturn-mass transiting planet around a metal-rich solar-like star. Astron. Astrophys. 557, A74 (2013).
   - Parviainen, Hannu, H.J. Deeg, and J.A. Belmonte. “Secondary Eclipses in the CoRoT Light Curves: A Homogeneous Search Based in Bayesian Model Selection.” Accepted to A&A (2012)
   - Rouan, D., H. Parviainen, C. Moutou, Magali Deleuil, M. Fridlund, A Ofir, M. Havel, et al. “Transiting Exoplanets from the CoRoT Space Mission.” Astronomy & Astrophysics 537 (January 9, 2012): A54.
