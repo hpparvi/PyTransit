@@ -11,11 +11,14 @@ f = m.evaluate(t, *pv)
 
 ![](notebooks/model_example_1.png)
 
+
+The package is described in Parviainen (2015). Also, take a look at the [Bayesian parameter estimation tutorial](http://nbviewer.ipython.org/github/hpparvi/exo_tutorials/blob/master/01_broadband_parameter_estimation.ipynb) for an example on how to use the model in a basic exoplanet transit modelling situation.
+
 Modules
 -------
 Transit models
-  - Series-expansion based transit model by A. Gimenez (A&A 450, 1231--1237, 2006).
-  - Quadratic limb-darkening transit model by Mandel & Agol (ApJ 580, L171–L175, 2002).
+  - Series-expansion based transit model by [A. Gimenez (A&A 450, 1231--1237, 2006)](http://adsabs.harvard.edu/abs/2006A&A...450.1231G).
+  - Quadratic limb-darkening transit model by [Mandel & Agol (ApJ 580, L171–L175, 2002)](http://adsabs.harvard.edu/abs/2002ApJ...580L.171M).
  
   - Common features
     - Optimized and parallelized Fortran implementatios. 
@@ -41,6 +44,13 @@ and then installing the package locally (without root rights) would take:
     python setup.py install --user
 
 The code should compile with other compilers also, but only gfortran and Intel fortran have been tested.
+
+
+Notes
+-----
+
+Please use the [Issue tracker](https://github.com/hpparvi/PyTransit/issues) to report bugs and ideas for improvement.
+
 
 Examples
 --------
