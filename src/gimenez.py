@@ -29,7 +29,7 @@ class Gimenez(TransitModel):
     :param nthr: (optional)
         Number of threads (default = number of cores)
 
-    :param  lerp: (optional)
+    :param  interpolate: (optional)
         Switch telling if linear interpolation be used (default = False).
 
     :param supersampling: (optional)
@@ -39,9 +39,9 @@ class Gimenez(TransitModel):
         Integration time for a single exposure, used in supersampling
 
     """
-    def __init__(self, npol=100, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598, eclipse=False):
-        super(Gimenez,self).__init__(nldc,nthr,lerp,supersampling,exptime,eclipse)
-        self._eval = self._eval_lerp if lerp else self._eval_nolerp
+    def __init__(self, npol=100, nldc=2, nthr=0, interpolate=False, supersampling=0, exptime=0.020433598, eclipse=False):
+        super(Gimenez,self).__init__(nldc,nthr,interpolate,supersampling,exptime,eclipse)
+        self._eval = self._eval_interpolate if interpolate else self._eval_nointerpolate
         self._coeff_arr = g.init_arrays(npol, nldc)
         self.npol = npol
 
@@ -74,15 +74,15 @@ class Gimenez(TransitModel):
         return flux if u.shape[1] > 1 else flux.ravel()
 
 
-    def _eval_nolerp(self, z, k, u, c, b, update):
+    def _eval_nointerpolate(self, z, k, u, c, b, update):
         return g.eval(z, k, u, c, self.nthr, *self._coeff_arr)
 
 
-    def _eval_lerp(self, z, k, u, c, b, update):
-        return g.eval_lerp(z, k, u, b, c, self.nthr, update, *self._coeff_arr)
+    def _eval_interpolate(self, z, k, u, c, b, update):
+        return g.eval_interpolate(z, k, u, b, c, self.nthr, update, *self._coeff_arr)
 
 
-    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, lerp_z=False):
+    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, interpolate_z=False):
         """Evaluates the transit model for the given parameters.
 
         :param t:
@@ -131,7 +131,7 @@ class Gimenez(TransitModel):
             _k = k
             kf = 1.
             
-        z = self._calculate_z(t, t0, p, a, i, e, w, lerp_z)
+        z = self._calculate_z(t, t0, p, a, i, e, w, interpolate_z)
         flux = self.__call__(z, _k, u, c, update)
 
         if self.ss:

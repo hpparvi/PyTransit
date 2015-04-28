@@ -31,11 +31,11 @@ class MandelAgol(TransitModel):
         Integration time for a single exposure, used in supersampling
 
     """
-    def __init__(self, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598, eclipse=False, klims=(0.07,0.13), nk=128, nz=256):
+    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=0, exptime=0.020433598, eclipse=False, klims=(0.07,0.13), nk=128, nz=256):
         if not (nldc == 0 or nldc == 2):
             raise NotImplementedError('Only the uniform and quadratic Mandel-Agol models are currently supported.')
-        super(MandelAgol, self).__init__(nldc, nthr, lerp, supersampling, exptime, eclipse)
-        self.lerp = lerp
+        super(MandelAgol, self).__init__(nldc, nthr, interpolate, supersampling, exptime, eclipse)
+        self.interpolate = interpolate
             
         ## Uniform stellar disk
         if nldc == 0:
@@ -43,7 +43,7 @@ class MandelAgol(TransitModel):
 
         ## Quadratic limb darkening
         else:
-            if self.lerp:
+            if self.interpolate:
                 self.ed,self.le,self.ld,self.kt,self.zt = ma.calculate_interpolation_tables(klims[0],klims[1],nk,nz,4)
                 self.klims = klims
                 self.nk = nk
@@ -96,7 +96,7 @@ class MandelAgol(TransitModel):
         if not isinstance(c, np.ndarray) or c.size != npb:
             c = c*np.ones(npb)
             
-        if self.lerp:
+        if self.interpolate:
             return ma.eval_quad_bilerp(z,k,u,c,self.nthr, self.ed,self.ld,self.le,self.kt,self.zt)
         else:
             return ma.eval_quad(z, k, u, c, self.nthr)
@@ -122,7 +122,7 @@ class MandelAgol(TransitModel):
         return flux if np.asarray(u).size > 2 else flux.ravel()
 
 
-    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, lerp_z=False):
+    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, interpolate_z=False):
         """Evaluates the transit model for the given parameters.
 
         :param t:
@@ -156,6 +156,9 @@ class MandelAgol(TransitModel):
             Contamination factor ``c``
         """
 
+        u   = np.asfortranarray(u)
+        npb = 1 if u.ndim == 1 else u.shape[0]
+
         ## Check if we have multiple radius ratio (k) values, approximate the k with their
         ## mean if yes, and calculate the area ratio factors.
         ## 
@@ -166,10 +169,13 @@ class MandelAgol(TransitModel):
             _k = k
             kf = 1.
 
-        z = self._calculate_z(t, t0, p, a, i, e, w, lerp_z)
+        z = self._calculate_z(t, t0, p, a, i, e, w, interpolate_z)
         flux = self.__call__(z, k, u, c, update)
 
         if self.ss:
-            flux = flux.reshape((self.npt, self.nss)).mean(1)
+            if npb == 1:
+                flux = flux.reshape((self.npt, self.nss)).mean(1)
+            else:
+                flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
 
         return kf*(flux-1.)+1.
