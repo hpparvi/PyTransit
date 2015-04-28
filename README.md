@@ -1,7 +1,7 @@
 PyTransit
 =========
 
-Fast and easy-to-use tools for exoplanet transit light curve modelling with Python.
+Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. This package implements the quadratic Mandel & Agol and the Gimenéz transit models with various optimisations, and offers both a simple interface for model evaluation and a lower-level access for fine-tuning the modelling process.   
 
 ```Python
 from pytransit import MandelAgol
