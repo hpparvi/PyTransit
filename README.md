@@ -16,29 +16,29 @@ The package is described in Parviainen (2015). Also, take a look at the [Bayesia
 
 Modules
 -------
-Transit models
+**Transit models**
   - Series-expansion based transit model by [A. Gimenez (A&A 450, 1231--1237, 2006)](http://adsabs.harvard.edu/abs/2006A&A...450.1231G).
   - Quadratic limb-darkening transit model by [Mandel & Agol (ApJ 580, L171–L175, 2002)](http://adsabs.harvard.edu/abs/2002ApJ...580L.171M).
  
   - Common features
-    - Optimized and parallelized Fortran implementatios. 
-    - Can calculate the transit model simultaneously for several limb darkening coefficient sets.
+    - Optimized and parallelized Fortran implementations. 
+    - Efficient model evaluation for multicolour observations and transmission spectroscopy.
     - Built-in model interpolation for the modelling of large datasets.
-    - Built-in supersampling.
+    - Built-in supersampling to account for extended exposure times.
 
-Utilities
+**Utilities**
   - Routines to calculate the projected planet-to-star distance for circular and eccentric orbits.
   - Routines to calculate transit durations, etc.
 
 Installation
 ------------
-First clone the repository from github:
+First clone the repository from github
 
     git clone https://github.com/hpparvi/PyTransit.git
     cd PyTransit
 
 and then do the normal python package build & installation. For example, building with a fairly modern gfortran
-and then installing the package locally (without root rights) would take:
+and then installing the package locally (without root rights) would take
 
     python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native" build
     python setup.py install --user
