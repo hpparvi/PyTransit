@@ -102,7 +102,7 @@ sampling (such as *Kepler*'s long cadence data):
 
 ### Tweaking
 The model accuracy and the number of limb darkening coefficients can be set in the initialization. 
-Finally, for fitting to large datasets, the model can be evaluated using interpolation (linear, at the moment). 
+Finally, for fitting to large datasets, the model can be evaluated using interpolation. 
 
 Basic transit model usage with linear limb darkening law, lower accuracy, and four cores:
 
