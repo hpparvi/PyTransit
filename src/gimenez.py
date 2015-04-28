@@ -39,8 +39,8 @@ class Gimenez(TransitModel):
         Integration time for a single exposure, used in supersampling
 
     """
-    def __init__(self, npol=100, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598):
-        super(Gimenez,self).__init__(nldc,nthr,lerp,supersampling,exptime)
+    def __init__(self, npol=100, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598, eclipse=False):
+        super(Gimenez,self).__init__(nldc,nthr,lerp,supersampling,exptime,eclipse)
         self._eval = self._eval_lerp if lerp else self._eval_nolerp
         self._coeff_arr = g.init_arrays(npol, nldc)
         self.npol = npol

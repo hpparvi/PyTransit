@@ -27,14 +27,14 @@ class TransitModel(object):
     :param exptime: (optional)
         Integration time for a single exposure, used in supersampling
     """
-    def __init__(self, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598):
+    def __init__(self, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598, eclipse=False):
         self.nldc = nldc
         self.nthr = nthr
         self.ss  = bool(supersampling)
         self.nss = int(supersampling)
         self.exp = exptime
         self.time = None
-
+        self.eclipse = eclipse
 
     def __call__(self, z, k, u, c=0., update=True):
         """Evaluate the model
@@ -85,6 +85,8 @@ class TransitModel(object):
         else:
             if fabs(e) < 0.01:
                 z = of.z_circular(self._time, t0, p, a, i, nthreads=self.nthr)
+                if self.eclipse:
+                    z *= -1.
             elif fabs(e) < 0.2:
                 z = of.z_eccentric_ps3(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
             else:
