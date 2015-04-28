@@ -1,7 +1,7 @@
 PyTransit
 =========
 
-Fast and easy-to-use tools for exoplanet transit light curve modelling using Python or Fortran.
+Fast and easy-to-use tools for exoplanet transit light curve modelling with Python.
 
 ```Python
 from pytransit import MandelAgol
@@ -144,11 +144,11 @@ Author
 
 Publications using the code
 ----------------------------
-  - Tingley, Brandon, H. Parviainen, et al. Confirmation of an exoplanet using the transit color signature: Kepler-418b, a blended giant planet in a multiplanet system. Astron. Astrophys. 567, (2014).
-  - Gandolfi, Davide, H. Parviainen, et al. Kepler-423b: a half-Jupiter mass planet transiting a very old solar-like star. Astron. Astrophys. 576, A11 (2015).
-  - Parviainen, H. et al. Transiting exoplanets from the CoRoT space mission. Astron. Astrophys. 562, A140 (2014).
-  - Gandolfi, Davide, H. Parviainen, et al. Kepler-77b: a very low albedo, Saturn-mass transiting planet around a metal-rich solar-like star. Astron. Astrophys. 557, A74 (2013).
-  - Parviainen, Hannu, H.J. Deeg, and J.A. Belmonte. “Secondary Eclipses in the CoRoT Light Curves: A Homogeneous Search Based in Bayesian Model Selection.” Accepted to A&A (2012)
-  - Rouan, D., H. Parviainen, C. Moutou, Magali Deleuil, M. Fridlund, A Ofir, M. Havel, et al. “Transiting Exoplanets from the CoRoT Space Mission.” Astronomy & Astrophysics 537 (January 9, 2012): A54.
-  - Murgas, F., E. Pallé, A. Cabrera-Lavers, K. D. Colón, E. L. Martín, and H. Parviainen. “Narrow Band H α Photometry of the super-Earth GJ 1214b with GTC/OSIRIS Tunable Filters.” Astronomy & Astrophysics 544 (July 24, 2012): A41.
-  - Tingley, Brandon, E. Palle, H. Parviainen, H. J. Deeg, M. R. Zapatero Osorio, A. Cabrera-Lavers, J. a. Belmonte, P. M. Rodriguez, F. Murgas, and I. Ribas. “Detection of Transit Timing Variations in Excess of One Hour in the Kepler Multi-planet Candidate System KOI 806 with the GTC.” Astronomy & Astrophysics 536 (December 12, 2011): L9.
+  - Tingley, Brandon, H. Parviainen, et al. "Confirmation of an exoplanet using the transit color signature: Kepler-418b, a blended giant planet in a multiplanet system." A&A 567, (2014).
+  - Gandolfi, Davide, H. Parviainen, et al. "Kepler-423b: a half-Jupiter mass planet transiting a very old solar-like star." A&A 576, A11 (2015).
+  - Parviainen, H. et al. "Transiting exoplanets from the CoRoT space mission." A&A 562, A140 (2014).
+  - Gandolfi, Davide, H. Parviainen, et al. "Kepler-77b: a very low albedo, Saturn-mass transiting planet around a metal-rich solar-like star." A&A 557, A74 (2013).
+  - Parviainen, Hannu, H.J. Deeg, and J.A. Belmonte. "Secondary Eclipses in the CoRoT Light Curves: A Homogeneous Search Based in Bayesian Model Selection." A&A (2012)
+  - Rouan, D., H. Parviainen, C. Moutou, Magali Deleuil, M. Fridlund, A Ofir, M. Havel, et al. "Transiting Exoplanets from the CoRoT Space Mission." A&A 537 (January 9, 2012): A54.
+  - Murgas, F., E. Pallé, A. Cabrera-Lavers, K. D. Colón, E. L. Martín, and H. Parviainen. "Narrow Band H α Photometry of the super-Earth GJ 1214b with GTC/OSIRIS Tunable Filters." A&A 544 (July 24, 2012): A41.
+  - Tingley, Brandon, E. Palle, H. Parviainen, H. J. Deeg, M. R. Zapatero Osorio, A. Cabrera-Lavers, J. a. Belmonte, P. M. Rodriguez, F. Murgas, and I. Ribas. "Detection of Transit Timing Variations in Excess of One Hour in the Kepler Multi-planet Candidate System KOI 806 with the GTC." A&A 536 (December 12, 2011): L9.
