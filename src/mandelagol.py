@@ -7,6 +7,7 @@ import numpy as np
 
 from mandelagol_f import mandelagol as ma
 from orbits_f import orbits as of
+from utils_f import utils as uf
 from tm import TransitModel
 
 class MandelAgol(TransitModel):
@@ -174,7 +175,7 @@ class MandelAgol(TransitModel):
 
         if self.ss:
             if npb == 1:
-                flux = flux.reshape((self.npt, self.nss)).mean(1)
+                flux = uf.average_samples_1(flux, self.npt, self.nss, self.nthr)
             else:
                 flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
 
