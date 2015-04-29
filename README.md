@@ -15,7 +15,7 @@ f = m.evaluate(t, *pv)
 ![](notebooks/model_example_1.png)
 
 
-The package is described in Parviainen (2015). Also, take a look at the [Bayesian parameter estimation tutorial](http://nbviewer.ipython.org/github/hpparvi/exo_tutorials/blob/master/01_broadband_parameter_estimation.ipynb) for an example on how to use the model in a basic exoplanet transit modelling situation.
+The package is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433). Also, take a look at the [Bayesian parameter estimation tutorial](http://nbviewer.ipython.org/github/hpparvi/exo_tutorials/blob/master/01_broadband_parameter_estimation.ipynb) for an example on how to use the model in a basic exoplanet transit modelling situation.
 
 Modules
 -------
