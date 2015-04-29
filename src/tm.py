@@ -42,63 +42,27 @@ class TransitModel(object):
 
 
     def __call__(self, z, k, u, c=0., update=True):
-        """Evaluate the model
-
-        :param z:
-            Array of normalised projected distances
-        
-        :param k:
-            Planet to star radius ratio
-        
-        :param u:
-            Array of limb darkening coefficients
-        
-        :param c:
-            Contamination factor (fraction of third light)
-            
-        :param update: (optional)
-        """
-        return self._eval(z, k, u, c, update)
-
-
-    def _eval_nointerpolate(self, z, k, u, c, update):
-        raise NotImplementedError()
-
-    def _eval_interpolate(self, z, k, u, c, update):
         raise NotImplementedError
 
+
     def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, interpolate_z=False):
-        """Evaluates the transit model for the given parameters.
+        """Evaluates the transit model given a time array and necessary parameters.
 
-        :param t:
-            Array of time values
+        Args:
+            t: Array of time values [d].
+            k: Planet to star radius ratio.
+            u: Array of limb darkening coefficients.
+            c: Contamination factor (fraction of third light), optional.
+            t0: Zero epoch.
+            p: Orbital period.
+            a: Scaled semi-major axis
+            i: Orbital inclination
+            e: Eccentricity
+            w: Argument of periastron.
+            c: Contamination factor. 
 
-        :param k:
-            Radius ratio
-
-        :param u:
-            Quadratic limb darkening coefficients [u1,u2]
-
-        :param t0:
-            Zero epoch
-
-        :param p:
-            Orbital period
-
-        :param a:
-            Scaled semi-major axis
-
-        :param i:
-            Inclination
-
-        :param e: (optional, default=0)
-            Eccentricity
-
-        :param w: (optional, default=0)
-            Argument of periastron
-
-        :param c: (optional, default=0)
-            Contamination factor ``c``
+        Returns:
+            An array of model flux values for each time sample.
         """
 
         u   = np.asfortranarray(u)

@@ -1,74 +1,58 @@
-"""Mandel-Agol transit model (ApJ 580, L171–L175 2002).
-
-.. moduleauthor:: Hannu Parviainen <hannu.parviainen@astro.ox.ac.uk>
-"""
 
 import numpy as np
-
 from mandelagol_f import mandelagol as ma
 from orbits_f import orbits as of
 from tm import TransitModel
 
 class MandelAgol(TransitModel):
-    """
-    Exoplanet transit light curve model by Mandel and Agol.
+    """Linear and quadratic Mandel-Agol transit models (ApJ 580, L171-L175 2002).
 
-    :param npol: (optional)
-
-    :param nldc: (optional)
-        Number of limb darkening coefficients (1 = linear limb darkening, 2 = quadratic)
-
-    :param nthr: (optional)
-        Number of threads (default = number of cores)
-
-    :param  lerp: (optional)
-        Switch telling if linear interpolation be used (default = False).
-
-    :param supersampling: (optional)
-        Number of subsamples to calculate for each light curve point
-
-    :param exptime: (optional)
-        Integration time for a single exposure, used in supersampling
-
+    This class wraps the Fortran implementations of the linear and quadratic Mandel & Agol
+    transit models.
     """
     def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=0, exptime=0.020433598, eclipse=False, klims=(0.07,0.13), nk=128, nz=256):
+        """Initialise the model.
+
+        Args:
+            nldc: Number of limb darkening coefficients, can be either 0 (no limb darkening) or 2 (quadratic limb darkening).
+            nthr: Number of threads (default = 0).
+            interpolate: If True, evaluates the model using interpolation (default = False).
+            supersampling: Number of subsamples to calculate for each light curve point (default=0).
+            exptime: Integration time for a single exposure, used in supersampling default=(0.02).
+            eclipse: If True, evaluates the model for eclipses. If false, eclipses are filtered out (default = False). 
+            klims: Minimum and maximum radius ratio if interpolation is used as (kmin,kmax).
+            nk: Interpolation table resolution in k.
+            nz: Interpolation table resolution in z.
+        """
         if not (nldc == 0 or nldc == 2):
             raise NotImplementedError('Only the uniform and quadratic Mandel-Agol models are currently supported.')
         super(MandelAgol, self).__init__(nldc, nthr, interpolate, supersampling, exptime, eclipse)
         self.interpolate = interpolate
             
-        ## Uniform stellar disk
         if nldc == 0:
             self._eval = self._eval_uniform
-
-        ## Quadratic limb darkening
         else:
             if self.interpolate:
                 self.ed,self.le,self.ld,self.kt,self.zt = ma.calculate_interpolation_tables(klims[0],klims[1],nk,nz,4)
                 self.klims = klims
                 self.nk = nk
                 self.nz = nz
-
+        
             self._eval = self._eval_quadratic
 
 
     def _eval_uniform(self, z, k, u, c, update=True):
         """Wraps the Fortran implementation of a transit over a uniform disk
 
-           :param z: 
-               Array of normalised projected distances
+            Args:
+                z: Array of normalised projected distances.
+                k: Planet to star radius ratio.
+                u: Array of limb darkening coefficients, not used.
+                c: Array of contamination values as [c1, c2, ... c_npb].
+                update: Not used.
 
-           :param k: 
-               Planet to star radius ratio
-
-           :param u:
-                Not used
-
-           :param c: 
-                Array of contamination values as [c1, c2, ... c_npb]
-
-           :param update: 
-                Not used
+            Returns:
+                An array of model flux values for each z.
         """
         return ma.eval_uniform(z, k, c, self.nthr)
 
@@ -76,20 +60,13 @@ class MandelAgol(TransitModel):
     def _eval_quadratic(self, z, k, u, c, update=True):
         """Wraps the Fortran implementation of the quadratic Mandel-Agol model
 
-           :param z: 
-               Array of normalised projected distances
+          Args:
+                z: Array of normalised projected distances
+                k: Planet to star radius ratio
+                u: Array of limb darkening coefficients.
+                c: Array of contamination values as [c1, c2, ... c_npb]
+                update: Not used.
 
-           :param k: 
-               Planet to star radius ratio
-
-           :param u:
-                Array of limb darkening coefficients arranged as [u1, v1, u2, v2, ... u_npb, v_npb]
-
-           :param c: 
-                Array of contamination values as [c1, c2, ... c_npb]
-
-           :param update: 
-                Not used
         """
         u = np.asarray(u).ravel()
         npb = len(u)//2
@@ -103,20 +80,19 @@ class MandelAgol(TransitModel):
 
 
     def __call__(self, z, k, u, c=0., b=1e-8, update=True):
-        """Evaluate the model
-
-        :param z:
-            Array of normalised projected distances
+        """Evaluates the model for the given z, k, and u. 
         
-        :param k:
-            Planet to star radius ratio
+        Evaluates the transit model given an array of normalised distances, a radius ratio, and
+        a set of limb darkening coefficients.
         
-        :param u:
-            Array of limb darkening coefficients
-        
-        :param c:
-            Contamination factor (fraction of third light)
-            
+        Args:
+            z: Array of normalised projected distances.
+            k: Planet to star radius ratio.
+            u: Array of limb darkening coefficients.
+            c: Contamination factor (fraction of third light), optional.
+           
+        Returns:
+            An array of model flux values for each z.
         """
         flux = self._eval(z, k, u, c, update)
         return flux if np.asarray(u).size > 2 else flux.ravel()
