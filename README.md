@@ -1,7 +1,10 @@
 PyTransit
 =========
 
-Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. This package implements the quadratic Mandel & Agol and the Gimenéz transit models with various optimisations, and offers both a simple interface for model evaluation and a lower-level access for fine-tuning the modelling process.   
+[![arXiv](http://img.shields.io/badge/license-GPLv2-blue.svg?style=flat)](http://www.gnu.org/licenses/gpl-2.0.html)
+[![arXiv](http://img.shields.io/badge/arXiv-1504.07433-blue.svg?style=flat)](http://arxiv.org/abs/1504.07433)
+
+Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. PyTransit implements the quadratic Mandel & Agol and the Gimenéz transit models with various optimisations, and offers both a simple interface for model evaluation and a lower-level access for fine-tuning the model.   
 
 ```Python
 from pytransit import MandelAgol
@@ -12,7 +15,7 @@ f = m.evaluate(t, *pv)
 ![](notebooks/model_example_1.png)
 
 
-The package is described in Parviainen (2015). Also, take a look at the [Bayesian parameter estimation tutorial](http://nbviewer.ipython.org/github/hpparvi/exo_tutorials/blob/master/01_broadband_parameter_estimation.ipynb) for an example on how to use the model in a basic exoplanet transit modelling situation.
+The package is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433). Also, take a look at the [Bayesian parameter estimation tutorial](http://nbviewer.ipython.org/github/hpparvi/exo_tutorials/blob/master/01_broadband_parameter_estimation.ipynb) for an example on how to use the model in a basic exoplanet transit modelling situation.
 
 Modules
 -------
