@@ -7,7 +7,6 @@ import numpy as np
 
 from mandelagol_f import mandelagol as ma
 from orbits_f import orbits as of
-from utils_f import utils as uf
 from tm import TransitModel
 
 class MandelAgol(TransitModel):
@@ -121,62 +120,3 @@ class MandelAgol(TransitModel):
         """
         flux = self._eval(z, k, u, c, update)
         return flux if np.asarray(u).size > 2 else flux.ravel()
-
-
-    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, interpolate_z=False):
-        """Evaluates the transit model for the given parameters.
-
-        :param t:
-            Array of time values
-
-        :param k:
-            Radius ratio
-
-        :param u:
-            Quadratic limb darkening coefficients [u1,u2]
-
-        :param t0:
-            Zero epoch
-
-        :param p:
-            Orbital period
-
-        :param a:
-            Scaled semi-major axis
-
-        :param i:
-            Inclination
-
-        :param e: (optional, default=0)
-            Eccentricity
-
-        :param w: (optional, default=0)
-            Argument of periastron
-
-        :param c: (optional, default=0)
-            Contamination factor ``c``
-        """
-
-        u   = np.asfortranarray(u)
-        npb = 1 if u.ndim == 1 else u.shape[0]
-
-        ## Check if we have multiple radius ratio (k) values, approximate the k with their
-        ## mean if yes, and calculate the area ratio factors.
-        ## 
-        if isinstance(k, np.ndarray):
-            _k = k.mean()
-            kf = (k/_k)**2
-        else:
-            _k = k
-            kf = 1.
-
-        z = self._calculate_z(t, t0, p, a, i, e, w, interpolate_z)
-        flux = self.__call__(z, k, u, c, update)
-
-        if self.ss:
-            if npb == 1:
-                flux = uf.average_samples_1(flux, self.npt, self.nss, self.nthr)
-            else:
-                flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
-
-        return kf*(flux-1.)+1.

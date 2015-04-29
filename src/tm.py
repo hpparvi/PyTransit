@@ -7,34 +7,39 @@
 from math import fabs
 import numpy as np
 from orbits_f import orbits as of
+from utils_f import utils as uf
 
 class TransitModel(object):
     """
     Exoplanet transit light curve model 
 
     :param nldc: (optional)
-        Number of limb darkening coefficients (1 = linear limb darkening, 2 = quadratic)
+        Number of limb darkening coefficients
 
-    :param nthr: (optional)
-        Number of threads (default = number of cores)
+        For the Mandel & Agol model use either 1 (linear limb darkening), or 2 (quadratic limb darkening).
+        The Gimenes model uses a general limb darkening law, nldc can be any positive integer, 
 
-    :param  interpolate: (optional)
-        Switch telling if linear interpolation be used (default = False).
+    :param nthr: (optional, default = 0)
+        Number of threads
 
-    :param supersampling: (optional)
+    :param  interpolate: (optional, default = False)
+        Use interpolated model
+
+    :param supersampling: (optional, default = 0)
         Number of subsamples to calculate for each light curve point
 
     :param exptime: (optional)
         Integration time for a single exposure, used in supersampling
     """
     def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=0, exptime=0.020433598, eclipse=False):
-        self.nldc = nldc
-        self.nthr = nthr
-        self.ss  = bool(supersampling)
-        self.nss = int(supersampling)
-        self.exp = exptime
+        self.nldc = int(nldc)
+        self.nthr = int(nthr)
+        self.ss   = bool(supersampling)
+        self.nss  = int(supersampling)
+        self.exp  = float(exptime)
         self.time = None
-        self.eclipse = eclipse
+        self.eclipse = bool(eclipse)
+
 
     def __call__(self, z, k, u, c=0., update=True):
         """Evaluate the model
@@ -63,7 +68,63 @@ class TransitModel(object):
         raise NotImplementedError
 
     def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, interpolate_z=False):
-        raise NotImplementedError()
+        """Evaluates the transit model for the given parameters.
+
+        :param t:
+            Array of time values
+
+        :param k:
+            Radius ratio
+
+        :param u:
+            Quadratic limb darkening coefficients [u1,u2]
+
+        :param t0:
+            Zero epoch
+
+        :param p:
+            Orbital period
+
+        :param a:
+            Scaled semi-major axis
+
+        :param i:
+            Inclination
+
+        :param e: (optional, default=0)
+            Eccentricity
+
+        :param w: (optional, default=0)
+            Argument of periastron
+
+        :param c: (optional, default=0)
+            Contamination factor ``c``
+        """
+
+        u   = np.asfortranarray(u)
+        npb = 1 if u.ndim == 1 else u.shape[0]
+
+        ## Check if we have multiple radius ratio (k) values, approximate the k with their
+        ## mean if yes, and calculate the area ratio factors.
+        ## 
+        if isinstance(k, np.ndarray):
+            _k = k.mean()
+            kf = (k/_k)**2
+        else:
+            _k = k
+            kf = 1.
+
+        z = self._calculate_z(t, t0, p, a, i, e, w, interpolate_z)
+        flux = self.__call__(z, k, u, c, update)
+
+        if self.ss:
+            if npb == 1:
+                flux = uf.average_samples_1(flux, self.npt, self.nss, self.nthr)
+            else:
+                flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
+
+        return kf*(flux-1.)+1.
+
 
     def _calculate_z(self, t, t0, p, a, i, e=0, w=0, interpolate_z=False):
         ## Calculate the supersampling time array if not cached

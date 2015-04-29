@@ -15,7 +15,6 @@ import numpy as np
 from math import fabs
 from gimenez_f import gimenez as g
 from orbits_f import orbits as of
-from utils_f import utils as uf
 from tm import TransitModel
 
 class Gimenez(TransitModel):
@@ -80,65 +79,4 @@ class Gimenez(TransitModel):
 
 
     def _eval_interpolate(self, z, k, u, c, b, update):
-        return g.eval_interpolate(z, k, u, b, c, self.nthr, update, *self._coeff_arr)
-
-
-    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, interpolate_z=False):
-        """Evaluates the transit model for the given parameters.
-
-        :param t:
-            Array of time values
-
-        :param k:
-            Radius ratio(s), can be a single float or an array of values for each passband
-
-        :param u:
-            Either 1D (nldc or npb*nldc) or 2D (npb,nldc) array of limb darkening coefficients (ldcs).
-            If 2D, the model returns ``npb`` light curves, each corresponding to an ldc set
-            described by a row of the ldc array.
-
-        :param t0:
-            Zero epoch
-
-        :param p:
-            Orbital period
-
-        :param a:
-            Scaled semi-major axis
-
-        :param i:
-            Inclination
-
-        :param e: (optional, default=0)
-            Eccentricity
-
-        :param w: (optional, default=0)
-            Argument of periastron
-
-        :param c: (optional, default=0)
-            Contamination factor(s) ``c`` as a float or an array with ``c`` for each passband
-        """
-
-        u   = np.asfortranarray(u)
-        npb = 1 if u.ndim == 1 else u.shape[0]
-
-        ## Check if we have multiple radius ratio (k) values, approximate the k with their
-        ## mean if yes, and calculate the area ratio factors.
-        ## 
-        if isinstance(k, np.ndarray):
-            _k = k.mean()
-            kf = (k/_k)**2
-        else:
-            _k = k
-            kf = 1.
-            
-        z = self._calculate_z(t, t0, p, a, i, e, w, interpolate_z)
-        flux = self.__call__(z, _k, u, c, update)
-
-        if self.ss:
-            if npb == 1:
-                flux = uf.average_samples_1(flux, self.npt, self.nss, self.nthr)
-            else:
-                flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
-
-        return kf*(flux-1.)+1.
+        return g.eval_lerp(z, k, u, b, c, self.nthr, update, *self._coeff_arr)
