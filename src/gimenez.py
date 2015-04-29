@@ -18,7 +18,6 @@ from orbits_f import orbits as of
 from utils_f import utils as uf
 from tm import TransitModel
 
-
 class Gimenez(TransitModel):
     """
     Exoplanet transit light curve model by A. Gimenez (A&A 450, 1231--1237, 2006).
