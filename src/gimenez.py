@@ -1,45 +1,34 @@
-"""Gimenez transit model
 
-   A package offering an easy access to the Fortran implementation of the
-   transit model by A. Gimenez (A&A 450, 1231--1237, 2006). The Fortran code is
-   adapted from the original implementation at http://thor.ieec.uab.es/LRVCode,
-   and includes several optimisations that make it several orders faster for
-   light curves with thousands to millions of datapoints.
-
-
-.. moduleauthor:: Hannu Parviainen <hannu.parviainen@astro.ox.ac.uk>
-"""
 
 import numpy as np
-
 from math import fabs
 from gimenez_f import gimenez as g
 from orbits_f import orbits as of
 from tm import TransitModel
 
 class Gimenez(TransitModel):
+    """Exoplanet transit light curve model by A. Gimenez (A&A 450, 1231--1237, 2006).
+
+    This class aims to offer an easy access to the Fortran implementation of the
+    transit model by A. Gimenez (A&A 450, 1231--1237, 2006). The Fortran code is
+    adapted from the original implementation at http://thor.ieec.uab.es/LRVCode,
+    and includes several optimisations that make it several orders faster for
+    light curves with thousands to millions of datapoints.
     """
-    Exoplanet transit light curve model by A. Gimenez (A&A 450, 1231--1237, 2006).
 
-    :param npol: (optional)
-
-    :param nldc: (optional)
-        Number of limb darkening coefficients (1 = linear limb darkening, 2 = quadratic)
-
-    :param nthr: (optional)
-        Number of threads (default = number of cores)
-
-    :param  interpolate: (optional)
-        Switch telling if linear interpolation be used (default = False).
-
-    :param supersampling: (optional)
-        Number of subsamples to calculate for each light curve point
-
-    :param exptime: (optional)
-        Integration time for a single exposure, used in supersampling
-
-    """
     def __init__(self, npol=100, nldc=2, nthr=0, interpolate=False, supersampling=0, exptime=0.020433598, eclipse=False):
+        """Initialise the model.
+
+        Args:
+            npol:
+            nldc: Number of limb darkening coefficients.
+            nthr: Number of threads (default = 0).
+            interpolate: If True, evaluates the model using interpolation (default = False).
+            supersampling: Number of subsamples to calculate for each light curve point (default=0).
+            exptime: Integration time for a single exposure, used in supersampling default=(0.02).
+            eclipse: If True, evaluates the model for eclipses. If false, eclipses are filtered out (default = False). 
+        """
+
         super(Gimenez,self).__init__(nldc,nthr,interpolate,supersampling,exptime,eclipse)
         self._eval = self._eval_interpolate if interpolate else self._eval_nointerpolate
         self._coeff_arr = g.init_arrays(npol, nldc)
@@ -47,25 +36,19 @@ class Gimenez(TransitModel):
 
 
     def __call__(self, z, k, u, c=0., b=1e-8, update=True):
-        """
-        Evaluate the model
+        """Evaluates the model for the given z, k, and u. 
 
-        :param z:
-            Array of normalised projected distances
-        
-        :param k:
-            Planet to star radius ratio
-        
-        :param u:
-            Array of limb darkening coefficients
-        
-        :param c:
-            Contamination factor (fraction of third light)
-            
-        :param b: (optional)
-            Not used, ignore for now.
+        Evaluates the transit model given an array of normalised distances, a radius ratio, and
+        a set of limb darkening coefficients.
 
-        :param update: (optional)
+        Args:
+            z: Array of normalised projected distances.
+            k: Planet to star radius ratio.
+            u: Array of limb darkening coefficients.
+            c: Contamination factor (fraction of third light), optional.
+           
+        Returns:
+            An array of model flux values for each z.
         """
 
         u = np.reshape(u, [-1, self.nldc]).T
