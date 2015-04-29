@@ -49,7 +49,8 @@ The code should compile with other compilers also, but only gfortran and Intel f
 Notes
 -----
 
-Please use the [Issue tracker](https://github.com/hpparvi/PyTransit/issues) to report bugs and ideas for improvement.
+ - The interpolated (quadratic) Mandel & Agol model offers the best performance at the moment, but needs to be initialised with the minimum and maximum allowed radius ratio.  
+ - Please use the [Issue tracker](https://github.com/hpparvi/PyTransit/issues) to report bugs and ideas for improvement.
 
 
 Examples
