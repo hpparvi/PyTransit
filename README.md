@@ -121,7 +121,7 @@ Basic transit model usage with linear limb darkening law, lower accuracy, and fo
       
 Transit model using linear interpolation:
 
-    m = Gimenez(lerp=True)
+    m = Gimenez(interpolate=True)
     ...
 
 
@@ -144,7 +144,7 @@ scaled semi-major axis a, inclination i, eccentricity e, and argument of periast
 
 Transit model using linear interpolation, two different sets of z:
 
-    m  = Gimenez(lerp=True)      # Initialize the model
+    m  = Gimenez(interpolate=True)      # Initialize the model
     I1 = m(z1,k,u)               # Evaluate the model for z1, update the interpolation table
     I2 = m(z2,k,u, update=False) # Evaluate the model for z2, don't update the interpolation table
     
