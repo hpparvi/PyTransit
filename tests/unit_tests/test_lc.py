@@ -5,6 +5,8 @@ import numpy.testing as npt
 
 from pytransit import Gimenez, MandelAgol
 
+## TODO: Write the tests for supersampled models
+
 class TestCommon(unittest.TestCase):
     def setUp(self):
         self.npt=2000
@@ -14,64 +16,46 @@ class TestCommon(unittest.TestCase):
         self.npb = len(self.u)
 
 
-    def test_gmd_singleband(self):
-        tm = Gimenez(interpolate=False)
+    def sbt(self, tm):
         f  = tm(self.z, self.k, self.u[0])
-        assert f.ndim == 1
-        assert f.shape == (self.npt,)
+        assert f.ndim == 1, 'Given one set of ld coefficients, the returned array should be one dimensional.'
+        assert f.shape == (self.npt,), 'Returned array shape should be (npt)'
 
+    def mbt(self, tm):
+        for i in range(1,self.npb):
+            f  = tm(self.z, self.k, self.u[:i+1])
+            assert f.ndim == 2, 'Given multiple sets of ld coefficients, the returned array should be two dimensional.'
+            assert f.shape == (self.npt,i+1), 'Returned array shape should be (npt,npb)'
+
+
+    ## Gimenez model tests
+    ## -------------------
+    def test_gmd_singleband(self):
+        self.sbt(Gimenez(interpolate=False))
 
     def test_gmd_multiband(self):
-        tm = Gimenez(interpolate=False)
-        for i in range(1,self.npb):
-            f  = tm(self.z, self.k, self.u[:i+1])
-            assert f.ndim == 2
-            assert f.shape == (self.npt,i+1)
-
-
-    def test_mad_singleband(self):
-        tm = MandelAgol(interpolate=False)
-        f  = tm(self.z, self.k, self.u[0])
-        assert f.ndim == 1
-        assert f.shape == (self.npt,)
-
-
-    def test_mad_multiband(self):
-        tm = MandelAgol(interpolate=False)
-        for i in range(1,self.npb):
-            f  = tm(self.z, self.k, self.u[:i+1])
-            assert f.ndim == 2
-            assert f.shape == (self.npt,i+1)
-      
+        self.mbt(Gimenez(interpolate=False))
 
     def test_gmi_singleband(self):
-        tm = Gimenez(interpolate=True)
-        f  = tm(self.z, self.k, self.u[0])
-        assert f.ndim == 1
-        assert f.shape == (self.npt,)
-
+        self.sbt(Gimenez(interpolate=True))
 
     def test_gmi_multiband(self):
-        tm = Gimenez(interpolate=True)
-        for i in range(1,self.npb):
-            f  = tm(self.z, self.k, self.u[:i+1])
-            assert f.ndim == 2
-            assert f.shape == (self.npt,i+1)
+        self.mbt(Gimenez(interpolate=True))
 
+
+    ## Mandel & Agol model tests
+    ## -------------------------
+    def test_mad_singleband(self):
+        self.sbt(MandelAgol(interpolate=False))
+
+    def test_mad_multiband(self):
+        self.mbt(MandelAgol(interpolate=False))
 
     def test_mai_singleband(self):
-        tm = MandelAgol(interpolate=True)
-        f  = tm(self.z, self.k, self.u[0])
-        assert f.ndim == 1
-        assert f.shape == (self.npt,)
-
+        self.sbt(MandelAgol(interpolate=True))
 
     def test_mai_multiband(self):
-        tm = MandelAgol(interpolate=True)
-        for i in range(1,self.npb):
-            f  = tm(self.z, self.k, self.u[:i+1])
-            assert f.ndim == 2
-            assert f.shape == (self.npt,i+1)
+        self.mbt(MandelAgol(interpolate=True))
   
 
 class TestGimenezModel(unittest.TestCase):
@@ -85,53 +69,43 @@ class TestGimenezModel(unittest.TestCase):
         self.f_ref = np.load('reference_flux.npz')['flux']
 
 
-    def test_noip_np500(self):
-        f = Gimenez(npol=500, nthr=1, interpolate=False)(self.z, self.k, self.u[0])
-        npt.assert_array_almost_equal(f, self.f_ref[:,0])
-        for i in range(2,4):
-            f = Gimenez(npol=500, nthr=1, interpolate=False)(self.z, self.k, self.u[0:i])
-            npt.assert_array_almost_equal(f, self.f_ref[:,0:i])
-
-
-    def test_ip_np500(self):
-        f = Gimenez(npol=500, nthr=1, interpolate=True)(self.z, self.k, self.u[0])
-        npt.assert_array_almost_equal(f,self.f_ref[:,0], decimal=4)
-        for i in range(2,4):
-            f = Gimenez(npol=500, nthr=1, interpolate=True)(self.z, self.k, self.u[0:i])
-            npt.assert_array_almost_equal(f,self.f_ref[:,0:i], decimal=4)
-
-
-    def test_noip_np100(self):
-        f = Gimenez(npol=100, nthr=1, interpolate=False)(self.z, self.k, self.u[0])
+    def tae(self, tm):
+        f = tm(self.z, self.k, self.u[0])
         npt.assert_array_almost_equal(f, self.f_ref[:,0], decimal=4)
         for i in range(2,4):
-            f = Gimenez(npol=100, nthr=1, interpolate=False)(self.z, self.k, self.u[0:i])
+            f = tm(self.z, self.k, self.u[0:i])
             npt.assert_array_almost_equal(f, self.f_ref[:,0:i], decimal=4)
 
 
-    def test_ip_np100(self):
-        f = Gimenez(npol=100, nthr=1, interpolate=True)(self.z, self.k, self.u[0])
-        npt.assert_array_almost_equal(f,self.f_ref[:,0], decimal=4)
-        for i in range(2,4):
-            f = Gimenez(npol=100, nthr=1, interpolate=True)(self.z, self.k, self.u[0:i])
-            npt.assert_array_almost_equal(f,self.f_ref[:,0:i], decimal=4)
+    def test_noip_np500(self):
+        self.tae(Gimenez(npol=500, nthr=1, interpolate=False))
+ 
+    def test_ip_np500(self):
+        self.tae(Gimenez(npol=500, nthr=1, interpolate=True))
 
+    def test_noip_np100(self):
+        self.tae(Gimenez(npol=100, nthr=1, interpolate=False))
+ 
+    def test_ip_np100(self):
+        self.tae(Gimenez(npol=100, nthr=1, interpolate=True))
 
     def test_noip_threading(self):
         for nthr in range(16):
-            f = Gimenez(npol=500, nthr=nthr, interpolate=False)(self.z, self.k, self.u[0])
+            tm = Gimenez(npol=500, nthr=nthr, interpolate=False)
+            f = tm(self.z, self.k, self.u[0])
             npt.assert_array_almost_equal(f, self.f_ref[:,0])
             for i in range(2,4):
-                f = Gimenez(npol=500, nthr=nthr, interpolate=False)(self.z, self.k, self.u[0:i])
+                f = tm(self.z, self.k, self.u[0:i])
                 npt.assert_array_almost_equal(f, self.f_ref[:,0:i])
 
 
     def test_ip_threading(self):
         for nthr in range(16):
-            f = Gimenez(npol=500, nthr=nthr, interpolate=True)(self.z, self.k, self.u[0])
+            tm = Gimenez(npol=500, nthr=nthr, interpolate=True)
+            f = tm(self.z, self.k, self.u[0])
             npt.assert_array_almost_equal(f, self.f_ref[:,0], decimal=4)
             for i in range(2,4):
-                f = Gimenez(npol=500, nthr=nthr, interpolate=True)(self.z, self.k, self.u[0:i])
+                f = tm(self.z, self.k, self.u[0:i])
                 npt.assert_array_almost_equal(f, self.f_ref[:,0:i], decimal=4)
 
 
