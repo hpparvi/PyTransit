@@ -35,18 +35,25 @@ Modules
 
 Installation
 ------------
+
 First clone the repository from github
 
     git clone https://github.com/hpparvi/PyTransit.git
     cd PyTransit
 
-and then do the normal python package build & installation. For example, building with a fairly modern gfortran
-and then installing the package locally (without root rights) would take
+and then do the normal python package build & installation. 
+
+#### Intel & AMD
 
     python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native" build
     python setup.py install --user
 
-The code should compile with other compilers also, but only gfortran and Intel fortran have been tested.
+#### Mac
+
+    python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native -mno-avx" build
+    python setup.py install --user
+
+The code has been tested with gfortran and Intel compilers, but it should compile with others as well (if it doesn't, please let me know).
 
 
 Notes
