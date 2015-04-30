@@ -1,8 +1,4 @@
-"""
 
-
-.. moduleauthor:: Hannu Parviainen <hannu.parviainen@astro.ox.ac.uk>
-"""
 
 from math import fabs
 import numpy as np
@@ -10,26 +6,7 @@ from orbits_f import orbits as of
 from utils_f import utils as uf
 
 class TransitModel(object):
-    """
-    Exoplanet transit light curve model 
-
-    :param nldc: (optional)
-        Number of limb darkening coefficients
-
-        For the Mandel & Agol model use either 1 (linear limb darkening), or 2 (quadratic limb darkening).
-        The Gimenes model uses a general limb darkening law, nldc can be any positive integer, 
-
-    :param nthr: (optional, default = 0)
-        Number of threads
-
-    :param  interpolate: (optional, default = False)
-        Use interpolated model
-
-    :param supersampling: (optional, default = 0)
-        Number of subsamples to calculate for each light curve point
-
-    :param exptime: (optional)
-        Integration time for a single exposure, used in supersampling
+    """Exoplanet transit light curve model 
     """
     def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=0, exptime=0.020433598, eclipse=False):
         self.nldc = int(nldc)
