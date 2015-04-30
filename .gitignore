@@ -4,4 +4,6 @@
 *.log
 *.pyc
 *~
+*pkl
+*pdf
 build
