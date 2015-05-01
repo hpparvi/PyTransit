@@ -10,7 +10,7 @@ class MandelAgol(TransitModel):
     This class wraps the Fortran implementations of the linear and quadratic Mandel & Agol
     transit models.
     """
-    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=0, exptime=0.020433598, eclipse=False, klims=(0.07,0.13), nk=128, nz=256):
+    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=0, exptime=0.020433598, eclipse=False, klims=(0.07,0.13), nk=128, nz=256, **kwargs):
         """Initialise the model.
 
         Args:
@@ -32,7 +32,7 @@ class MandelAgol(TransitModel):
         if nldc == 0:
             self._eval = self._eval_uniform
         else:
-            if self.interpolate:
+            if self.interpolate or kwargs.get('lerp', False):
                 self.ed,self.le,self.ld,self.kt,self.zt = ma.calculate_interpolation_tables(klims[0],klims[1],nk,nz,4)
                 self.klims = klims
                 self.nk = nk
