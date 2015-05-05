@@ -11,7 +11,6 @@ addons:
 
 install:
   - gfortran -v
-  - pip install numpy scipy
   - python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native" build install
 
 script: nosetests -w tests/unit_tests
