@@ -5,6 +5,7 @@ python:
 cache: pip
 
 install:
+  - gfortran -v
   - apt-get install gfortran
   - pip install numpy scipy
   - python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native" build install
