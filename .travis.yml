@@ -4,4 +4,8 @@ python:
 # command to install dependencies
 # install: "pip install -r requirements.txt"
 # command to run tests
+
+install:
+  - python setup.by config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native" build install
+
 script: nosetests -w tests/unit_tests
