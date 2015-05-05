@@ -2,11 +2,11 @@ language: python
 python:
   - "2.7"
 
-env:
-  global:
-    - DEPENDS="gfortran-4.9"
+cache: pip
 
 install:
+  - apt-get install gfortran
+  - pip install numpy scipy
   - python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native" build install
 
 script: nosetests -w tests/unit_tests
