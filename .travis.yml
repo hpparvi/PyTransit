@@ -1,9 +1,10 @@
 language: python
 python:
   - "2.7"
-# command to install dependencies
-# install: "pip install -r requirements.txt"
-# command to run tests
+
+env:
+  global:
+    - DEPENDS="gfortran-4.9"
 
 install:
   - python setup.by config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native" build install
