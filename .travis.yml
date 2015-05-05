@@ -4,6 +4,11 @@ python:
 
 cache: pip
 
+addons:
+  apt:
+    packages:
+    - gfortran
+
 install:
   - gfortran -v
   - apt-get install gfortran
