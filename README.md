@@ -71,18 +71,28 @@ Examples
 Basic usage is simple:
 
 ```Python
-from pytransit import Gimenez
-
-m = Gimenez()
-f = m.evaluate(t, *pv)
-```
-or
-```Python
 from pytransit import MandelAgol
 
 m = MandelAgol()
 f = m.evaluate(t, *pv)
 ```
+or
+
+```Python
+from pytransit import MandelAgol
+
+m = MandelAgol(interpolate=True, klims=(0.10,0.13))
+f = m.evaluate(t, *pv)
+```
+
+or
+```Python
+from pytransit import Gimenez
+
+m = Gimenez()
+f = m.evaluate(t, *pv)
+```
+
 Here we first initialize the model accepting the defaults (quadratic limb darkening law, no supersampling, 
 and the use of all available cores), and then calculate the model for times in the time array `t`, `pv` being 
 a list containing the system parameters.
@@ -90,13 +100,13 @@ a list containing the system parameters.
 For a slightly more useful example, we can do:
 ```Python
 import numpy as np
-from pytransit import Gimenez
+from pytransit import MandelAgol
 
 t = np.linspace(0.8,1.2,500)
 k, t0, p, a, i, e, w = 0.1, 1.01, 4, 8, 0.48*np.pi, 0.2, 0.5*np.pi
 u = [0.25,0.10]
 
-m = Gimenez()
+m = MandelAgol()
 f = m.evaluate(t, k, u, t0, p, a, i, e, w)
 ```
 where `k` is the planet-star radius ratio, `t0` the transit center, `p` the orbital period, `a` the scaled
@@ -111,7 +121,7 @@ evaluating the model several times for different coefficient sets):
     ...
     u = [[0.25, 0.1],[0.35,0.2],[0.45,0.3],[0.55,0.4]]
 
-    m = Gimenez()
+    m = MandelAgol()
     f = m.evaluate(t, k, u, t0, p, a, i, e, w)
     
 In this case, the model returns several light curve models, each corresponding to a single ldc set.
@@ -120,11 +130,11 @@ In this case, the model returns several light curve models, each corresponding t
 The transit model offers built-in *supersampling* for transit fitting to transit photometry with poor time 
 sampling (such as *Kepler*'s long cadence data):
 
-    m = Gimenez(supersampling=8, exptime=0.02)
+    m = MandelAgol(supersampling=8, exptime=0.02)
     ...
 
-### Tweaking
-The model accuracy and the number of limb darkening coefficients can be set in the initialization. 
+### Tweaking the Gimenéz model
+The Gimenéz model accuracy and the number of limb darkening coefficients can be set in the initialization. 
 Finally, for fitting to large datasets, the model can be evaluated using interpolation. 
 
 Basic transit model usage with linear limb darkening law, lower accuracy, and four cores:
