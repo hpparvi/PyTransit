@@ -9,6 +9,9 @@
 !! of the limb darkening effects from rest of the computations.
 !!
 !! -GPL-
+!!
+!! Copyright (C) 2010--2015  Hannu Parviainen
+!!
 !! This program is free software: you can redistribute it and/or modify
 !! it under the terms of the GNU General Public License as published by
 !! the Free Software Foundation, either version 3 of the License, or
@@ -28,7 +31,6 @@
 !!
 !! Date 
 !!  01.03.2011
-!!
 
 #ifndef CHUNK_SIZE
 #define CHUNK_SIZE 128
