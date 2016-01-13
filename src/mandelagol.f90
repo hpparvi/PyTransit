@@ -170,7 +170,7 @@ contains
           Kk=ellk(q)
           Ek=ellec(q)
           n=1.0/x1-1.0
-          Pk=Kk-n/3.0*rj(0.d0, 1.0-q*q, 1.0d0, 1.0+n)
+          Pk = ellpicb(n,q) 
           ld= 1.0/9.0*INV_PI/sqrt(k*z) * (((1.0-x2)*(2.0*x2+x1-3.0)-3.0*x3*(x2-2.0))*Kk+4.0*k*z*(z2+7.0*k2-4.0)*Ek-3.0*x3/x1*Pk)
           if(z < k) then
              ld=ld+2.0/3.0
@@ -186,7 +186,7 @@ contains
           Kk=ellk(q)
           Ek=ellec(q)
           n=x2/x1-1.0
-          Pk=Kk-n/3.0*rj(0.0d0,1.0-q*q,1.0d0,1.0+n)
+          Pk = ellpicb(n,q) 
           ld=2.0/9.0*INV_PI/sqrt(1.0-x1)*((1.0-5.0*z2+k2+x3*x3)*Kk+(1.0-x1)*(z2+7.0*k2-4.0)*Ek-3.0*x3/x1*Pk)
           if(z < k) ld=ld+2.0/3.0
           if(abs(k+z-1.0) < 1.d-4) then
@@ -361,7 +361,7 @@ contains
              Kk=ellk(q)
              Ek=ellec(q)
              n=1.d0/x1-1.d0
-             Pk=Kk-n/3.d0*rj(0.d0, 1.d0-q*q, 1.d0, 1.d0+n)
+             Pk = ellpicb(n,q) 
              ld(j,i)= 1.d0/9.d0*INV_PI/sqrt(k*z) * (((1.d0-x2)*(2.d0*x2+x1-3.d0)-3.d0*x3*(x2-2.d0)) &
                   & *Kk+4.d0*k*z*(z2+7.d0*k2-4.d0)*Ek-3.d0*x3/x1*Pk)
              if(z < k) then
@@ -378,7 +378,7 @@ contains
              Kk=ellk(q)
              Ek=ellec(q)
              n=x2/x1-1.d0
-             Pk=Kk-n/3.d0*rj(0.0d0,1.d0-q*q,1.d0,1.d0+n)
+             Pk = ellpicb(n,q) 
              ld(j,i)=2.d0/9.d0*INV_PI/sqrt(1.d0-x1)*((1.d0-5.d0*z2+k2+x3*x3)*Kk+(1.d0-x1)*(z2+7.d0*k2-4.d0)*Ek-3.d0*x3/x1*Pk)
              if(z < k) ld(j,i)=ld(j,i)+2.d0/3.d0
              if(abs(k+z-1.d0) < 1.d-4) then
@@ -392,125 +392,39 @@ contains
   end subroutine calculate_interpolation_tables
 
 
-  real(8) function rc(x,y)
-    real(8), intent(in) :: x,y
-    real(8), parameter :: ERRTOL=0.040, THIRD=1.0/3.0, C1=0.30, C2=1.0/7.0, C3=0.3750, C4=9.0/22.0
-    real(8) :: alamb,ave,s,w,xt,yt
-    integer :: i
+  real(8) function ellpicb(n, k)
+    real(8), intent(in) :: n,k
+    real(8) :: kc,p,m0,c,d,e,f,g
+    integer :: nit
 
-    if(y > 0.0) then
-       xt=x
-       yt=y
-       w=1.
-    else
-       xt=x-y
-       yt=-y
-       w=sqrt(x)/sqrt(xt)
-    end if
+    kc = sqrt(1.d0-k*k)
+    p  = sqrt(n + 1.d0)    
+    m0 = 1.d0
+    c  = 1.d0
+    d  = 1.d0/p
+    e  = kc
 
-    s = 1.d3
-    do while(abs(s) > ERRTOL .and. i<MAXITER)
-       alamb=2.0*sqrt(xt)*sqrt(yt)+yt
-       xt=0.250*(xt+alamb)
-       yt=0.250*(yt+alamb)
-       ave=THIRD*(xt+yt+yt)
-       s=(yt-ave)/ave
-       i=i+1
+    nit = 0
+    do while (nit < 10000)
+       f = c
+       c = d/p + c
+       g = e/p
+       d = 2.*(f*g + d)
+       p = g + p
+       g = m0
+       m0 = kc + m0
+
+       if(abs(1.d0-kc/g) > 1.0d-8) then
+          kc = 2.d0*sqrt(e)
+          e = kc*m0
+       else
+          ellpicb = HALF_PI*(c*m0+d)/(m0*(m0+p))
+          return
+       end if
+       nit = nit+1
     end do
-
-    rc=w*(1.0+s*s*(C1+s*(C2+s*(C3+s*C4))))/sqrt(ave)
-  end function rc
-
-  real(8) function rj(x,y,z,p)
-    real(8), intent(in) :: p,x,y,z
-    real(8), parameter :: &
-         & ERRTOL=.050, C1=3.0/14.0,&
-         & C2=1.0/3.0, C3=3.0/22.0, C4=3.0/26.0, C5=.750*C3, &
-         & C6=1.50*C4, C7=.50*C2, C8=C3+C3
-
-    real(8) :: a,alamb,alpha,ave,b,beta,delp,delx,dely,delz,ea,eb,ec,ed,ee,&
-         & fac,pt,rcx,rho,sqrtx,sqrty,sqrtz,sum,tau,xt,yt,zt
-
-    integer :: i
-
-    sum=0.0
-    fac=1.0
-    if(p > 0.0) then
-       xt=x
-       yt=y
-       zt=z
-       pt=p
-    else
-       xt=min(x,y,z)
-       zt=max(x,y,z)
-       yt=x+y+z-xt-zt
-       a=1.0/(yt-p)
-       b=a*(zt-yt)*(yt-xt)
-       pt=yt+b
-       rho=xt*zt/yt
-       tau=p*pt/yt
-       rcx=rc(rho,tau)
-    end if
-
-    delx = 1.d3
-    do while(max(abs(delx),abs(dely),abs(delz),abs(delp)) > ERRTOL .and. i<MAXITER)
-       sqrtx=sqrt(xt)
-       sqrty=sqrt(yt)
-       sqrtz=sqrt(zt)
-       alamb=sqrtx*(sqrty+sqrtz)+sqrty*sqrtz
-       alpha=(pt*(sqrtx+sqrty+sqrtz)+sqrtx*sqrty*sqrtz)**2
-       beta=pt*(pt+alamb)**2
-       sum=sum+fac*rc(alpha,beta)
-       fac=.250*fac
-       xt=.250*(xt+alamb)
-       yt=.250*(yt+alamb)
-       zt=.250*(zt+alamb)
-       pt=.250*(pt+alamb)
-       ave=.20*(xt+yt+zt+pt+pt)
-       delx=(ave-xt)/ave
-       dely=(ave-yt)/ave
-       delz=(ave-zt)/ave
-       delp=(ave-pt)/ave
-       i = i+1
-    end do
-
-    ea=delx*(dely+delz)+dely*delz
-    eb=delx*dely*delz
-    ec=delp**2
-    ed=ea-3.0*ec
-    ee=eb+2.0*delp*(ea-ec)
-    rj=3.0*sum+fac*(1.0+ed*(-C1+C5*ed-C6*ee)+eb*(C7+delp*(-C8+delp*C4))+delp*ea*(C2-delp*C3)-C2*delp*ec)/(ave*sqrt(ave))
-    if (p < 0.0) rj=a*(b*rj+3.0*(rcx-rf(xt,yt,zt)))
-  end function rj
-
-  real(8) function rf(x,y,z)
-    real(8), intent(in) :: x,y,z
-    real(8), parameter :: ERRTOL=.080,THIRD=1.0/3.0,C1=1.0/24.0,C2=.10,C3=3.0/44.0,C4=1.0/14.0
-    real(8) :: alamb,ave,delx,dely,delz,e2,e3,sqrtx,sqrty,sqrtz,xt,yt,zt
-    integer :: i
-    xt=x
-    yt=y
-    zt=z
-
-    delx = 1.d3
-    do while(max(abs(delx),abs(dely),abs(delz)) > ERRTOL .and. i<MAXITER)
-       sqrtx=sqrt(xt)
-       sqrty=sqrt(yt)
-       sqrtz=sqrt(zt)
-       alamb=sqrtx*(sqrty+sqrtz)+sqrty*sqrtz
-       xt=.250*(xt+alamb)
-       yt=.250*(yt+alamb)
-       zt=.250*(zt+alamb)
-       ave=THIRD*(xt+yt+zt)
-       delx=(ave-xt)/ave
-       dely=(ave-yt)/ave
-       delz=(ave-zt)/ave
-    end do
-
-    e2=delx*dely-delz**2
-    e3=delx*dely*delz
-    rf=(1.0+(C1*e2-C2-C3*e3)*e2+C4*e3)/sqrt(ave)
-  end function rf
+    ellpicb = 0.d0
+  end function ellpicb
 
   real(8) function ellec(k)
     implicit none
