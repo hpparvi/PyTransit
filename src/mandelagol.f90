@@ -86,7 +86,7 @@ contains
     real(8), intent(in), dimension(npt) :: z0
     real(8), intent(in) :: u(2*npb), c(npb)
     real(8), intent(out), dimension(npt, npb) :: flux
-    real(8) :: k,k2,z2,lam,x1,x2,x3,z,omega(npb),kap0,kap1,q,Kk,Ek,Pk,n,ed,le,ld
+    real(8) :: k,k2,z2,x1,x2,x3,z,omega(npb),kap0,kap1,q,Kk,Ek,Pk,n,ed,le,ld
     integer :: i,j,iu,iv
 
     if(abs(k-0.5) < 1.d-4) then 
@@ -100,12 +100,12 @@ contains
 
     !$ call omp_set_num_threads(nthr)
     !$omp parallel do default(none) shared(z0,flux,u,c,omega,k,k2,npt,npb) &
-    !$omp private(i,j,iu,iv,z,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n,ed,ld,le)
+    !$omp private(i,j,iu,iv,z,z2,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n,ed,ld,le)
     do i=1,npt
        z=z0(i)
 
-       if (abs(z-k) < 1d-4) then
-          z = z+1d-4
+       if (abs(z-k) < 1d-6) then
+          z = z+1d-6
        end if
 
        !! The source is unocculted
@@ -145,7 +145,6 @@ contains
              ld = 1.0/3.0 - 4.0*INV_PI/9.0
              ed = 3.0/32.0;
           else if(z > 0.5d0) then
-             lam=HALF_PI
              q=0.50/k
              Kk=ellk(q)
              Ek=ellec(q)
@@ -153,7 +152,6 @@ contains
              ed= 1.0/2.0*INV_PI * (kap1+k2*(k2+2.0*z2)*kap0-(1.0+5.0*k2+z2)/4.0*sqrt((1.0-x1)*(x2-1.0)))
           else if (z < 0.5d0) then
              ! Table 3, Case VI.:
-             lam=HALF_PI
              q=2.0*k
              Kk=ellk(q)
              Ek=ellec(q)
@@ -165,7 +163,6 @@ contains
        ! the occulting star partly occults the source and crosses the limb:
        ! Table 3, Case III:
        if((z > 0.5+abs(k-0.5) .and. z < 1.0+k).or.(k > 0.50 .and. z > abs(1.0-k) .and. z < k)) then
-          lam=HALF_PI
           q=sqrt((1.0-(k-z)**2)/4.0/z/k)
           Kk=ellk(q)
           Ek=ellec(q)
@@ -181,7 +178,6 @@ contains
        ! the occulting star transits the source:
        ! Table 3, Case IV.:
        if(k <= 1.0 .and. z <= (1.0-k)) then
-          lam=HALF_PI
           q=sqrt((x2-x1)/(1.0-x1))
           Kk=ellk(q)
           Ek=ellec(q)
@@ -279,7 +275,7 @@ contains
     real(8), intent(in) :: kmin,kmax
     real(8), intent(out), dimension(nk,nz) :: ed,le,ld
     real(8), intent(out) :: zt(nz), kt(nk)
-    real(8) :: k,z,k2,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n
+    real(8) :: k,z,k2,z2,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n
     integer :: i,j
 
     !! FIXME: The code stalls for some combinations of k and z. Find out why and fix.
@@ -292,7 +288,7 @@ contains
        k = kt(j)
        k2 = k**2
        !$omp parallel do default(none) shared(kt,zt,k,k2,nz,j,ed,ld,le) &
-       !$omp private(z,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n)
+       !$omp private(z,z2,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n)
        do i=1,nz
           z=zt(i)
           z2=z**2
@@ -300,8 +296,8 @@ contains
           x2=(k+z)**2
           x3=k**2-z**2
 
-          if (abs(z-k) < 1d-4) then
-             z = z+1d-4
+          if (abs(z-k) < 1d-6) then
+             z = z+1d-6
           end if
 
           if(z < 0.d0 .or. z > 1.d0+k) then
@@ -332,7 +328,6 @@ contains
           if(abs(z-k) < 1.d0-4*(z+k)) then
              ! Table 3, Case V.:
              if(z > 0.5d0) then
-                lam=HALF_PI
                 q=0.5d0/k
                 Kk=ellk(q)
                 Ek=ellec(q)
@@ -344,7 +339,6 @@ contains
                 end if
              else
                 ! Table 3, Case VI.:
-                lam=HALF_PI
                 q=2.d0*k
                 Kk=ellk(q)
                 Ek=ellec(q)
@@ -355,8 +349,7 @@ contains
 
           ! the occulting star partly occults the source and crosses the limb:
           ! Table 3, Case III:
-          if((z > 0.5d0+abs(k-0.5d0) .and. z < 1.d0+k).or.(k > 0.5d0 .and. z > abs(1.d0-k)*1.0001d0 .and. z < k)) then
-             lam=HALF_PI
+          if((z > 0.5d0+abs(k-0.5d0) .and. z < 1.d0+k).or.(k > 0.5d0 .and. z > abs(1.d0-k) .and. z < k)) then
              q=sqrt((1.d0-(k-z)**2)/4.d0/z/k)
              Kk=ellk(q)
              Ek=ellec(q)
@@ -372,18 +365,22 @@ contains
 
           ! the occulting star transits the source:
           ! Table 3, Case IV.:
-          if(k < 1.d0 .and. z < (1.d0-k)*1.0001d0) then
-             lam=HALF_PI
+          if(k < 1.d0 .and. z < (1.d0-k)) then
              q=sqrt((x2-x1)/(1.d0-x1))
              Kk=ellk(q)
              Ek=ellec(q)
              n=x2/x1-1.d0
              Pk = ellpicb(n,q) 
-             ld(j,i)=2.d0/9.d0*INV_PI/sqrt(1.d0-x1)*((1.d0-5.d0*z2+k2+x3*x3)*Kk+(1.d0-x1)*(z2+7.d0*k2-4.d0)*Ek-3.d0*x3/x1*Pk)
-             if(z < k) ld(j,i)=ld(j,i)+2.d0/3.d0
+
              if(abs(k+z-1.d0) < 1.d-4) then
-                ld(j,i)= 2.d0/3.d0*INV_PI*acos(1.d0-2.d0*k)-4.d0/9.d0*INV_PI*sqrt(k*(1.d0-k))*(3.d0+2.d0*k-8.d0*k2)
+                ld(j,i) = 2.d0/3.d0*INV_PI*acos(1.d0-2.d0*k)-4.d0/9.d0*INV_PI*sqrt(k*(1.d0-k))*(3.d0+2.d0*k-8.d0*k2)
+             else
+                ld(j,i) = 2.d0/9.d0*INV_PI/sqrt(1.d0-x1)*((1.d0-5.d0*z2+k2+x3*x3)*Kk+(1.d0-x1)*(z2+7.d0*k2-4.d0)*Ek-3.d0*x3/x1*Pk)
+                if(z < k) then
+                   ld(j,i) = ld(j,i)+2.d0/3.d0
+                end if
              end if
+             
              ed(j,i)= k2/2.d0*(k2+2.d0*z2)
           end if
        end do
@@ -393,6 +390,17 @@ contains
 
 
   real(8) function ellpicb(n, k)
+    !! The complete elliptical integral of the third kind
+    !!
+    !! Bulirsch 1965, Numerische Mathematik, 7, 78
+    !! Bulirsch 1965, Numerische Mathematik, 7, 353
+    !!
+    !! Adapted from L. Kreidbergs C version in BATMAN
+    !! (Kreidberg, L. 2015, PASP 957, 127)
+    !! (https://github.com/lkreidberg/batman)
+    !! which is translated from J. Eastman's IDL routine
+    !! in EXOFAST (Eastman et al. 2013, PASP 125, 83)
+    !!
     real(8), intent(in) :: n,k
     real(8) :: kc,p,m0,c,d,e,f,g
     integer :: nit
