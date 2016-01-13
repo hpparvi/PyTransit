@@ -86,7 +86,7 @@ contains
     real(8), intent(in), dimension(npt) :: z0
     real(8), intent(in) :: u(2*npb), c(npb)
     real(8), intent(out), dimension(npt, npb) :: flux
-    real(8) :: k,k2,z2,lam,x1,x2,x3,z,omega(npb),kap0,kap1,q,Kk,Ek,Pk,n,ed,le,ld
+    real(8) :: k,k2,z2,x1,x2,x3,z,omega(npb),kap0,kap1,q,Kk,Ek,Pk,n,ed,le,ld
     integer :: i,j,iu,iv
 
     if(abs(k-0.5) < 1.d-4) then 
@@ -100,12 +100,12 @@ contains
 
     !$ call omp_set_num_threads(nthr)
     !$omp parallel do default(none) shared(z0,flux,u,c,omega,k,k2,npt,npb) &
-    !$omp private(i,j,iu,iv,z,z2,lam,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n,ed,ld,le)
+    !$omp private(i,j,iu,iv,z,z2,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n,ed,ld,le)
     do i=1,npt
        z=z0(i)
 
-       if (abs(z-k) < 1d-4) then
-          z = z+1d-4
+       if (abs(z-k) < 1d-6) then
+          z = z+1d-6
        end if
 
        !! The source is unocculted
@@ -145,7 +145,6 @@ contains
              ld = 1.0/3.0 - 4.0*INV_PI/9.0
              ed = 3.0/32.0;
           else if(z > 0.5d0) then
-             lam=HALF_PI
              q=0.50/k
              Kk=ellk(q)
              Ek=ellec(q)
@@ -153,7 +152,6 @@ contains
              ed= 1.0/2.0*INV_PI * (kap1+k2*(k2+2.0*z2)*kap0-(1.0+5.0*k2+z2)/4.0*sqrt((1.0-x1)*(x2-1.0)))
           else if (z < 0.5d0) then
              ! Table 3, Case VI.:
-             lam=HALF_PI
              q=2.0*k
              Kk=ellk(q)
              Ek=ellec(q)
@@ -165,7 +163,6 @@ contains
        ! the occulting star partly occults the source and crosses the limb:
        ! Table 3, Case III:
        if((z > 0.5+abs(k-0.5) .and. z < 1.0+k).or.(k > 0.50 .and. z > abs(1.0-k) .and. z < k)) then
-          lam=HALF_PI
           q=sqrt((1.0-(k-z)**2)/4.0/z/k)
           Kk=ellk(q)
           Ek=ellec(q)
@@ -181,7 +178,6 @@ contains
        ! the occulting star transits the source:
        ! Table 3, Case IV.:
        if(k <= 1.0 .and. z <= (1.0-k)) then
-          lam=HALF_PI
           q=sqrt((x2-x1)/(1.0-x1))
           Kk=ellk(q)
           Ek=ellec(q)
@@ -300,8 +296,8 @@ contains
           x2=(k+z)**2
           x3=k**2-z**2
 
-          if (abs(z-k) < 1d-4) then
-             z = z+1d-4
+          if (abs(z-k) < 1d-6) then
+             z = z+1d-6
           end if
 
           if(z < 0.d0 .or. z > 1.d0+k) then
@@ -393,6 +389,17 @@ contains
 
 
   real(8) function ellpicb(n, k)
+    !! The complete elliptical integral of the third kind
+    !!
+    !! Bulirsch 1965, Numerische Mathematik, 7, 78
+    !! Bulirsch 1965, Numerische Mathematik, 7, 353
+    !!
+    !! Adapted from L. Kreidbergs C version in BATMAN
+    !! (Kreidberg, L. 2015, PASP 957, 127)
+    !! (https://github.com/lkreidberg/batman)
+    !! which is translated from J. Eastman's IDL routine
+    !! in EXOFAST (Eastman et al. 2013, PASP 125, 83)
+    !!
     real(8), intent(in) :: n,k
     real(8) :: kc,p,m0,c,d,e,f,g
     integer :: nit
