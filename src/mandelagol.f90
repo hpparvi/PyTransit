@@ -164,14 +164,12 @@ contains
 
        ! the occulting star partly occults the source and crosses the limb:
        ! Table 3, Case III:
-       !if((z > 0.5+abs(k-0.5) .and. z < 1.0+k).or.(k > 0.50 .and. z > abs(1.0-k)*1.0001 .and. z < k)) then
        if((z > 0.5+abs(k-0.5) .and. z < 1.0+k).or.(k > 0.50 .and. z > abs(1.0-k) .and. z < k)) then
           lam=HALF_PI
           q=sqrt((1.0-(k-z)**2)/4.0/z/k)
           Kk=ellk(q)
           Ek=ellec(q)
           n=1.0/x1-1.0
-          !Pk = ellpicb(n,q)
           Pk=Kk-n/3.0*rj(0.d0, 1.0-q*q, 1.0d0, 1.0+n)
           ld= 1.0/9.0*INV_PI/sqrt(k*z) * (((1.0-x2)*(2.0*x2+x1-3.0)-3.0*x3*(x2-2.0))*Kk+4.0*k*z*(z2+7.0*k2-4.0)*Ek-3.0*x3/x1*Pk)
           if(z < k) then
@@ -182,14 +180,12 @@ contains
 
        ! the occulting star transits the source:
        ! Table 3, Case IV.:
-       !if(k <= 1.0 .and. z <= (1.0-k)*1.0001) then
        if(k <= 1.0 .and. z <= (1.0-k)) then
           lam=HALF_PI
           q=sqrt((x2-x1)/(1.0-x1))
           Kk=ellk(q)
           Ek=ellec(q)
           n=x2/x1-1.0
-          !Pk = ellpicb(n,q)
           Pk=Kk-n/3.0*rj(0.0d0,1.0-q*q,1.0d0,1.0+n)
           ld=2.0/9.0*INV_PI/sqrt(1.0-x1)*((1.0-5.0*z2+k2+x3*x3)*Kk+(1.0-x1)*(z2+7.0*k2-4.0)*Ek-3.0*x3/x1*Pk)
           if(z < k) ld=ld+2.0/3.0
@@ -365,7 +361,6 @@ contains
              Kk=ellk(q)
              Ek=ellec(q)
              n=1.d0/x1-1.d0
-             !Pk = ellpicb(n,q)
              Pk=Kk-n/3.d0*rj(0.d0, 1.d0-q*q, 1.d0, 1.d0+n)
              ld(j,i)= 1.d0/9.d0*INV_PI/sqrt(k*z) * (((1.d0-x2)*(2.d0*x2+x1-3.d0)-3.d0*x3*(x2-2.d0)) &
                   & *Kk+4.d0*k*z*(z2+7.d0*k2-4.d0)*Ek-3.d0*x3/x1*Pk)
@@ -383,7 +378,6 @@ contains
              Kk=ellk(q)
              Ek=ellec(q)
              n=x2/x1-1.d0
-             !Pk = ellpicb(n,q)
              Pk=Kk-n/3.d0*rj(0.0d0,1.d0-q*q,1.d0,1.d0+n)
              ld(j,i)=2.d0/9.d0*INV_PI/sqrt(1.d0-x1)*((1.d0-5.d0*z2+k2+x3*x3)*Kk+(1.d0-x1)*(z2+7.d0*k2-4.d0)*Ek-3.d0*x3/x1*Pk)
              if(z < k) ld(j,i)=ld(j,i)+2.d0/3.d0
@@ -397,38 +391,6 @@ contains
     end do
   end subroutine calculate_interpolation_tables
 
-  real(8) function ellpicb(n, k)
-    real(8), intent(in) :: n,k
-    real(8) :: kc,p,m0,c,d,e,f,g
-    integer :: nit = 0
-
-    kc = sqrt(1.d0-k*k)
-    p  = sqrt(n + 1.d0)    
-    m0 = 1.d0
-    c  = 1.d0
-    d  = 1.d0/p
-    e  = kc
-
-    do while (nit < 10000)
-       f = c
-       c = d/p + c
-       g = e/p
-       d = 2.*(f*g + d)
-       p = g + p
-       g = m0
-       m0 = kc + m0
-
-       if(abs(1.d0-kc/g) > 1.0d-8) then
-          kc = 2.d0*sqrt(e)
-          e = kc*m0
-       else
-          ellpicb = 0.5d0*PI*(c*m0+d)/(m0*(m0+p))
-          return
-       end if
-       nit = nit+1
-    end do
-    ellpicb = 0.d0
-  end function ellpicb
 
   real(8) function rc(x,y)
     real(8), intent(in) :: x,y
