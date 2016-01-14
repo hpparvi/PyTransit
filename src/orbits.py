@@ -15,22 +15,10 @@
 ## with this program; if not, write to the Free Software Foundation, Inc.,
 ## 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-"""Fast and easy exoplanet transit modelling in Python
+from orbits_f import orbits
 
-This package aims to offer a simple-to-use Python interfaces for the exoplanet
-transit models by Mandel & Agol (2002) and A. Gimenez (2006) implemented in
-Fortran. 
-
-Author
-  Hannu Parviainen  <hannu.parviainen@physics.ox.ac.uk>
-
-Date
-  28.05.2015
-
-"""
-
-from gimenez import Gimenez
-from mandelagol import MandelAgol
-from orbits import *
-
-__all__ = 'Gimenez MandelAgol orbits z_circular z_eccentric_newton'.split()
+eclipse_shift = orbits.eclipse_shift_ex
+duration_circular  = orbits.duration_circular
+duration_eccentric = orbits.duration_eccentric_w
+z_circular = orbits.z_circular
+z_eccentric_newton = orbits.z_eccentric_newton

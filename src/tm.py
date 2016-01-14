@@ -1,86 +1,102 @@
-"""
-
-
-.. moduleauthor:: Hannu Parviainen <hannu.parviainen@astro.ox.ac.uk>
-"""
+## PyTransit
+## Copyright (C) 2010--2015  Hannu Parviainen
+##
+## This program is free software; you can redistribute it and/or modify
+## it under the terms of the GNU General Public License as published by
+## the Free Software Foundation; either version 2 of the License, or
+## (at your option) any later version.
+##
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+##
+## You should have received a copy of the GNU General Public License along
+## with this program; if not, write to the Free Software Foundation, Inc.,
+## 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 from math import fabs
 import numpy as np
 from orbits_f import orbits as of
+from utils_f import utils as uf
 
 class TransitModel(object):
+    """Exoplanet transit light curve model 
     """
-    Exoplanet transit light curve model 
-
-    :param nldc: (optional)
-        Number of limb darkening coefficients (1 = linear limb darkening, 2 = quadratic)
-
-    :param nthr: (optional)
-        Number of threads (default = number of cores)
-
-    :param  lerp: (optional)
-        Switch telling if linear interpolation be used (default = False).
-
-    :param supersampling: (optional)
-        Number of subsamples to calculate for each light curve point
-
-    :param exptime: (optional)
-        Integration time for a single exposure, used in supersampling
-    """
-    def __init__(self, nldc=2, nthr=0, lerp=False, supersampling=0, exptime=0.020433598, eclipse=False):
-        self.nldc = nldc
-        self.nthr = nthr
-        self.ss  = bool(supersampling)
-        self.nss = int(supersampling)
-        self.exp = exptime
+    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=0, exptime=0.020433598, eclipse=False):
+        self.nldc = int(nldc)
+        self.nthr = int(nthr)
+        self.ss   = bool(supersampling)
+        self.nss  = int(supersampling)
+        self.exp  = float(exptime)
         self.time = None
-        self.eclipse = eclipse
+        self.eclipse = bool(eclipse)
+
 
     def __call__(self, z, k, u, c=0., update=True):
-        """Evaluate the model
-
-        :param z:
-            Array of normalised projected distances
-        
-        :param k:
-            Planet to star radius ratio
-        
-        :param u:
-            Array of limb darkening coefficients
-        
-        :param c:
-            Contamination factor (fraction of third light)
-            
-        :param update: (optional)
-        """
-        return self._eval(z, k, u, c, update)
-
-
-    def _eval_nolerp(self, z, k, u, c, update):
-        raise NotImplementedError()
-
-    def _eval_lerp(self, z, k, u, c, update):
         raise NotImplementedError
 
-    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, lerp_z=False):
-        raise NotImplementedError()
 
-    def _calculate_z(self, t, t0, p, a, i, e=0, w=0, lerp_z=False):
+    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, interpolate_z=False):
+        """Evaluates the transit model given a time array and necessary parameters.
+
+        Args:
+            t: Array of time values [d].
+            k: Planet to star radius ratio.
+            u: Array of limb darkening coefficients.
+            c: Contamination factor (fraction of third light), optional.
+            t0: Zero epoch.
+            p: Orbital period.
+            a: Scaled semi-major axis
+            i: Orbital inclination
+            e: Eccentricity
+            w: Argument of periastron.
+            c: Contamination factor. 
+
+        Returns:
+            An array of model flux values for each time sample.
+        """
+
+        u   = np.asfortranarray(u)
+        npb = 1 if u.ndim == 1 else u.shape[0]
+
+        ## Check if we have multiple radius ratio (k) values, approximate the k with their
+        ## mean if yes, and calculate the area ratio factors.
+        ## 
+        if isinstance(k, np.ndarray):
+            _k = k.mean()
+            kf = (k/_k)**2
+        else:
+            _k = k
+            kf = 1.
+
+        z = self._calculate_z(t, t0, p, a, i, e, w, interpolate_z)
+        flux = self.__call__(z, k, u, c, update)
+
+        if self.ss:
+            if npb == 1:
+                flux = uf.average_samples_1(flux, self.npt, self.nss, self.nthr)
+            else:
+                flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
+
+        return kf*(flux-1.)+1.
+
+
+    def _calculate_z(self, t, t0, p, a, i, e=0, w=0, interpolate_z=False):
         ## Calculate the supersampling time array if not cached
         ##
         if t is not self.time:
-            self.time = t
-            self._time = np.asarray(t)
+            self.time = np.array(t)
+            self._time = np.array(t)
             self.npt = self._time.size
 
             if self.ss:
-                self.dt = self.exp / float(self.nss)
-                self._time = np.array([[tt + (-1)**(iss%2)*(0.5*self.dt + iss//2*self.dt)
-                                        for iss in range(self.nss)] for tt in self._time]).ravel()
+                self._sample_pos = self.exp * (np.arange(1,self.nss+1,dtype=np.double)/(self.nss+1) - 0.5)
+                self._time = (self.time[:,np.newaxis] + self._sample_pos).ravel()
 
         ## Calculate the normalised projected distance
         ##
-        if lerp_z:
+        if interpolate_z:
             z = of.z_eccentric_ip(self._time, t0, p, a, i, e, w, nthreads=self.nthr, update=True)
         else:
             if fabs(e) < 0.01:

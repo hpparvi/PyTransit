@@ -3,9 +3,9 @@ import matplotlib.pyplot as pl
 from pytransit import Gimenez, MandelAgol, z_circular
 
 m_mad = MandelAgol()
-m_mal = MandelAgol(lerp=True)
-m_gmd = Gimenez(lerp=False)
-m_gml = Gimenez(lerp=True)
+m_mal = MandelAgol(interpolate=True)
+m_gmd = Gimenez(interpolate=False)
+m_gml = Gimenez(interpolate=True)
 
 u = np.array([[0.1,0.1],[0.2,0.2],[0.6,0.3]])
 

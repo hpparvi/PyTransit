@@ -1,7 +1,12 @@
 PyTransit
 =========
 
-Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. This package implements the quadratic Mandel & Agol and the Gimenéz transit models with various optimisations, and offers both a simple interface for model evaluation and a lower-level access for fine-tuning the modelling process.   
+[![Travis](http://img.shields.io/travis/hpparvi/PyTransit/development.svg?style=flat)](https://travis-ci.org/hpparvi/PyTransit)
+[![Licence](http://img.shields.io/badge/license-GPLv2-blue.svg?style=flat)](http://www.gnu.org/licenses/gpl-2.0.html)
+[![arXiv](http://img.shields.io/badge/arXiv-1504.07433-blue.svg?style=flat)](http://arxiv.org/abs/1504.07433)
+[![ASCL](https://img.shields.io/badge/ASCL-A1505.024-blue.svg?style=flat)](http://ascl.net/1505.024)
+
+Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. PyTransit implements the quadratic Mandel & Agol and the Gimenéz transit models with various optimisations, and offers both a simple interface for model evaluation and a lower-level access for fine-tuning the model.   
 
 ```Python
 from pytransit import MandelAgol
@@ -12,7 +17,7 @@ f = m.evaluate(t, *pv)
 ![](notebooks/model_example_1.png)
 
 
-The package is described in Parviainen (2015). Also, take a look at the [Bayesian parameter estimation tutorial](http://nbviewer.ipython.org/github/hpparvi/exo_tutorials/blob/master/01_broadband_parameter_estimation.ipynb) for an example on how to use the model in a basic exoplanet transit modelling situation.
+The package is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433). Also, take a look at the [Bayesian parameter estimation tutorial](http://nbviewer.ipython.org/github/hpparvi/exo_tutorials/blob/master/01_broadband_parameter_estimation.ipynb) for an example on how to use the model in a basic exoplanet transit modelling situation.
 
 Modules
 -------
@@ -32,24 +37,32 @@ Modules
 
 Installation
 ------------
+
 First clone the repository from github
 
     git clone https://github.com/hpparvi/PyTransit.git
     cd PyTransit
 
-and then do the normal python package build & installation. For example, building with a fairly modern gfortran
-and then installing the package locally (without root rights) would take
+and then do the normal python package build & installation. 
+
+#### Intel & AMD
 
     python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native" build
     python setup.py install --user
 
-The code should compile with other compilers also, but only gfortran and Intel fortran have been tested.
+#### Mac
+
+    python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native -mno-avx" build
+    python setup.py install --user
+
+The code has been tested with gfortran and Intel compilers, but it should compile with others as well (if it doesn't, please let me know).
 
 
 Notes
 -----
 
-Please use the [Issue tracker](https://github.com/hpparvi/PyTransit/issues) to report bugs and ideas for improvement.
+ - The interpolated (quadratic) Mandel & Agol model offers the best performance at the moment, but needs to be initialised with the minimum and maximum allowed radius ratio.  
+ - Please use the [Issue tracker](https://github.com/hpparvi/PyTransit/issues) to report bugs and ideas for improvement.
 
 
 Examples
@@ -58,18 +71,28 @@ Examples
 Basic usage is simple:
 
 ```Python
-from pytransit import Gimenez
-
-m = Gimenez()
-f = m.evaluate(t, *pv)
-```
-or
-```Python
 from pytransit import MandelAgol
 
 m = MandelAgol()
 f = m.evaluate(t, *pv)
 ```
+or
+
+```Python
+from pytransit import MandelAgol
+
+m = MandelAgol(interpolate=True, klims=(0.10,0.13))
+f = m.evaluate(t, *pv)
+```
+
+or
+```Python
+from pytransit import Gimenez
+
+m = Gimenez()
+f = m.evaluate(t, *pv)
+```
+
 Here we first initialize the model accepting the defaults (quadratic limb darkening law, no supersampling, 
 and the use of all available cores), and then calculate the model for times in the time array `t`, `pv` being 
 a list containing the system parameters.
@@ -77,13 +100,13 @@ a list containing the system parameters.
 For a slightly more useful example, we can do:
 ```Python
 import numpy as np
-from pytransit import Gimenez
+from pytransit import MandelAgol
 
 t = np.linspace(0.8,1.2,500)
 k, t0, p, a, i, e, w = 0.1, 1.01, 4, 8, 0.48*np.pi, 0.2, 0.5*np.pi
 u = [0.25,0.10]
 
-m = Gimenez()
+m = MandelAgol()
 f = m.evaluate(t, k, u, t0, p, a, i, e, w)
 ```
 where `k` is the planet-star radius ratio, `t0` the transit center, `p` the orbital period, `a` the scaled
@@ -98,7 +121,7 @@ evaluating the model several times for different coefficient sets):
     ...
     u = [[0.25, 0.1],[0.35,0.2],[0.45,0.3],[0.55,0.4]]
 
-    m = Gimenez()
+    m = MandelAgol()
     f = m.evaluate(t, k, u, t0, p, a, i, e, w)
     
 In this case, the model returns several light curve models, each corresponding to a single ldc set.
@@ -107,11 +130,11 @@ In this case, the model returns several light curve models, each corresponding t
 The transit model offers built-in *supersampling* for transit fitting to transit photometry with poor time 
 sampling (such as *Kepler*'s long cadence data):
 
-    m = Gimenez(supersampling=8, exptime=0.02)
+    m = MandelAgol(supersampling=8, exptime=0.02)
     ...
 
-### Tweaking
-The model accuracy and the number of limb darkening coefficients can be set in the initialization. 
+### Tweaking the Gimenéz model
+The Gimenéz model accuracy and the number of limb darkening coefficients can be set in the initialization. 
 Finally, for fitting to large datasets, the model can be evaluated using interpolation. 
 
 Basic transit model usage with linear limb darkening law, lower accuracy, and four cores:
@@ -121,7 +144,7 @@ Basic transit model usage with linear limb darkening law, lower accuracy, and fo
       
 Transit model using linear interpolation:
 
-    m = Gimenez(lerp=True)
+    m = Gimenez(interpolate=True)
     ...
 
 
@@ -144,7 +167,7 @@ scaled semi-major axis a, inclination i, eccentricity e, and argument of periast
 
 Transit model using linear interpolation, two different sets of z:
 
-    m  = Gimenez(lerp=True)      # Initialize the model
+    m  = Gimenez(interpolate=True)      # Initialize the model
     I1 = m(z1,k,u)               # Evaluate the model for z1, update the interpolation table
     I2 = m(z2,k,u, update=False) # Evaluate the model for z2, don't update the interpolation table
     
