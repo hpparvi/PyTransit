@@ -57,6 +57,27 @@ and then do the normal python package build & installation.
 
 The code has been tested with gfortran and Intel compilers, but it should compile with others as well (if it doesn't, please let me know).
 
+Citing
+------
+
+If you use PyTransit in your reserach, please cite
+
+Parviainen, H. MNRAS 450, 3233–3238 (2015) (DOI:10.1093/mnras/stv894).
+
+or use this ready-made BibTeX entry
+
+    @article{Parviainen2015,
+      author = {Parviainen, Hannu},
+      doi = {10.1093/mnras/stv894},
+      journal = {MNRAS},
+      number = {April},
+      pages = {3233--3238},
+      title = {{PYTRANSIT: fast and easy exoplanet transit modelling in PYTHON}},
+      url = {http://mnras.oxfordjournals.org/cgi/doi/10.1093/mnras/stv894},
+      volume = {450},
+      year = {2015}
+    }
+
 
 Notes
 -----
