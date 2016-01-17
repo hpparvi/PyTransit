@@ -198,6 +198,9 @@ Author
 
 Publications using the code
 ----------------------------
+  - Parviainen, H. et al. "The GTC exoplanet transit spectroscopy survey II: An overly-large Rayleigh-like feature for exoplanet TrES-3b." A&A 585, 1–12 (2016).
+  - Parviainen, H. et al. "Exoplanet Transmission Spectroscopy using KMOS." MNRAS 4, 3875–3885 (2015).
+  - Gandolfi, D. et al. "Kepler-423b: a half-Jupiter mass planet transiting a very old solar-like star." A&A 576, A11 (2015).
   - Tingley, Brandon, H. Parviainen, et al. "Confirmation of an exoplanet using the transit color signature: Kepler-418b, a blended giant planet in a multiplanet system." A&A 567, (2014).
   - Gandolfi, Davide, H. Parviainen, et al. "Kepler-423b: a half-Jupiter mass planet transiting a very old solar-like star." A&A 576, A11 (2015).
   - Parviainen, H. et al. "Transiting exoplanets from the CoRoT space mission." A&A 562, A140 (2014).
