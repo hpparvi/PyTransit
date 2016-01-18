@@ -109,7 +109,8 @@ contains
     !$ if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel do private(j) shared(z,a,i,e,w,Ta,nt) default(none) schedule(static)
     do j=1,nt
-       z(j) = a*(1-e**2)/(1+e*cos(Ta(j))) * sqrt(1 - sin(w+Ta(j))**2 * sin(i)**2)
+       z(j) = a*(1-e**2)/(1+e*cos(Ta(j))) * sqrt(1 - sin(w+Ta(j))**2 * sin(i)**2) &
+            & * sign(1._fd, sin(w+Ta(j))) !! This term computes the 3D z-component
     end do
     !$omp end parallel do
   end subroutine z_eccentric_from_ta
