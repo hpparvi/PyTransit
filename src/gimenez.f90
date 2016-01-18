@@ -136,7 +136,7 @@ contains
     end do
     ie_table(tsize,:npb) = 1._fd
 
-    mask        = (z > 0._fd) .and. (z < 1._fd+k)
+    mask        = (z >= 0._fd) .and. (z < 1._fd+k)
     ntr         = count(mask)
     ztmp(1:ntr) = pack(z, mask)
     
@@ -187,7 +187,7 @@ contains
     
     !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
     res  = 0._fd
-    mask = (z > 0._fd) .and. (z < 1._fd+k)
+    mask = (z >= 0._fd) .and. (z < 1._fd+k)
     npt_t = count(mask)
 
     tmp1(1:npt_t) = pack(z, mask)
