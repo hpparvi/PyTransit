@@ -5,6 +5,7 @@ PyTransit
 [![Licence](http://img.shields.io/badge/license-GPLv2-blue.svg?style=flat)](http://www.gnu.org/licenses/gpl-2.0.html)
 [![arXiv](http://img.shields.io/badge/arXiv-1504.07433-blue.svg?style=flat)](http://arxiv.org/abs/1504.07433)
 [![ASCL](https://img.shields.io/badge/ASCL-A1505.024-blue.svg?style=flat)](http://ascl.net/1505.024)
+[![DOI](https://zenodo.org/badge/5871/hpparvi/PyTransit.svg)](https://zenodo.org/badge/latestdoi/5871/hpparvi/PyTransit)
 
 Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. PyTransit implements the quadratic Mandel & Agol and the Gimenéz transit models with various optimisations, and offers both a simple interface for model evaluation and a lower-level access for fine-tuning the model.   
 
@@ -56,6 +57,27 @@ and then do the normal python package build & installation.
     python setup.py install --user
 
 The code has been tested with gfortran and Intel compilers, but it should compile with others as well (if it doesn't, please let me know).
+
+Citing
+------
+
+If you use PyTransit in your reserach, please cite
+
+Parviainen, H. MNRAS 450, 3233–3238 (2015) (DOI:10.1093/mnras/stv894).
+
+or use this ready-made BibTeX entry
+
+    @article{Parviainen2015,
+      author = {Parviainen, Hannu},
+      doi = {10.1093/mnras/stv894},
+      journal = {MNRAS},
+      number = {April},
+      pages = {3233--3238},
+      title = {{PYTRANSIT: fast and easy exoplanet transit modelling in PYTHON}},
+      url = {http://mnras.oxfordjournals.org/cgi/doi/10.1093/mnras/stv894},
+      volume = {450},
+      year = {2015}
+    }
 
 
 Notes
@@ -177,6 +199,9 @@ Author
 
 Publications using the code
 ----------------------------
+  - Parviainen, H. et al. "The GTC exoplanet transit spectroscopy survey II: An overly-large Rayleigh-like feature for exoplanet TrES-3b." A&A 585, 1–12 (2016).
+  - Parviainen, H. et al. "Exoplanet Transmission Spectroscopy using KMOS." MNRAS 4, 3875–3885 (2015).
+  - Gandolfi, D. et al. "Kepler-423b: a half-Jupiter mass planet transiting a very old solar-like star." A&A 576, A11 (2015).
   - Tingley, Brandon, H. Parviainen, et al. "Confirmation of an exoplanet using the transit color signature: Kepler-418b, a blended giant planet in a multiplanet system." A&A 567, (2014).
   - Gandolfi, Davide, H. Parviainen, et al. "Kepler-423b: a half-Jupiter mass planet transiting a very old solar-like star." A&A 576, A11 (2015).
   - Parviainen, H. et al. "Transiting exoplanets from the CoRoT space mission." A&A 562, A140 (2014).
