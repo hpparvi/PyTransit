@@ -21,6 +21,7 @@ class TestCommon(unittest.TestCase):
         assert f.ndim == 1, 'Given one set of ld coefficients, the returned array should be one dimensional.'
         assert f.shape == (self.npt,), 'Returned array shape should be (npt)'
 
+
     def mbt(self, tm):
         for i in range(1,self.npb):
             f  = tm(self.z, self.k, self.u[:i+1])
@@ -57,6 +58,41 @@ class TestCommon(unittest.TestCase):
     def test_mai_multiband(self):
         self.mbt(MandelAgol(interpolate=True))
   
+
+class TestSpecialCases(unittest.TestCase):
+    """Test the models when z is in [0,k,1-k,1,1+k]"""
+    def setUp(self):
+        self.k = 0.1
+        self.u = [0.1, 0.2]
+        self.z = np.array([ 0.00,  0.01,  0.02,  0.03,  0.04,  0.09,  0.10,  0.11,  0.12,
+                            0.20,  0.30,  0.40,  0.50,  0.60,  0.70,  0.80,  0.90,  0.99,
+                            1.00,  1.09,  1.10,  1.11,  1.12])
+        self.f = np.array([ 0.98928841,  0.98928846,  0.98928863,  0.98928890,  0.98928929,
+                            0.98929290,  0.98929398,  0.98929516,  0.98929647,  0.98931150,
+                            0.98934366,  0.98939543,  0.98947512,  0.98959659,  0.98978450,
+                            0.99008997,  0.99067950,  0.99512386,  0.99571273,  0.99985831,
+                            0.99995404,  1.00000000,  1.00000000])
+
+    def test_mad_special_z(self):
+        """Test the direct Mandel & Agol model with z in [0,k,1-k,1,1+k]"""
+        tm = MandelAgol(interpolate=False)
+        npt.assert_array_almost_equal(tm(self.z, self.k, self.u), self.f, decimal=4)
+
+    def test_mai_special_z(self):
+        """Test the interpolated Mandel & Agol model with z in [0,k,1-k,1,1+k]"""
+        tm = MandelAgol(interpolate=True, klims=[0.09,1.11])
+        npt.assert_array_almost_equal(tm(self.z, self.k, self.u), self.f, decimal=4)
+
+    def test_gmd_special_z(self):
+        """Test the direct Gimenez model with z in [0,k,1-k,1,1+k]"""
+        tm = Gimenez(interpolate=False)
+        npt.assert_array_almost_equal(tm(self.z, self.k, self.u), self.f, decimal=4)
+
+    def test_gmd_special_z(self):
+        """Test the interpolated Gimenez model with z in [0,k,1-k,1,1+k]"""
+        tm = Gimenez(interpolate=True)
+        npt.assert_array_almost_equal(tm(self.z, self.k, self.u), self.f, decimal=4)
+
 
 class TestGimenezModel(unittest.TestCase):
     """Tests the Gimenez model functionality and correctness.
