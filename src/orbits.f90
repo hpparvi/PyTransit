@@ -473,7 +473,7 @@ contains
     integer, parameter :: tsize = 512
     real(fd), dimension(tsize), save :: t_table, ta_table
     real(fd), save :: dt, idt
-    real(fd) ::x, ta_diff
+    real(fd) ::x
     integer j, k
     logical :: sflag
     
@@ -499,7 +499,9 @@ contains
 
     !$omp parallel do private(j,x,k) shared(nt,t,p,idt,ta_table,ta) default(none) schedule(static)
     do j=1,nt
-       x = mod(t(j), p)*idt
+       x = mod(t(j), p)
+       if (x<0._fd) x = p+x
+       x = x*idt
        k = int(floor(x)) + 1
        x = x - k + 1
        ta(j) = (1._fd-x) * ta_table(k) + x * ta_table(k+1)
