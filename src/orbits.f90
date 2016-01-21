@@ -375,7 +375,7 @@ contains
     real(fd), dimension(nt) :: Ea  ! Eccentric anomaly
     real(fd), dimension(nt) :: cta, sta  ! cos(Ta), sin(Ta)
     
-    integer j
+    integer j, k
     real(fd) :: m_offset, err
 
     m_offset = mean_anomaly_offset(e,w)
@@ -393,9 +393,11 @@ contains
     !$omp do schedule(guided)
     do j = 1, nt
        err = 0.05_fd
-       do while (abs(err) > 1.0e-8) 
+       k=0
+       do while ((abs(err) > 1.0e-8) .and. (k<1000)) 
           err   = Ea(j) - e*sin(Ea(j)) - Ma(j)
           Ea(j) = Ea(j) - err/(1._fd-e*cos(Ea(j)))
+          k = k + 1
        end do
     end do
     !$omp end do
