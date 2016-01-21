@@ -41,9 +41,9 @@ module orbits
   real(fd), parameter :: HALF_PI = 0.5_fd * PI
 
 contains
-  subroutine z_circular(t, t0, p, a, i, nthreads, nt, z)
+  subroutine z_circular(t, t0, p, a, i, nth, nt, z)
     implicit none
-    integer, intent(in) :: nt, nthreads
+    integer, intent(in) :: nt, nth
     real(fd), intent(in) :: t0, p, a, i
     real(fd), intent(in),  dimension(nt) :: t
     real(fd), intent(out), dimension(nt) :: z
@@ -51,7 +51,7 @@ contains
     real(fd) :: n, cosph, sini
     integer :: j
 
-    !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
 
     sini = sin(i)
     n    = TWO_PI/p
@@ -65,9 +65,9 @@ contains
 
   !! z_circular_mt - calculate z for a circular orbit and multiple transit center times
   !!
-  subroutine z_circular_mc(t, t0, t0npt, p, a, i, nthreads, nt, nt0, z)
+  subroutine z_circular_mc(t, t0, t0npt, p, a, i, nth, nt, nt0, z)
     implicit none
-    integer, intent(in) :: nt, nt0, nthreads
+    integer, intent(in) :: nt, nt0, nth
     real(fd), intent(in) :: p, a, i
     real(fd), intent(in),  dimension(nt0) :: t0
     integer,  intent(in),  dimension(nt0) :: t0npt
@@ -86,7 +86,7 @@ contains
     sini = sin(i)
     n    = TWO_PI/p
 
-    !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel do private(k, j, jloc, cosph) shared(a, t, t0, nt0, t0start, t0npt, sini, n, z) default(none)
     do k=1,nt0
        do j=1,t0npt(k)
@@ -274,17 +274,17 @@ contains
 
   !! TA - CIRCULAR ORBIT
   !! ===================
-  subroutine ta_circular(t, t0, p, nthreads, nt, ta)
+  subroutine ta_circular(t, t0, p, nth, nt, ta)
     !! Calculates the true anomaly for a planet in a circular orbit.
 
     implicit none
-    integer, intent(in) :: nt, nthreads
+    integer, intent(in) :: nt, nth
     real(fd), intent(in) :: t0, p
     real(fd), intent(in),  dimension(nt) :: t
     real(fd), intent(out), dimension(nt) :: ta
     integer :: j
 
-    !$ if (nthreads /= 0) call omp_set_num_threads(nthreads)
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel do private(j) shared(nt, t, p, t0, ta) default(none)
     do j=1,nt
        ta(j) = (t(j)-t0)*(TWO_PI/p) + HALF_PI
@@ -475,32 +475,34 @@ contains
     real(fd), save :: dt, idt
     real(fd) ::x, ta_diff
     integer j, k
-
-    !! FIXME: This routine is unaccurate for large t (JDs)!! 
+    logical :: sflag
+    
+    !! FIXME: This routine is unaccurate for large values of t 
 
     !$ if (nth /= 0) call omp_set_num_threads(nth)
 
+    sflag = .false.
     if(update) then
        dt  = p/real(tsize-1, fd)
        idt = 1._fd/dt
        t_table = [(dt*j, j=0,tsize-1)]
        call ta_eccentric_iter(t_table, t0, p, e, w, nth, tsize, ta_table)
+       do j=2,tsize
+          if (.not. sflag) then
+             if (ta_table(j-1) > ta_table(j)) sflag = .true.
+          end if
+          if (sflag) then
+             ta_table(j) = ta_table(j) + 2*PI
+          end if
+       end do
     end if
 
-    !$omp parallel do private(j,x,k, ta_diff) shared(nt, t, p, idt, ta_table, ta) default(none) schedule(static)
+    !$omp parallel do private(j,x,k) shared(nt,t,p,idt,ta_table,ta) default(none) schedule(static)
     do j=1,nt
        x = mod(t(j), p)*idt
        k = int(floor(x)) + 1
        x = x - k + 1
-
-       ta_diff = ta_table(k+1) - ta_table(k)
-
-       if (ta_diff >= 0._fd) then
-          ta(j) = (1._fd-x) * ta_table(k) + x * ta_table(k+1)
-       else
-          ta(j) = (1._fd-x) * ta_table(k) + x * PI
-       end if
-
+       ta(j) = (1._fd-x) * ta_table(k) + x * ta_table(k+1)
     end do
     !$omp end parallel do
   end subroutine ta_eccentric_ip
