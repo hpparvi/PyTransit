@@ -97,15 +97,15 @@ class TransitModel(object):
         ## Calculate the normalised projected distance
         ##
         if interpolate_z:
-            z = of.z_eccentric_ip(self._time, t0, p, a, i, e, w, nthreads=self.nthr, update=True)
+            z = of.z_eccentric_ip(self._time, t0, p, a, i, e, w, nth=self.nthr, update=True)
         else:
             if fabs(e) < 0.01:
-                z = of.z_circular(self._time, t0, p, a, i, nthreads=self.nthr)
+                z = of.z_circular(self._time, t0, p, a, i, nth=self.nthr)
                 if self.eclipse:
                     z *= -1.
             elif fabs(e) < 0.2:
-                z = of.z_eccentric_ps3(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
+                z = of.z_eccentric_ps3(self._time, t0, p, a, i, e, w, nth=self.nthr)
             else:
-                z = of.z_eccentric_newton(self._time, t0, p, a, i, e, w, nthreads=self.nthr)
+                z = of.z_eccentric_newton(self._time, t0, p, a, i, e, w, nth=self.nthr)
 
         return z
