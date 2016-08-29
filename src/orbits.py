@@ -15,7 +15,7 @@
 ## with this program; if not, write to the Free Software Foundation, Inc.,
 ## 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from orbits_f import orbits
+from .orbits_f import orbits
 
 eclipse_shift = orbits.eclipse_shift_ex
 duration_circular  = orbits.duration_circular
