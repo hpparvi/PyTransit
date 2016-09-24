@@ -1,11 +1,3 @@
-Fork of PyTransit by H. Parviainen
-==================================
-
-In order to keep the double precision for hardcoded `parameters`:
-* in file `mandelagol.f90` I added `_dp` to the hardcoded values in functions `ellec(k)` and `ellk(k)`.   
-* in file `orbits.f90` I added `_fd` to some values (e.g., in subroutine `ea_eccentric_newton`: `1.0e-8 --> 1.0e-8_fd`).    
-
-
 PyTransit
 =========
 
@@ -47,18 +39,11 @@ Modules
 Installation
 ------------
 
-First clone the repository from github    
-`hpparvi`    
+First clone the repository from github
 
     git clone https://github.com/hpparvi/PyTransit.git
     cd PyTransit
 
-`lucaborsato` (this version)    
-
-    git clone https://github.com/lucaborsato/PyTransit.git
-    cd PyTransit
-
-    
 and then do the normal python package build & installation. 
 
 #### Intel & AMD

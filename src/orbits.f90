@@ -223,7 +223,7 @@ contains
     !$omp do schedule(guided)
     do j = 1, nt
        err = 0.05_fd
-       do while (abs(err) > 1.0e-8_fd) 
+       do while (abs(err) > 1.0d-8) 
           err   = Ea(j) - e*sin(Ea(j)) - Ma(j)
           Ea(j) = Ea(j) - err/(1._fd-e*cos(Ea(j)))
        end do
@@ -258,7 +258,7 @@ contains
     !$omp do schedule(guided)
     do j = 1, nt
        err = 0.05_fd
-       do while (abs(err) > 1.0e-8_fd) 
+       do while (abs(err) > 1.0d-8) 
           err   = Ea(j) - e*sin(Ea(j)) - Ma(j)
           Ea(j) = Ea(j) - err/(1._fd-e*cos(Ea(j)))
        end do
@@ -348,7 +348,7 @@ contains
        do k = 1, 15
           ect   = ec(j)
           ec(j) = e*sin(Ma(j)+ec(j))
-          if (abs(ect-ec(j)) < 1e-4_fd) exit
+          if (abs(ect-ec(j)) < 1d-4) exit
        end do
     end do
     !$omp end do
@@ -394,7 +394,7 @@ contains
     do j = 1, nt
        err = 0.05_fd
        k=0
-       do while ((abs(err) > 1.0e-8_fd) .and. (k<1000)) 
+       do while ((abs(err) > 1.0d-8) .and. (k<1000)) 
           err   = Ea(j) - e*sin(Ea(j)) - Ma(j)
           Ea(j) = Ea(j) - err/(1._fd-e*cos(Ea(j)))
           k = k + 1
