@@ -3,6 +3,8 @@ from __future__ import division
 import numpy as np
 from scipy.constants import G, pi
 
+from numpy import cos, sin, arccos, sqrt
+
 d_h = 24.
 d_m = 60 * d_h
 d_s = 60 * d_m
@@ -25,7 +27,7 @@ def p_from_am(a=1., ms=1.):
 
       p    : Orbital period  [d]
     """
-    return np.sqrt((4*pi**2*(a*au)**3)/(G*ms*msun)) / d_s
+    return sqrt((4*pi**2*(a*au)**3)/(G*ms*msun)) / d_s
 
     
 def a_from_mp(ms, period):
@@ -82,7 +84,7 @@ def a_from_rhoprs(rho, period, rstar):
 
 def af_transit(e,w):
     """Calculates the -- factor during the transit"""
-    return (1.0-e**2)/(1.0 + e*np.sin(w))
+    return (1.0-e**2)/(1.0 + e*sin(w))
 
 
 def i_from_baew(b,a,e,w):
@@ -101,4 +103,21 @@ def i_from_baew(b,a,e,w):
 
       i  : inclination            [rad]
     """
-    return np.arccos(b / (a*af_transit(e, w)))
+    return arccos(b / (a*af_transit(e, w)))
+
+
+def i_from_ba(b,a):
+    """Orbital inclination from the impact parameter and scaled semi-major axis.
+
+    Parameters
+    ----------
+
+      b  : impact parameter       [-]
+      a  : scaled semi-major axis [R_Star]
+
+    Returns
+    -------
+
+      i  : inclination            [rad]
+    """
+    return arccos(b/a)
