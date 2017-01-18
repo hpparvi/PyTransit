@@ -99,7 +99,7 @@ class TransitModel(object):
         if interpolate_z:
             z = of.z_eccentric_ip(self._time, t0, p, a, i, e, w, nth=self.nthr, update=True)
         else:
-            if fabs(e) < 0.01:
+            if fabs(e) < 0.001:
                 z = of.z_circular(self._time, t0, p, a, i, nth=self.nthr)
             elif fabs(e) < 0.2:
                 z = of.z_eccentric_ps3(self._time, t0, p, a, i, e, w, nth=self.nthr)
