@@ -52,7 +52,7 @@ contains
        k=0.5d0
     end if
 
-    !$ call omp_set_num_threads(nthr)
+    !$call omp_set_num_threads(nthr)
     !$omp parallel do default(none) shared(z0,k,c,nthr,nz,flux) &
     !$omp private(i,z,lambdae,kap0,kap1)
     do i=1,nz
@@ -98,7 +98,7 @@ contains
        omega(i) = 1.d0 - u(2*i-1)/3.d0 - u(2*i)/6.d0
     end do
 
-    !$ call omp_set_num_threads(nthr)
+    !$call omp_set_num_threads(nthr)
     !$omp parallel do default(none) shared(z0,flux,u,c,omega,k,k2,npt,npb) &
     !$omp private(i,j,iu,iv,z,z2,x1,x2,x3,kap0,kap1,q,Kk,Ek,Pk,n,ed,ld,le)
     do i=1,npt

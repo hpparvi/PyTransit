@@ -380,7 +380,7 @@ contains
 
     m_offset = mean_anomaly_offset(e,w)
 
-    !$ if (nth /= 0) call omp_set_num_threads(nth)
+    !$call omp_set_num_threads(nth)
     !$omp parallel private(j,k,err) shared(nt,t,t0,m_offset,p,e,Ma,Ea,sta,cta,Ta) default(none)
 
     !! Calculate the mean anomaly
