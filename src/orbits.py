@@ -1,5 +1,5 @@
 ## PyTransit
-## Copyright (C) 2010--2015  Hannu Parviainen
+## Copyright (C) 2010--2017  Hannu Parviainen
 ##
 ## This program is free software; you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
@@ -14,9 +14,93 @@
 ## You should have received a copy of the GNU General Public License along
 ## with this program; if not, write to the Free Software Foundation, Inc.,
 ## 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+import numpy as np
 
+from numpy import pi, arange, newaxis
 from .orbits_f import orbits
 
+TWO_PI = 2*pi
+
+def not_implemented(*nargs, **kwargs):
+    raise NotImplementedError
+
+class Orbit(object):
+    methods = 'iteration newton ps3 ps5 interpolation'.split()
+    
+    ea_functions = dict(iteration = not_implemented,
+                        newton = orbits.ea_eccentric_newton,
+                        ps3 = not_implemented,
+                        ps5 = not_implemented,
+                        interpolation = not_implemented)
+
+    ta_functions = dict(iteration = orbits.ta_eccentric_iter,
+                        newton = orbits.ta_eccentric_newton,
+                        ps3 = orbits.ta_eccentric_ps3,
+                        ps5 = orbits.ta_eccentric_ps5,
+                        interpolation = not_implemented)
+
+    z_functions =  dict(iteration = orbits.z_eccentric_iter,
+                        newton = orbits.z_eccentric_newton,
+                        ps3 = orbits.z_eccentric_ps3,
+                        ps5 = orbits.z_eccentric_ps5,
+                        interpolation = not_implemented)
+
+    def __init__(self, method='newton', nthr=0, circular_e_threshold=1e-5):
+        assert method in self.methods
+        self.nthr = nthr
+        self.method = method
+        self._mine = circular_e_threshold
+        self._ea_function = self.ea_functions[method]
+        self._ta_function = self.ta_functions[method]
+        self._z_function  = self.z_functions[method]
+
+        
+    def mean_anomaly(self, time, t0, p):
+        return ((time-t0) / p) * TWO_PI
+
+    
+    def eccentric_anomaly(self, time, t0, p, e=0., w=0.):
+        if e > self._mine:
+            return self._ea_function(time, t0, p, e, w, self.nthr)
+        else:
+            return self.mean_anomaly(time, t0, p)
+
+        
+    def true_anomaly(self, time, t0, p, e=0., w=0.):
+        if e > self._mine:
+            return self._ta_function(time, t0, p, e, w, self.nthr)
+        else:
+            return self.mean_anomaly(time, t0, p)
+
+        
+    def projected_distance(self, time, t0, p, a, i, e=0., w=0.):
+        if e > self._mine:
+            return self._z_function(time, t0, p, a, i, e, w, self.nthr)
+        else:
+            return orbits.z_circular(time, t0, p, a, i, self.nthr)
+
+        
+    def phase(self, time, t0, p, a, i, e=0., w=0.):
+        raise NotImplementedError
+
+    
+        
+class CircularOrbit(Orbit):
+
+    def mean_anomaly(self, time, t0, p):
+        return ((time-t0) / p) * TWO_PI
+
+    def eccentric_anomaly(self, time, t0, p):
+        return self.mean_anomaly(time, t0, p)
+
+    def true_anomaly(self, time, t0, p):
+        return self.mean_anomaly(time, t0, p)
+    
+    def projected_distance(self, time, t0, p, a, i):
+        return orbits.z_circular(time, t0, p, a, i, self.nthr)
+
+
+    
 eclipse_shift = orbits.eclipse_shift_ex
 duration_circular  = orbits.duration_circular
 duration_eccentric = orbits.duration_eccentric_w

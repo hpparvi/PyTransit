@@ -26,7 +26,7 @@ class MandelAgol(TransitModel):
     This class wraps the Fortran implementations of the linear and quadratic Mandel & Agol
     transit models.
     """
-    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=0, exptime=0.020433598, eclipse=False, klims=(0.07,0.13), nk=128, nz=256, **kwargs):
+    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=1, exptime=0.020433598, eclipse=False, klims=(0.07,0.13), nk=128, nz=256, **kwargs):
         """Initialise the model.
 
         Args:

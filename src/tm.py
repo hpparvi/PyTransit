@@ -19,20 +19,20 @@ from math import fabs
 import numpy as np
 from .orbits_f import orbits as of
 from .utils_f import utils as uf
+from .supersampler import SuperSampler
+from .orbits import Orbit
 
 class TransitModel(object):
     """Exoplanet transit light curve model 
     """
-    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=0, exptime=0.020433598, eclipse=False):
+    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=1, exptime=0.020433598, eclipse=False):
         self.nldc = int(nldc)
         self.nthr = int(nthr)
-        self.ss   = bool(supersampling)
-        self.nss  = int(supersampling)
-        self.exp  = float(exptime)
         self.time = None
         self.eclipse = bool(eclipse)
-
-
+        self.sampler = SuperSampler(supersampling, exptime, nthr=self.nthr)
+        self.orbit = Orbit(nthr=self.nthr)
+        
     def __call__(self, z, k, u, c=0., update=True):
         raise NotImplementedError
 
@@ -70,43 +70,13 @@ class TransitModel(object):
             _k = k
             kf = 1.
 
-        z = self._calculate_z(t, t0, p, a, i, e, w, interpolate_z)
-        flux = self.__call__(z, k, u, c, update)
-
-        if self.ss:
-            if npb == 1:
-                flux = uf.average_samples_1(flux, self.npt, self.nss, self.nthr)
-            else:
-                flux = flux.reshape((self.npt, self.nss, npb)).mean(1)
-
-        return kf*(flux-1.)+1.
+        z = self._calculate_z(t, t0, p, a, i, e, w)
+        supersampled_flux = self.__call__(z, k, u, c, update)
+        averaged_flux = self.sampler.average(supersampled_flux)
+ 
+        return kf*(averaged_flux-1.)+1.
 
 
-    def _calculate_z(self, t, t0, p, a, i, e=0, w=0, interpolate_z=False):
-        ## Calculate the supersampling time array if not cached
-        ##
-        if t is not self.time:
-            self.time = np.array(t)
-            self._time = np.array(t)
-            self.npt = self._time.size
-
-            if self.ss:
-                self._sample_pos = self.exp * (np.arange(1,self.nss+1,dtype=np.double)/(self.nss+1) - 0.5)
-                self._time = (self.time[:,np.newaxis] + self._sample_pos).ravel()
-
-        ## Calculate the normalised projected distance
-        ##
-        if interpolate_z:
-            z = of.z_eccentric_ip(self._time, t0, p, a, i, e, w, nth=self.nthr, update=True)
-        else:
-            if fabs(e) < 0.001:
-                z = of.z_circular(self._time, t0, p, a, i, nth=self.nthr)
-            elif fabs(e) < 0.2:
-                z = of.z_eccentric_ps3(self._time, t0, p, a, i, e, w, nth=self.nthr)
-            else:
-                z = of.z_eccentric_newton(self._time, t0, p, a, i, e, w, nth=self.nthr)
-
-        if self.eclipse:
-            z *= -1.
-                
-        return z
+    def _calculate_z(self, t, t0, p, a, i, e=0, w=0):
+        z = self.orbit.projected_distance(self.sampler.sample(t), t0, p, a, i, e, w)
+        return z if not self.eclipse else -z

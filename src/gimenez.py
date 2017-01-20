@@ -31,7 +31,7 @@ class Gimenez(TransitModel):
     light curves with thousands to millions of datapoints.
     """
 
-    def __init__(self, npol=100, nldc=2, nthr=0, interpolate=False, supersampling=0, exptime=0.020433598, eclipse=False, **kwargs):
+    def __init__(self, npol=100, nldc=2, nthr=0, interpolate=False, supersampling=1, exptime=0.020433598, eclipse=False, **kwargs):
         """Initialise the model.
 
         Args:
