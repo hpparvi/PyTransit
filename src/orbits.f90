@@ -203,11 +203,13 @@ contains
     real(fd), intent(in),  dimension(nt) :: t
     real(fd), intent(out), dimension(nt) :: Ea
     
-    real(fd), dimension(nt) :: Ma  ! Mean anomaly
-    
+    real(fd), dimension(:), allocatable :: Ma  ! Mean anomaly
+
     integer j
     real(fd) :: m_offset, err
 
+    allocate(Ma(nt))
+    
     m_offset = mean_anomaly_offset(e,w)
 
     !$ if (nth /= 0) call omp_set_num_threads(nth)
@@ -230,7 +232,8 @@ contains
     end do
     !$omp end do
     !$omp end parallel
-
+    
+    deallocate(Ma)
   end subroutine ea_eccentric_newton
 
  subroutine ea_eccentric_newton2(t, m0, p, e, w, nth, nt, Ea)
@@ -239,11 +242,11 @@ contains
     real(fd), intent(in)  :: m0, p, e, w
     real(fd), intent(in),  dimension(nt) :: t
     real(fd), intent(out), dimension(nt) :: Ea
-    
-    real(fd), dimension(nt) :: Ma  ! Mean anomaly
-    
+    real(fd), dimension(:), allocatable :: Ma
     integer j
     real(fd) :: err
+
+    allocate(Ma(nt))
 
     !$ if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel private(j,err) shared(nt,t,m0,p,e,Ma,Ea) default(none)
@@ -265,7 +268,8 @@ contains
     end do
     !$omp end do
     !$omp end parallel
-
+    
+    deallocate(Ma)
   end subroutine ea_eccentric_newton2
 
   !! ============
@@ -322,16 +326,12 @@ contains
     real(fd), intent(in)  :: t0, p, e, w
     real(fd), intent(in),  dimension(nt) :: t
     real(fd), intent(out), dimension(nt) :: Ta
-    
-    real(fd), dimension(nt) :: Ma  ! Mean anomaly
-    real(fd), dimension(nt) :: Ea  ! Eccentric anomaly
-    real(fd), dimension(nt) :: ec  ! Ea = Ma + ec
-    real(fd), dimension(nt) :: cta, sta  ! cos(Ta), sin(Ta)
-    
-    integer j, k
+    real(fd), dimension(:), allocatable :: Ma, Ea, ec, cta, sta
+    integer :: j, k
     real(fd) :: m_offset, ect
 
     m_offset = mean_anomaly_offset(e,w)
+    allocate(Ma(nt), Ea(nt), ec(nt), cta(nt), sta(nt))
 
     !$ if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel private(j,k,ect) shared(ec,nt,t,t0,m_offset,p,e,Ma,Ea,sta,cta,Ta) default(none)
@@ -361,6 +361,7 @@ contains
     Ta  = atan2(sta, cta) 
     !$omp end workshare
     !$omp end parallel
+    deallocate(Ma, Ea, cta, sta)
   end subroutine ta_eccentric_iter
 
 
@@ -371,13 +372,14 @@ contains
     real(fd), intent(in),  dimension(nt) :: t
     real(fd), intent(out), dimension(nt) :: Ta
     
-    real(fd), dimension(nt) :: Ma  ! Mean anomaly
-    real(fd), dimension(nt) :: Ea  ! Eccentric anomaly
-    real(fd), dimension(nt) :: cta, sta  ! cos(Ta), sin(Ta)
+    ! Mean anomaly, Eccentric anomaly, cos(Ta), sin(Ta)
+    real(fd), dimension(:), allocatable :: Ma, Ea, cta, sta
     
-    integer j, k
+    integer :: j, k
     real(fd) :: m_offset, err
 
+    allocate(Ma(nt), Ea(nt), cta(nt), sta(nt))
+    
     m_offset = mean_anomaly_offset(e,w)
 
     !$call omp_set_num_threads(nth)
@@ -388,8 +390,9 @@ contains
     Ma = two_pi * (t - (t0 - m_offset*p/two_pi))/ p
     !$omp end workshare
 
-    !! Calculate the eccentric anomaly using the Newton's method
     Ea = Ma
+    
+    !! Calculate the eccentric anomaly using the Newton's method
     !$omp do schedule(guided)
     do j = 1, nt
        err = 0.05_fd
@@ -409,6 +412,7 @@ contains
     Ta  = atan2(sta, cta)
     !$omp end workshare
     !$omp end parallel
+    deallocate(Ma, Ea, cta, sta)
   end subroutine ta_eccentric_newton
 
 
@@ -419,10 +423,10 @@ contains
     real(fd), intent(in)  :: t0, p, e, w
     real(fd), intent(in),  dimension(nt) :: t
     real(fd), intent(out), dimension(nt) :: Ta
-    
-    real(fd), dimension(nt) :: Ma  ! Mean anomaly
+    real(fd), dimension(:), allocatable :: Ma  ! Mean anomaly
     real(fd) :: m_offset
 
+    allocate(Ma(nt))
     m_offset = mean_anomaly_offset(e,w)
 
     !$ if (nth /= 0) call omp_set_num_threads(nth)
@@ -433,7 +437,7 @@ contains
          &  + 1.25_fd*e**2*sin(2*Ma) &
          &  + 13._fd/12._fd*e**3*sin(3*Ma)
     !$omp end parallel workshare
-
+    deallocate(Ma)
   end subroutine ta_eccentric_ps3
 
 
@@ -444,10 +448,10 @@ contains
     real(fd), intent(in)  :: t0, p, e, w
     real(fd), intent(in),  dimension(nt) :: t
     real(fd), intent(out), dimension(nt) :: Ta
-    
-    real(fd), dimension(nt) :: Ma  ! Mean anomaly
+    real(fd), dimension(:), allocatable :: Ma  ! Mean anomaly
     real(fd) :: m_offset
 
+    allocate(Ma(nt))
     m_offset = mean_anomaly_offset(e,w)
 
     !$ if (nth /= 0) call omp_set_num_threads(nth)
@@ -460,6 +464,7 @@ contains
          &  + 103._fd/96._fd * e**4 * sin(4*Ma) &
          &  + 1097._fd/960._fd * e**5 * sin(5*Ma)
     !$omp end parallel workshare
+    deallocate(Ma)
   end subroutine ta_eccentric_ps5
 
 
