@@ -71,7 +71,7 @@ class TransitModel(object):
             kf = 1.
 
         z = self._calculate_z(t, t0, p, a, i, e, w)
-        supersampled_flux = self.__call__(z, k, u, c, update)
+        supersampled_flux = self.__call__(z, k, u=u, c=c, update=update)
         averaged_flux = self.sampler.average(supersampled_flux)
  
         return kf*(averaged_flux-1.)+1.

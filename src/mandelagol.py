@@ -142,8 +142,12 @@ class MAChromosphere(MandelAgol):
     def __init__(self, nthr=0, supersampling=1, exptime=0.020433598):
         super().__init__(model='chromosphere', nthr=nthr, supersampling=supersampling, exptime=exptime)
 
-    def __call__(self, z, k, c=0):
+    def __call__(self, z, k, c=0, **kwargs):
         return self._eval(z, k, [], c)
+
+    def evaluate(self, t, k, t0, p, a, i, e=0., w=0., c=0.):
+        return super().evaluate(t, k, [], t0, p, a, i, e, w)
+
 
     
 class MAUniform(MandelAgol):
