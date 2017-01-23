@@ -36,6 +36,8 @@ module mandelagol
 
   real(8), parameter :: PI = acos(-1.d0)
   real(8), parameter :: HALF_PI = 0.5d0*PI
+  real(8), parameter :: FOUR_PI = 4.0_dp*PI
+
   real(8), parameter :: INV_PI = 1.d0/PI
   integer, parameter :: MAXITER = 500
 contains
@@ -388,7 +390,44 @@ contains
     end do
   end subroutine calculate_interpolation_tables
 
+  
+  subroutine eval_chromosphere(zs, k, c, nthr, nz, flux)
+    !! Optically thin chromosphere model presented in
+    !! Schlawin, Agol, Walkowicz, Covey & Lloyd (2010)
+    implicit none
+    integer, intent(in) :: nz, nthr
+    real(8), intent(in) :: zs(nz), k, c
+    real(8), intent(out) :: flux(nz)
+    real(8) :: z, t, zmk2
+    integer :: i
 
+
+    flux = 1.0_dp
+    do i=1,nz
+       z = zs(i)
+       if ((z > 0.0_dp) .and. (z-k < 1.0_dp)) then
+          zmk2 = (z-k)**2
+          if (z+k < 1.0_dp) then
+             t = sqrt(4.0_dp*z*k/(1.0_dp-zmk2))
+             flux(i) = 4.0_dp/sqrt(1.0_dp-zmk2) * ( &
+                  &   (zmk2-1.0_dp)* ellec(t)&
+                  & - (z**2-k**2)*   ellk(t) &
+                  & + (z+k)/(z-k)*   ellpicb(4.0_dp*z*k/zmk2, t))
+             
+          else if (z+k > 1.0_dp) then
+             t = sqrt((1.0_dp-zmk2)/(4.0_dp*z*k))
+             flux(i) = 2.0_dp/(z-k) / sqrt(z*k) * ( &
+                  & 4.0_dp*z*k*(k-z)                   * ellec(t) &
+                  & + (-z+2.0_dp*z**2*k+k-2.0_dp*k**3) * ellk(t) &
+                  & +                            (z+k) * ellpicb(1/zmk2 - 1.0_dp, t))
+          end if
+          if (k > z) flux(i) = flux(i) + FOUR_PI
+          flux(i) = 1.0_dp - flux(i) / FOUR_PI
+          flux(i) = c + (1.d0 - c)*flux(i)
+       end if
+    end do
+  end subroutine eval_chromosphere
+  
   real(8) function ellpicb(n, k)
     !! The complete elliptical integral of the third kind
     !!
@@ -448,9 +487,9 @@ contains
          & b4=0.005264496390_dp
     real(8) :: m1,ee1,ee2
 
-    m1=1.0-k*k
-    ee1=1.0+m1*(a1+m1*(a2+m1*(a3+m1*a4)))
-    ee2=m1*(b1+m1*(b2+m1*(b3+m1*b4)))*log(1.0/m1)
+    m1=1.0_dp-k*k
+    ee1=1.0_dp+m1*(a1+m1*(a2+m1*(a3+m1*a4)))
+    ee2=m1*(b1+m1*(b2+m1*(b3+m1*b4)))*log(1.0_dp/m1)
     ellec=ee1+ee2
   end function ellec
 
@@ -470,7 +509,7 @@ contains
          & b4=0.004417870120_dp
     real(8) :: ek1,ek2,m1
 
-    m1=1.0-k*k
+    m1=1.0_dp-k*k
     ek1=a0+m1*(a1+m1*(a2+m1*(a3+m1*a4)))
     ek2=(b0+m1*(b1+m1*(b2+m1*(b3+m1*b4))))*log(m1)
     ellk=ek1-ek2

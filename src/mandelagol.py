@@ -20,13 +20,18 @@ from .mandelagol_f import mandelagol as ma
 from .orbits_f import orbits as of
 from .tm import TransitModel
 
+
+        
 class MandelAgol(TransitModel):
     """Linear and quadratic Mandel-Agol transit models (ApJ 580, L171-L175 2002).
 
     This class wraps the Fortran implementations of the linear and quadratic Mandel & Agol
     transit models.
     """
-    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=1, exptime=0.020433598, eclipse=False, klims=(0.07,0.13), nk=128, nz=256, **kwargs):
+
+    models = 'uniform quadratic interpolated_quadratic chromosphere'.split()
+    
+    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=1, exptime=0.020433598, eclipse=False, klims=(0.07,0.13), nk=128, nz=256, model='quadratic', **kwargs):
         """Initialise the model.
 
         Args:
@@ -40,21 +45,25 @@ class MandelAgol(TransitModel):
             nk: Interpolation table resolution in k.
             nz: Interpolation table resolution in z.
         """
-        if not (nldc == 0 or nldc == 2):
-            raise NotImplementedError('Only the uniform and quadratic Mandel-Agol models are currently supported.')
+        assert model in self.models, 'Unknown MA model {}'.format(model)
+        assert nldc in [0,2], 'Number of limb darkening coefficients must be either 0 or 2'
+
         super(MandelAgol, self).__init__(nldc, nthr, interpolate, supersampling, exptime, eclipse)
-        self.interpolate = interpolate
-            
-        if nldc == 0:
-            self._eval = self._eval_uniform
+        self.interpolate = interpolate or kwargs.get('lerp', False)
+
+        if model == 'chromosphere':
+            self._eval = self._eval_chromosphere
         else:
-            if self.interpolate or kwargs.get('lerp', False):
-                self.ed,self.le,self.ld,self.kt,self.zt = ma.calculate_interpolation_tables(klims[0],klims[1],nk,nz,4)
-                self.klims = klims
-                self.nk = nk
-                self.nz = nz
+            if model == 'uniform' or nldc == 0:
+                self._eval = self._eval_uniform
+            else:
+                if model=='interpolated_quadratic' or self.interpolate:
+                    self.ed,self.le,self.ld,self.kt,self.zt = ma.calculate_interpolation_tables(klims[0],klims[1],nk,nz,4)
+                    self.klims = klims
+                    self.nk = nk
+                    self.nz = nz
         
-            self._eval = self._eval_quadratic
+                self._eval = self._eval_quadratic
 
 
     def _eval_uniform(self, z, k, u, c, update=True):
@@ -72,7 +81,21 @@ class MandelAgol(TransitModel):
         """
         return ma.eval_uniform(z, k, c, self.nthr)
 
+    
+    def _eval_chromosphere(self, z, k, u, c, update=True):
+        """Wraps the Fortran implementation of a transit over a uniform disk
 
+            Args:
+                z: Array of normalised projected distances.
+                k: Planet to star radius ratio.
+                c: Array of contamination values as [c1, c2, ... c_npb].
+
+            Returns:
+                An array of model flux values for each z.
+        """
+        return ma.eval_chromosphere(z, k, c, self.nthr)
+
+    
     def _eval_quadratic(self, z, k, u, c, update=True):
         """Wraps the Fortran implementation of the quadratic Mandel-Agol model
 
@@ -112,3 +135,17 @@ class MandelAgol(TransitModel):
         """
         flux = self._eval(z, k, u, c, update)
         return flux if np.asarray(u).size > 2 else flux.ravel()
+
+
+    
+class MAChromosphere(MandelAgol):
+    def __init__(self, nthr=0, supersampling=1, exptime=0.020433598):
+        super().__init__(model='chromosphere', nthr=nthr, supersampling=supersampling, exptime=exptime)
+
+    def __call__(self, z, k, c=0):
+        return self._eval(z, k, [], c)
+
+    
+class MAUniform(MandelAgol):
+    def __init__(self, nthr=0, supersampling=1, exptime=0.020433598, eclipse=False):
+        super().__init__(model='uniform', nldc=0, nthr=nthr, supersampling=supersampling, exptime=exptime, eclipse=eclipse)

@@ -30,7 +30,7 @@ Date
 """
 
 from .gimenez import Gimenez
-from .mandelagol import MandelAgol
+from .mandelagol import MandelAgol, MAChromosphere
 from .orbits import *
 
-__all__ = 'Gimenez MandelAgol orbits z_circular z_eccentric_newton'.split()
+__all__ = 'Gimenez MandelAgol MAChromosphere orbits z_circular z_eccentric_newton'.split()
