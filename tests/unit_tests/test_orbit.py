@@ -2,7 +2,6 @@ from __future__ import division
 import unittest
 import numpy as np
 import numpy.testing as npt
-import matplotlib.pyplot as pl
 
 from numpy.random import uniform, seed
 from pytransit.orbits_f import orbits as of
