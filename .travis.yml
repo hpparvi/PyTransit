@@ -1,6 +1,5 @@
 language: python
 python:
-  - "2.7"
   - "3.6"
 
 cache: pip
@@ -10,18 +9,8 @@ addons:
     packages:
     - gfortran
 
-before_install:
-  - wget https://repo.continuum.io/miniconda/Miniconda-latest-Linux-x86_64.sh -O miniconda.sh
-  - chmod +x miniconda.sh
-  - ./miniconda.sh -b
-  - export PATH=/home/travis/anaconda/bin:$PATH
-  - conda update --yes conda
-  - sudo rm -rf /dev/shm
-  - sudo ln -s /run/shm /dev/shm
-
 install:
-  - conda create --yes -n pytransit python=$TRAVIS_PYTHON_VERSION pip numpy scipy nose
-  - source activate pytransit
+  - pip install numpy scipy
   - python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native" build install
 
 script: nosetests -w tests/unit_tests
