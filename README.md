@@ -26,12 +26,13 @@ Modules
 **Transit models**
   - Series-expansion based transit model by [A. Gimenez (A&A 450, 1231--1237, 2006)](http://adsabs.harvard.edu/abs/2006A&A...450.1231G).
   - Quadratic limb-darkening transit model by [Mandel & Agol (ApJ 580, L171–L175, 2002)](http://adsabs.harvard.edu/abs/2002ApJ...580L.171M).
+  - Optically thin shell model by [Schlawin et al. (ApJL 722, 75--79, 2010)](http://adsabs.harvard.edu/abs/2010ApJ...722L..75S) to model narrow-band transits observations of chromospheric emission lines.
  
-  - Common features
-    - Optimized and parallelized Fortran implementations. 
-    - Efficient model evaluation for multicolour observations and transmission spectroscopy.
-    - Built-in model interpolation for the modelling of large datasets.
-    - Built-in supersampling to account for extended exposure times.
+**Common features**
+  - Optimized and parallelized Fortran implementations. 
+  - Efficient model evaluation for multicolour observations and transmission spectroscopy.
+  - Built-in model interpolation for the modelling of large datasets.
+  - Built-in supersampling to account for extended exposure times.
 
 **Utilities**
   - Routines to calculate the projected planet-to-star distance for circular and eccentric orbits.
