@@ -21,17 +21,21 @@ from .orbits_f import orbits as of
 from .utils_f import utils as uf
 from .supersampler import SuperSampler
 from .orbits import Orbit
+from .limb_darkening import UniformLD, LinearLD, QuadraticLD, TriangularQLD
 
 class TransitModel(object):
     """Exoplanet transit light curve model 
     """
-    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=1, exptime=0.020433598, eclipse=False):
+    native_ld_par = None 
+    
+    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=1, exptime=0.020433598, eclipse=False, LDPar=QuadraticLD):
         self.nldc = int(nldc)
         self.nthr = int(nthr)
         self.time = None
         self.eclipse = bool(eclipse)
         self.sampler = SuperSampler(supersampling, exptime, nthr=self.nthr)
         self.orbit = Orbit(nthr=self.nthr)
+        self.ldmap = LDPar()
         
     def __call__(self, z, k, u, c=0., update=True):
         raise NotImplementedError
