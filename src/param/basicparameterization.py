@@ -8,7 +8,7 @@ class BasicCircularParameterization(object):
     
     pars = (Parameter('zero_epoch',       'tc',  'Zero epoch',        (-inf, inf), 0),
             Parameter('period',           'p',   'Orbital period',    (   0, inf), 4),
-            Parameter('area_ratio',       'a',   'Area ratio',        (   0, inf), 0.01),
+            Parameter('area_ratio',       'ar',  'Area ratio',        (   0, inf), 0.01),
             Parameter('stellar_density',  'rho', 'Stellar density',   (   0, inf), 2),
             Parameter('impact_parameter', 'b',   'Impact parameter',  (   0,   1), 0),
             Parameter('ld_q1',            'q1',  'Limb darkening q1', (   0,   1), 0),
@@ -17,7 +17,7 @@ class BasicCircularParameterization(object):
     radius_ratio     = k   = property(lambda self: sqrt(self._data[2]), doc='Radius ratio')
     semi_major_axis  = sma = property(lambda self: as_from_rhop(self._data[3], self._data[1]), doc='Semi-major axis')
     inclination      = i   = property(lambda self: acos(self._data[4]/self.sma), doc='Inclination')
-
+    
     def __new__(cls):
         cls.__initialize_params__()
         return super(BasicCircularParameterization, cls).__new__(cls)
@@ -47,7 +47,10 @@ class BasicCircularParameterization(object):
     
     def __setitem__(self, key, value):
         self._data[key] = value
-    
+
+    def __repr__(self):
+        return '\n'.join([p for p in self.pars])
+        
     def to_tmodel(self, pv=None):
         if pv is not None:
             self._data[:] = pv
@@ -64,9 +67,10 @@ class BasicCircularParameterization(object):
 
 class BasicEccentricParameterization(BasicCircularParameterization):
 
-    eccentricity = ec = property(lambda self: self._data[7]**2 + self._data[8]**2)
-    omega        = w  = property(lambda self: atan2(self._data[8], self._data[7]))
-    
+    eccentricity = e  = property(lambda self: self._data[7]**2 + self._data[8]**2, doc='Eccentricity')
+    omega        = w  = property(lambda self: atan2(self._data[8], self._data[7]), doc='Argument of perioastron')
+    inclination  = i  = property(lambda self: i_from_baew(self._data[4], self.sma, self.e, self.w), doc='Inclination')
+
     def __new__(cls):
         o = super(BasicEccentricParameterization, cls).__new__(cls)
         cls.pars += (Parameter('secw', 'secw', 'sqrt(e) cos(w)', (-1,1), 0),

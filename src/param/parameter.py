@@ -10,3 +10,6 @@ class Parameter(object):
     
     def lnprior(self, x):
         return 0.
+
+    def __repr__(self):
+        return '{:20s} {:6s} ({:5.2f} <= v <= {:5.2f})'.format(self.name, '['+self.abbr+']', self.lims[0], self.lims[1])
