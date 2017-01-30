@@ -1,26 +1,15 @@
 from math import sqrt, acos, atan2
-from numpy import array, inf
+from numpy import array, inf, pi
 
-from ..utils.orbits import as_from_rhop, i_from_baew
-from .parameter import Parameter
+from pytransit.utils.orbits import as_from_rhop, i_from_baew
+from pytransit.param.parameter import Parameter
 
-class BasicCircularParameterization(object):
-    
-    pars = (Parameter('zero_epoch',       'tc',  'Zero epoch',        (-inf, inf), 0),
-            Parameter('period',           'p',   'Orbital period',    (   0, inf), 4),
-            Parameter('area_ratio',       'ar',  'Area ratio',        (   0, inf), 0.01),
-            Parameter('stellar_density',  'rho', 'Stellar density',   (   0, inf), 2),
-            Parameter('impact_parameter', 'b',   'Impact parameter',  (   0,   1), 0),
-            Parameter('ld_q1',            'q1',  'Limb darkening q1', (   0,   1), 0),
-            Parameter('ld_q2',            'q2',  'Limb darkening q2', (   0,   1), 0))
-        
-    radius_ratio     = k   = property(lambda self: sqrt(self._data[2]), doc='Radius ratio')
-    semi_major_axis  = sma = property(lambda self: as_from_rhop(self._data[3], self._data[1]), doc='Semi-major axis')
-    inclination      = i   = property(lambda self: acos(self._data[4]/self.sma), doc='Inclination')
-    
+class Parameterization(object):
+    pars = []
+
     def __new__(cls):
         cls.__initialize_params__()
-        return super(BasicCircularParameterization, cls).__new__(cls)
+        return super(Parameterization, cls).__new__(cls)
     
     @classmethod
     def __initialize_params__(cls):
@@ -50,7 +39,49 @@ class BasicCircularParameterization(object):
 
     def __repr__(self):
         return '\n'.join([p for p in self.pars])
+
+
+class ModelParameterization(Parameterization):
+    
+    pars = (Parameter('zero_epoch',       'tc',  'Zero epoch',             (-inf,  inf), 0),       # 0
+            Parameter('period',           'p',   'Orbital period',         (   0,  inf), 4),       # 1
+            Parameter('radius_ratio',     'k',   'Radius ratio',           (   0,  inf), 0.1),     # 2
+            Parameter('semi_major_axis',  'sma', 'Semi-major axis',        (   0,  inf), 2),       # 3
+            Parameter('inclination',      'i',   'Inclination',            (   0,   pi), 0.5*pi),  # 4
+            Parameter('eccentricity',     'e',   'Eccentricity',           (   0,    1), 0.0),     # 5
+            Parameter('omega',            'w',   'Argument of periastron', (   0, 2*pi), 0.0),     # 6
+            Parameter('ld_u',             'u',   'Limb darkening u',       (   0,    1), 0),       # 7
+            Parameter('ld_v',             'v',   'Limb darkening v',       (   0,    1), 0))       # 8
+            
+    def __new__(cls):
+        cls.__initialize_params__()
+        return super(ModelParameterization, cls).__new__(cls)
+    
+    def to_tmodel(self, pv=None):
+        if pv is not None:
+            self._data[:] = pv
+        pv = self._data
+        return pv[2], pv[7:9], pv[0], pv[1], pv[3], pv[4], pv[5], pv[6]
+
+    
+class BasicCircularParameterization(Parameterization):
+    
+    pars = (Parameter('zero_epoch',       'tc',  'Zero epoch',        (-inf, inf), 0),     # 0
+            Parameter('period',           'p',   'Orbital period',    (   0, inf), 4),     # 1
+            Parameter('area_ratio',       'ar',  'Area ratio',        (   0, inf), 0.01),  # 2
+            Parameter('stellar_density',  'rho', 'Stellar density',   (   0, inf), 2),     # 3
+            Parameter('impact_parameter', 'b',   'Impact parameter',  (   0,   1), 0),     # 4
+            Parameter('ld_q1',            'q1',  'Limb darkening q1', (   0,   1), 0),     # 5
+            Parameter('ld_q2',            'q2',  'Limb darkening q2', (   0,   1), 0))     # 6
         
+    radius_ratio     = k   = property(lambda self: sqrt(self._data[2]), doc='Radius ratio')
+    semi_major_axis  = sma = property(lambda self: as_from_rhop(self._data[3], self._data[1]), doc='Semi-major axis')
+    inclination      = i   = property(lambda self: acos(self._data[4]/self.sma), doc='Inclination')
+    
+    def __new__(cls):
+        cls.__initialize_params__()
+        return super(BasicCircularParameterization, cls).__new__(cls)
+    
     def to_tmodel(self, pv=None):
         if pv is not None:
             self._data[:] = pv
@@ -73,8 +104,8 @@ class BasicEccentricParameterization(BasicCircularParameterization):
 
     def __new__(cls):
         o = super(BasicEccentricParameterization, cls).__new__(cls)
-        cls.pars += (Parameter('secw', 'secw', 'sqrt(e) cos(w)', (-1,1), 0),
-                     Parameter('sesw', 'sesw', 'sqrt(e) sin(w)', (-1,1), 0))
+        cls.pars += (Parameter('secw', 'secw', 'sqrt(e) cos(w)', (-1,1), 0),  # 7
+                     Parameter('sesw', 'sesw', 'sqrt(e) sin(w)', (-1,1), 0))  # 8
         cls.__initialize_params__()
         return o
 
