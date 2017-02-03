@@ -3,6 +3,33 @@
 !! This module implements subroutines to compute projected distances, and other
 !! utilities for orbit calculations. 
 !!
+!! - Mean anomaly
+!!
+!! - Eccentric anomaly
+!!   - Newton (two methods)
+!!
+!! - True anomaly
+!!   - Iteration
+!!   - Newton
+!!   - Series expansion (3)
+!!   - Series expansion (5)
+!!   - Interpolation
+!!
+!! - projected distance
+!!   - Circular orbit
+!!   - Iteration
+!!   - Newton
+!!   - Series expansion (3)
+!!   - Series expansion (5)
+!!   - Interpolation
+!!
+!! - Utility functions
+!!   - Impact parameter for a circular orbit
+!!   - Impact parameter for an eccentric orbit
+!!   - Transit duration for a circular orbit
+!!   - Transit duration for an eccentric orbit
+!!   - Eclipse shift in time relative to p/2
+!!
 !! -GPL-
 !!
 !! Copyright (C) 2010--2015  Hannu Parviainen
@@ -42,6 +69,10 @@ module orbits
 
 contains
 
+  !! ============
+  !! MEAN ANOMALY
+  !! ============
+  
   !! Calculates the time offset between the zero mean anomaly and transit
   !! center knowing that the true anomaly f is f(t_tr) = pi/2 - w.
   real(fd) function mean_anomaly_offset(e, w)
@@ -66,6 +97,39 @@ contains
   end subroutine mean_anomaly
 
   
+  !! ==================
+  !! PROJECTED DISTANCE
+  !! ==================
+  !! Methods to calculate the projected normalized planet-star distance for a planet in an eccentric orbit.
+  !! Parameters
+  !!   t    d[nt]  time                          [d]
+  !!   t0   d      mid-transit time              [d]
+  !!   p    d      period                        [d]
+  !!   a    d      scaled semi-major axis        [Rs]
+  !!   i    d      inclination                   [rad]
+  !!   e    d      eccentricity                  [-]
+  !!   w    d      argument of the periastron    [rad]
+  !!   nth  i      number of openmp threads
+  !!   nt   i      number of points
+
+
+  subroutine z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
+    implicit none
+    integer, intent(in) :: nt, nth
+    real(fd), intent(in), dimension(nt) :: Ta
+    real(fd), intent(in) :: a, i, e, w
+    real(fd), intent(out), dimension(nt) :: z
+    integer :: j
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
+    !$omp parallel do private(j) shared(z,a,i,e,w,Ta,nt) default(none) schedule(static)
+    do j=1,nt
+       z(j) = a*(1-e**2)/(1+e*cos(Ta(j))) * sqrt(1 - sin(w+Ta(j))**2 * sin(i)**2) &
+            & * sign(1._fd, sin(w+Ta(j))) !! This term computes the 3D z-component
+    end do
+    !$omp end parallel do
+  end subroutine z_eccentric_from_ta
+
+  
   subroutine z_circular(t, t0, p, a, i, nth, nt, z)
     implicit none
     integer, intent(in) :: nt, nth
@@ -87,75 +151,7 @@ contains
     end do
     !$omp end parallel do
   end subroutine z_circular
-
-  !! z_circular_mt - calculate z for a circular orbit and multiple transit center times
-  !!
-  subroutine z_circular_mc(t, t0, t0npt, p, a, i, nth, nt, nt0, z)
-    implicit none
-    integer, intent(in) :: nt, nt0, nth
-    real(fd), intent(in) :: p, a, i
-    real(fd), intent(in),  dimension(nt0) :: t0
-    integer,  intent(in),  dimension(nt0) :: t0npt
-    real(fd), intent(in),  dimension(nt)  :: t
-    real(fd), intent(out), dimension(nt)  :: z
-
-    integer, dimension(nt0) :: t0start
-    real(fd) :: n, cosph, sini
-    integer :: j,k, jloc
-
-    t0start(1) = 0
-    do j=2,nt0
-       t0start(j) = t0start(j-1) + t0npt(j-1)
-    end do
-
-    sini = sin(i)
-    n    = TWO_PI/p
-
-    !$ if (nth /= 0) call omp_set_num_threads(nth)
-    !$omp parallel do private(k, j, jloc, cosph) shared(a, t, t0, nt0, t0start, t0npt, sini, n, z) default(none)
-    do k=1,nt0
-       do j=1,t0npt(k)
-          jloc = t0start(k)+j
-          cosph = cos((t(jloc)-t0(k))*n)
-          z(jloc) = sign(1._fd, cosph)*a*sqrt(1._fd - cosph*cosph*sini*sini)
-       end do
-    end do
-    !$omp end parallel do
-  end subroutine z_circular_mc
-
-
-  subroutine z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
-    implicit none
-    integer, intent(in) :: nt, nth
-    real(fd), intent(in), dimension(nt) :: Ta
-    real(fd), intent(in) :: a, i, e, w
-    real(fd), intent(out), dimension(nt) :: z
-    integer :: j
-    !$ if (nth /= 0) call omp_set_num_threads(nth)
-    !$omp parallel do private(j) shared(z,a,i,e,w,Ta,nt) default(none) schedule(static)
-    do j=1,nt
-       z(j) = a*(1-e**2)/(1+e*cos(Ta(j))) * sqrt(1 - sin(w+Ta(j))**2 * sin(i)**2) &
-            & * sign(1._fd, sin(w+Ta(j))) !! This term computes the 3D z-component
-    end do
-    !$omp end parallel do
-  end subroutine z_eccentric_from_ta
-
-
-  !! ==================
-  !! PROJECTED DISTANCE
-  !! ==================
-  !! Different methods to calculate the projected distance for a planet in an eccentric orbit.
-  !! Parameters
-  !!   t    d[nt]  time                          [d]
-  !!   t0   d      mid-transit time              [d]
-  !!   p    d      period                        [d]
-  !!   a    d      scaled semi-major axis        [Rs]
-  !!   i    d      inclination                   [rad]
-  !!   e    d      eccentricity                  [-]
-  !!   w    d      argument of the periastron    [rad]
-  !!   nth  i      number of openmp threads
-  !!   nt   i      number of points
-
+  
   subroutine z_eccentric_iter(t, t0, p, a, i, e, w, nth, nt, z)
     implicit none
     integer, intent(in)  :: nt, nth
@@ -230,7 +226,7 @@ contains
     
     real(fd), dimension(:), allocatable :: Ma  ! Mean anomaly
 
-    integer j
+    integer j, k
     real(fd) :: m_offset, err
 
     allocate(Ma(nt))
@@ -238,7 +234,7 @@ contains
     m_offset = mean_anomaly_offset(e,w)
 
     !$ if (nth /= 0) call omp_set_num_threads(nth)
-    !$omp parallel private(j,err) shared(nt,t,t0,m_offset,p,e,Ma,Ea) default(none)
+    !$omp parallel private(j,k,err) shared(nt,t,t0,m_offset,p,e,Ma,Ea) default(none)
 
     !! Calculate the mean anomaly
     !$omp workshare
@@ -250,9 +246,11 @@ contains
     !$omp do schedule(guided)
     do j = 1, nt
        err = 0.05_fd
-       do while (abs(err) > 1.0d-8) 
+       k = 0
+       do while ((abs(err) > 1.0d-8) .and. (k<1000)) 
           err   = Ea(j) - e*sin(Ea(j)) - Ma(j)
           Ea(j) = Ea(j) - err/(1._fd-e*cos(Ea(j)))
+          k = k + 1
        end do
     end do
     !$omp end do
@@ -379,58 +377,29 @@ contains
     deallocate(Ma, Ea, cta, sta)
   end subroutine ta_eccentric_iter
 
-
+  
   subroutine ta_eccentric_newton(t, t0, p, e, w, nth, nt, Ta)
     implicit none
     integer, intent(in)  :: nt, nth
     real(fd), intent(in)  :: t0, p, e, w
     real(fd), intent(in),  dimension(nt) :: t
     real(fd), intent(out), dimension(nt) :: Ta
+    real(fd), dimension(:), allocatable :: Ea, cta, sta
+    allocate(Ea(nt), cta(nt), sta(nt))
     
-    ! Mean anomaly, Eccentric anomaly, cos(Ta), sin(Ta)
-    real(fd), dimension(:), allocatable :: Ma, Ea, cta, sta
+    call ea_eccentric_newton(t, t0, p, e, w, nth, nt, Ea)
     
-    integer :: j, k
-    real(fd) :: m_offset, err
-
-    allocate(Ma(nt), Ea(nt), cta(nt), sta(nt))
-    
-    m_offset = mean_anomaly_offset(e,w)
-
-    !$call omp_set_num_threads(nth)
-    !$omp parallel private(j,k,err) shared(nt,t,t0,m_offset,p,e,Ma,Ea,sta,cta,Ta) default(none)
-
-    !! Calculate the mean anomaly
-    !$omp workshare
-    Ma = two_pi * (t - (t0 - m_offset*p/two_pi))/ p
-    !$omp end workshare
-
-    Ea = Ma
-    
-    !! Calculate the eccentric anomaly using the Newton's method
-    !$omp do schedule(guided)
-    do j = 1, nt
-       err = 0.05_fd
-       k=0
-       do while ((abs(err) > 1.0d-8) .and. (k<1000)) 
-          err   = Ea(j) - e*sin(Ea(j)) - Ma(j)
-          Ea(j) = Ea(j) - err/(1._fd-e*cos(Ea(j)))
-          k = k + 1
-       end do
-    end do
-    !$omp end do
-
     !! Calculate the true anomaly from the eccentric anomaly
-    !$omp workshare
+    ! $omp workshare
     sta = sqrt(1-e**2) * sin(Ea)/(1-e*cos(Ea))
     cta = (cos(Ea)-e)/(1-e*cos(Ea))
     Ta  = atan2(sta, cta)
-    !$omp end workshare
-    !$omp end parallel
-    deallocate(Ma, Ea, cta, sta)
+    ! $omp end workshare
+    ! $omp end parallel
+    deallocate(Ea, cta, sta)
   end subroutine ta_eccentric_newton
 
-
+  
   subroutine ta_eccentric_ps3(t, t0, p, e, w, nth, nt, Ta)
     !! Calculates the true anomaly using a series expansion.
     implicit none
@@ -531,6 +500,10 @@ contains
     !$omp end parallel do
   end subroutine ta_eccentric_ip
 
+  !! ================
+  !! UTILITY ROUTINES
+  !! ================
+  
   !! Approximate shift of the minima (quite good for e < 0.5)
   !! Kallrath, J., "Eclipsing Binary Stars: Modeling and Analysis", p. 85
   real(fd) function eclipse_shift_ap(p, i, e, w)
