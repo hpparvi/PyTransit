@@ -41,6 +41,31 @@ module orbits
   real(fd), parameter :: HALF_PI = 0.5_fd * PI
 
 contains
+
+  !! Calculates the time offset between the zero mean anomaly and transit
+  !! center knowing that the true anomaly f is f(t_tr) = pi/2 - w.
+  real(fd) function mean_anomaly_offset(e, w)
+    implicit none
+    real(fd), intent(in) :: e, w
+
+    mean_anomaly_offset = atan2(sqrt(1._fd-e**2)*sin(half_pi - w), e + cos(half_pi - w))
+    mean_anomaly_offset = mean_anomaly_offset - e*sin(mean_anomaly_offset)
+  end function mean_anomaly_offset
+
+  
+  subroutine mean_anomaly(t, t0, p, e, w, nth, nt, Ma)
+    implicit none
+    integer, intent(in) :: nt, nth
+    real(fd), intent(in) :: t0, p, e, w
+    real(fd), intent(in),  dimension(nt) :: t
+    real(fd), intent(out), dimension(nt) :: Ma
+    real(fd) :: offset
+
+    offset = mean_anomaly_offset(e, w)
+    Ma = two_pi * (t - (t0 - offset*p/two_pi))/ p
+  end subroutine mean_anomaly
+
+  
   subroutine z_circular(t, t0, p, a, i, nth, nt, z)
     implicit none
     integer, intent(in) :: nt, nth
@@ -295,16 +320,6 @@ contains
     end do
     !$omp end parallel do
   end subroutine ta_circular 
-
-  !! Calculates the time offset between the zero mean anomaly and transit
-  !! center knowing that the true anomaly f is f(t_tr) = pi/2 - w.
-  real(fd) function mean_anomaly_offset(e, w)
-    implicit none
-    real(fd), intent(in) :: e, w
-
-    mean_anomaly_offset = atan2(sqrt(1._fd-e**2)*sin(half_pi - w), e + cos(half_pi - w))
-    mean_anomaly_offset = mean_anomaly_offset - e*sin(mean_anomaly_offset)
-  end function mean_anomaly_offset
 
 
   !! TA - ECCENTRIC ORBIT

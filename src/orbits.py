@@ -16,7 +16,7 @@
 ## 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 import numpy as np
 
-from numpy import pi, arange, newaxis
+from numpy import pi, arange, newaxis, interp, linspace
 from .orbits_f import orbits
 
 TWO_PI = 2*pi
@@ -55,8 +55,8 @@ class Orbit(object):
         self._z_function  = self.z_functions[method]
 
         
-    def mean_anomaly(self, time, t0, p):
-        return ((time-t0) / p) * TWO_PI
+    def mean_anomaly(self, time, t0, p, e=0., w=0.):
+        return orbits.mean_anomaly(time, t0, p, e, w, self.nthr)
 
     
     def eccentric_anomaly(self, time, t0, p, e=0., w=0.):
@@ -76,6 +76,54 @@ class Orbit(object):
     def projected_distance(self, time, t0, p, a, i, e=0., w=0.):
         if e > self._mine:
             return self._z_function(time, t0, p, a, i, e, w, self.nthr)
+        else:
+            return orbits.z_circular(time, t0, p, a, i, self.nthr)
+
+        
+    def phase(self, time, t0, p, a, i, e=0., w=0.):
+        raise NotImplementedError
+
+    
+
+class InterpolatedOrbit(Orbit):
+    def __init__(self, method='newton', nthr=0, circular_e_threshold=1e-5, nipoints=600):
+        assert method in self.methods
+        self.nthr = nthr
+        self.method = method
+        self._mine = circular_e_threshold
+        self._nipoints = nipoints
+        self._ea_function = self.ea_functions[method]
+        self._ta_function = self.ta_functions[method]
+        self._z_function  = self.z_functions[method]
+
+        
+    def mean_anomaly(self, time, t0, p):
+        return ((time-t0) / p) * TWO_PI
+
+    
+    def eccentric_anomaly(self, time, t0, p, e=0., w=0.):
+        if e > self._mine:
+            ti = linspace(0., p, self._nipoints)
+            ei = elf._ea_function(time, t0, p, e, w, self.nthr)
+            return interp(time, ti, ei, period=p)
+        else:
+            return self.mean_anomaly(time, t0, p)
+
+        
+    def true_anomaly(self, time, t0, p, e=0., w=0.):
+        if e > self._mine:
+            ti = linspace(0., p, self._nipoints)
+            fi = self._ta_function(ti, t0, p, e, w, self.nthr)
+            return interp(time, ti, fi, period=p)
+        else:
+            return self.mean_anomaly(time, t0, p)
+
+        
+    def projected_distance(self, time, t0, p, a, i, e=0., w=0.):
+        if e > self._mine:
+            ti = linspace(0., p, self._nipoints)
+            zi = self._z_function(ti, t0, p, a, i, e, w, self.nthr)
+            return interp(time, ti, zi, period=p)
         else:
             return orbits.z_circular(time, t0, p, a, i, self.nthr)
 
