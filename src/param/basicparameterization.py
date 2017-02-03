@@ -3,6 +3,7 @@ from numpy import array, inf, pi
 
 from pytransit.utils.orbits import as_from_rhop, i_from_baew
 from pytransit.param.parameter import Parameter
+from pytransit.limb_darkening import QuadraticLD, TriangularQLD
 
 class Parameterization(object):
     pars = []
@@ -51,17 +52,22 @@ class ModelParameterization(Parameterization):
             Parameter('eccentricity',     'e',   'Eccentricity',           (   0,    1), 0.0),     # 5
             Parameter('omega',            'w',   'Argument of periastron', (   0, 2*pi), 0.0),     # 6
             Parameter('ld_u',             'u',   'Limb darkening u',       (   0,    1), 0),       # 7
-            Parameter('ld_v',             'v',   'Limb darkening v',       (   0,    1), 0))       # 8
-            
+            Parameter('ld_v',             'v',   'Limb darkening v',       (   0,    1), 0),       # 8
+            Parameter('contamination',    'c',   'Contamination',          (   0,    1), 0))       # 9
+
     def __new__(cls):
         cls.__initialize_params__()
         return super(ModelParameterization, cls).__new__(cls)
+
+    def __init__(self):
+        super().__init__()
+        self.ldp = QuadraticLD()
     
     def to_tmodel(self, pv=None):
         if pv is not None:
             self._data[:] = pv
         pv = self._data
-        return pv[2], pv[7:9], pv[0], pv[1], pv[3], pv[4], pv[5], pv[6]
+        return pv[2], pv[7:9], pv[0], pv[1], pv[3], pv[4], pv[5], pv[6], pv[9]
 
     
 class BasicCircularParameterization(Parameterization):
@@ -81,18 +87,21 @@ class BasicCircularParameterization(Parameterization):
     def __new__(cls):
         cls.__initialize_params__()
         return super(BasicCircularParameterization, cls).__new__(cls)
+
+    def __init__(self):
+        super().__init__()
+        self.ldp = TriangularQLD()
     
     def to_tmodel(self, pv=None):
         if pv is not None:
             self._data[:] = pv
         pv = self._data
+        self.ldp.coefs[:] = pv[5:7]
         
         sma  = as_from_rhop(pv[3], pv[1])   # Scaled semi-major axis from stellar density and orbital period
         inc  = acos(pv[4]/sma)              # Inclination from impact parameter and semi-major axis
         k    = sqrt(pv[2])                  # Radius ratio from area ratio
-        a,b = sqrt(pv[5]), 2*pv[6]          # Mapping the limb darkening coefficients from the Kipping (2014) 
-        uv = array([a*b, a*(1.-b)])         # parameterisation to quadratic MA coefficients
-        return k, uv, pv[0], pv[1], sma, inc
+        return k, self.ldp.quadratic.coefs, pv[0], pv[1], sma, inc
     
 
 
@@ -119,13 +128,12 @@ class BasicEccentricParameterization(BasicCircularParameterization):
         if pv is not None:
             self._data[:] = pv
         pv = self._data
+        self.ldp.coefs[:] = pv[5:7]
 
         sma  = as_from_rhop(pv[3], pv[1])    # Scaled semi-major axis from stellar density and orbital period
         k    = sqrt(pv[2])                   # Radius ratio from area ratio
-        a,b  = sqrt(pv[5]), 2*pv[6]          # Mapping the limb darkening coefficients from the Kipping (2014) 
-        uv   = array([a*b, a*(1.-b)])        # parameterisation to quadratic MA coefficients
         e    = pv[7]**2 + pv[8]**2           # Eccentricity
         w    = atan2(pv[8], pv[7])           # Argument of periastron
         inc  = i_from_baew(pv[4], sma, e, w) # Inclination from impact parameter, semi-major axis, eccentricity, and argument of periastron
         
-        return k, uv, pv[0], pv[1], sma, inc, e, w 
+        return k, self.ldp.quadratic.coefs, pv[0], pv[1], sma, inc, e, w 
