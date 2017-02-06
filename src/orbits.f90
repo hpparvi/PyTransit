@@ -69,6 +69,19 @@ module orbits
 
 contains
 
+  integer pure function iclip(v, vmin, vmax)
+    implicit none
+    integer, intent(in) :: v, vmin, vmax
+    iclip = min(max(v, vmin), vmax)
+  end function iclip
+
+  real(8) pure function rclip(v, vmin, vmax)
+    implicit none
+    real(8), intent(in) :: v, vmin, vmax
+    rclip = min(max(v, vmin), vmax)
+  end function rclip
+
+  
   !! ============
   !! MEAN ANOMALY
   !! ============
@@ -129,6 +142,16 @@ contains
     !$omp end parallel do
   end subroutine z_eccentric_from_ta
 
+
+  subroutine z_eccentric_from_ta2(Ta, a, i, e, w, nth, nt, z)
+    implicit none
+    integer, intent(in) :: nt, nth
+    real(fd), intent(in), dimension(nt) :: Ta
+    real(fd), intent(in) :: a, i, e, w
+    real(fd), intent(out), dimension(nt) :: z
+
+    z = a*(1-e**2)/(1+e*cos(Ta)) * sqrt(1.0_fd - sin(w+Ta)**2 * sin(i)**2) * sign(1._fd, sin(w+Ta))
+  end subroutine z_eccentric_from_ta2
   
   subroutine z_circular(t, t0, p, a, i, nth, nt, z)
     implicit none
@@ -200,16 +223,15 @@ contains
     call z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
   end subroutine z_eccentric_ps5
 
-  subroutine z_eccentric_ip(t, t0, p, a, i, e, w, nth, update, nt, z)
+  subroutine z_eccentric_ip(t, t0, p, a, i, e, w, nth, nt, z)
     implicit none
     integer, intent(in)  :: nt, nth
     real(fd), intent(in)  :: t0, p, a, i, e, w
     real(fd), intent(in),  dimension(nt) :: t
     real(fd), intent(out), dimension(nt) :: z
     real(fd), dimension(nt) :: Ta
-    logical, intent(in) :: update
 
-    call ta_eccentric_ip(t, t0, p, e, w, nth, update, nt, Ta)
+    call ta_eccentric_bilerp(t, t0, p, e, w, nth, nt, Ta)
     call z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
   end subroutine z_eccentric_ip
 
@@ -325,6 +347,74 @@ contains
   !!   w    d      argument of the periastron    [rad]
   !!   nth  i      number of openmp threads
   !!   nt   i      number of points
+
+  subroutine ta_from_ma(Ma, e, nth, nt, Ta)
+    implicit none
+    integer, intent(in)  :: nt, nth
+    real(fd), intent(in)  :: e
+    real(fd), intent(in),  dimension(nt) :: Ma
+    real(fd), intent(out), dimension(nt) :: Ta
+    real(fd) :: Ea, ec, ect, cta, sta
+    integer :: j, k
+    
+    !$if (nth /= 0) call omp_set_num_threads(nth)
+    !$omp parallel private(j,k,Ea,ec,ect,cta,sta) shared(nt,e,Ma,Ta) default(none)
+    !$omp do schedule(guided)
+    do j = 1, nt
+       ec = e*sin(Ma(j))/(1._fd - e*cos(Ma(j)))
+       do k = 1, 15          
+          ect = ec
+          ec  = e*sin(Ma(j)+ec)
+          if (abs(ect-ec) < 1d-4) exit
+       end do
+       Ea = Ma(j) + ec
+       sta = sqrt(1-e**2) * sin(Ea)/(1.0_fd-e*cos(Ea))
+       cta = (cos(Ea)-e)/(1.0_fd-e*cos(Ea))
+       Ta(j) = atan2(sta, cta) 
+    end do
+    !$omp end do
+    !$omp end parallel
+  end subroutine ta_from_ma
+
+
+  subroutine ta_from_ma_2(Ma, e, nth, nt, Ta)
+    implicit none
+    integer, intent(in)  :: nt, nth
+    real(fd), intent(in)  :: e
+    real(fd), intent(in),  dimension(nt) :: Ma
+    real(fd), intent(out), dimension(nt) :: Ta
+    real(fd), dimension(:), allocatable :: Ea, ec, cta, sta
+    integer :: j, k
+    real(fd) :: ect
+    allocate(Ea(nt), ec(nt), cta(nt), sta(nt))
+    
+    !$if (nth /= 0) call omp_set_num_threads(nth)
+    !$omp parallel private(j,k,ect) shared(ec,nt,e,Ma,Ea,sta,cta,Ta) default(none)
+
+    ec = e*sin(Ma)/(1._fd - e*cos(Ma))
+
+    !! Calculate the eccentric anomaly using iteration
+    !$omp do schedule(guided)
+    do j = 1, nt
+       do k = 1, 15
+          ect   = ec(j)
+          ec(j) = e*sin(Ma(j)+ec(j))
+          if (abs(ect-ec(j)) < 1d-4) exit
+       end do
+    end do
+    !$omp end do
+
+    !$omp workshare
+    Ea  = Ma + ec
+    sta = sqrt(1-e**2) * sin(Ea)/(1-e*cos(Ea))
+    cta = (cos(Ea)-e)/(1-e*cos(Ea))
+    Ta  = atan2(sta, cta) 
+    !$omp end workshare
+    !$omp end parallel
+    deallocate(Ea, cta, sta)
+  end subroutine ta_from_ma_2
+
+  
   subroutine ta_eccentric_iter(t, t0, p, e, w, nth, nt, Ta)
     implicit none
     integer, intent(in)  :: nt, nth
@@ -433,6 +523,73 @@ contains
     deallocate(Ma)
   end subroutine ta_eccentric_ps5
 
+
+  !! Calculates the eccentric anomaly for time values `t` given
+  !! eccentricity `e` using bilinear interpolation.
+  !!
+  !! Parameters
+  !!
+  !! t  Time array
+  !! e  Eccentricity
+  subroutine ta_eccentric_bilerp(t, t0, p, e, w, nth, npt, Ta)
+    implicit none
+    integer,  parameter :: NM = 250
+    integer,  parameter :: NE = 150
+    integer,  intent(in) :: nth, npt
+    real(fd), intent(in) :: t0, p, e, w
+    real(fd), intent(in) :: t(npt)
+    real(fd), intent(out) :: Ta(npt)
+    real(fd) :: tbl2(2,NM), mi(NM), ae, am, s, dm, de
+    integer :: i, j, ie, im
+
+    real(8), dimension(:,:), allocatable, save :: tbl
+    real(8), dimension(:), allocatable :: Ma
+    allocate(Ma(npt))
+    
+    de = 0.95_fd / real(NE-1, 8)
+    dm = PI / real(NM-1, 8)
+
+    if (.not. allocated(tbl)) then
+       mi = (/ ((j-1)*dm, j=1,nm) /)
+       allocate(tbl(ne,nm))
+       do i=1,ne
+          call ta_from_ma(mi, (i-1)*de, 1, NM, tbl(i,:))
+          tbl(i,:) = tbl(i,:) - mi
+       end do
+    end if
+    
+    ie = iclip(     floor(e/de) + 1,      1,   NE-1)
+    ae = rclip((e - de*(ie-1)) / de, 0.0_fd, 1.0_fd)
+    tbl2 = tbl(ie:ie+1,:)
+
+    call mean_anomaly(t, t0, p, e, w, nth, npt, Ma)
+
+    !$if (nth /= 0) call omp_set_num_threads(nth)
+    !$omp parallel do private(i,im,am,s) shared(Ma,npt,dm,tbl2,ae)
+    do i=1,npt
+       if (Ma(i) < PI) then
+          im = iclip(floor(Ma(i)/dm) + 1, 1, NM-1)
+          am = rclip((Ma(i) - dm*(im-1)) / dm, 0.0_fd, 1.0_fd)
+          s = 1.0_fd
+       else
+          im = iclip(floor((TWO_PI - Ma(i))/dm) + 1, 1, NM-1)
+          am = rclip((TWO_PI - (Ma(i) - dm*(im-1))) / dm, 0.0_fd, 1.0_fd)
+          s = -1.0_fd
+       end if
+          
+       Ta(i) =   tbl2(1,im  )*(1d0-ae)*(1d0-am) &
+             & + tbl2(2,im  )*     ae *(1d0-am) &
+             & + tbl2(1,im+1)*(1d0-ae)*     am  &
+             & + tbl2(2,im+1)*     ae *     am
+       Ta(i) = Ma(i) + s * Ta(i)
+
+       if (Ta(i) < 0.0_fd) then
+          Ta(i) = Ta(i) + TWO_PI
+       end if
+    end do
+    !$omp end parallel do
+    deallocate(Ma)
+  end subroutine ta_eccentric_bilerp
 
   subroutine ta_eccentric_ip(t, t0, p, e, w, nth, update, nt, ta)
     !! Calculates the true anomaly using linear interpolation.
