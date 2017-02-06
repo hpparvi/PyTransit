@@ -40,16 +40,6 @@ python module orbits_f ! in
                 integer optional,intent(in),check(len(Ta)>=nt),depend(Ta) :: nt=len(Ta)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: z
             end subroutine z_eccentric_from_ta
-            subroutine z_eccentric_from_ta2(Ta,a,i,e,w,nth,nt,z) ! in :orbits:orbits.f90:orbits
-                real(kind=8) dimension(nt),intent(in) :: Ta
-                real(kind=8) intent(in) :: a
-                real(kind=8) intent(in) :: i
-                real(kind=8) intent(in) :: e
-                real(kind=8) intent(in) :: w
-                integer intent(in) :: nth
-                integer optional,intent(in),check(len(Ta)>=nt),depend(Ta) :: nt=len(Ta)
-                real(kind=8) dimension(nt),intent(out),depend(nt) :: z
-            end subroutine z_eccentric_from_ta2
             subroutine z_eccentric_iter(t,t0,p,a,i,e,w,nth,nt,z) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0

@@ -125,33 +125,17 @@ contains
   !!   nth  i      number of openmp threads
   !!   nt   i      number of points
 
-
   subroutine z_eccentric_from_ta(Ta, a, i, e, w, nth, nt, z)
     implicit none
     integer, intent(in) :: nt, nth
     real(fd), intent(in), dimension(nt) :: Ta
     real(fd), intent(in) :: a, i, e, w
     real(fd), intent(out), dimension(nt) :: z
-    integer :: j
     !$ if (nth /= 0) call omp_set_num_threads(nth)
-    !$omp parallel do private(j) shared(z,a,i,e,w,Ta,nt) default(none) schedule(static)
-    do j=1,nt
-       z(j) = a*(1-e**2)/(1+e*cos(Ta(j))) * sqrt(1 - sin(w+Ta(j))**2 * sin(i)**2) &
-            & * sign(1._fd, sin(w+Ta(j))) !! This term computes the 3D z-component
-    end do
-    !$omp end parallel do
-  end subroutine z_eccentric_from_ta
-
-
-  subroutine z_eccentric_from_ta2(Ta, a, i, e, w, nth, nt, z)
-    implicit none
-    integer, intent(in) :: nt, nth
-    real(fd), intent(in), dimension(nt) :: Ta
-    real(fd), intent(in) :: a, i, e, w
-    real(fd), intent(out), dimension(nt) :: z
-
+    !$omp parallel workshare
     z = a*(1-e**2)/(1+e*cos(Ta)) * sqrt(1.0_fd - sin(w+Ta)**2 * sin(i)**2) * sign(1._fd, sin(w+Ta))
-  end subroutine z_eccentric_from_ta2
+    !$omp end parallel workshare
+  end subroutine z_eccentric_from_ta
   
   subroutine z_circular(t, t0, p, a, i, nth, nt, z)
     implicit none
@@ -159,12 +143,9 @@ contains
     real(fd), intent(in) :: t0, p, a, i
     real(fd), intent(in),  dimension(nt) :: t
     real(fd), intent(out), dimension(nt) :: z
-
     real(fd) :: n, cosph, sini
     integer :: j
-
     !$ if (nth /= 0) call omp_set_num_threads(nth)
-
     sini = sin(i)
     n    = TWO_PI/p
     !$omp parallel do private(j, cosph) shared(nt, a, t, t0, sini, n, z) default(none)
@@ -357,7 +338,7 @@ contains
     real(fd) :: Ea, ec, ect, cta, sta
     integer :: j, k
     
-    !$if (nth /= 0) call omp_set_num_threads(nth)
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel private(j,k,Ea,ec,ect,cta,sta) shared(nt,e,Ma,Ta) default(none)
     !$omp do schedule(guided)
     do j = 1, nt
@@ -388,7 +369,7 @@ contains
     real(fd) :: ect
     allocate(Ea(nt), ec(nt), cta(nt), sta(nt))
     
-    !$if (nth /= 0) call omp_set_num_threads(nth)
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel private(j,k,ect) shared(ec,nt,e,Ma,Ea,sta,cta,Ta) default(none)
 
     ec = e*sin(Ma)/(1._fd - e*cos(Ma))
@@ -428,7 +409,7 @@ contains
 
     call mean_anomaly(t, t0, p, e, w, nth, nt, Ma)
     
-    !$if (nth /= 0) call omp_set_num_threads(nth)
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel private(j,k,ect) shared(ec,nt,t,t0,m_offset,p,e,Ma,Ea,sta,cta,Ta) default(none)
 
     ec = e*sin(Ma)/(1._fd - e*cos(Ma))
@@ -490,7 +471,7 @@ contains
 
     allocate(Ma(nt))
     call mean_anomaly(t, t0, p, e, w, nth, nt, Ma)
-    !$if (nth /= 0) call omp_set_num_threads(nth)
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel workshare default(shared)
     Ta = Ma + (2._fd*e - 0.25_fd*e**3)*sin(Ma) &
          &  + 1.25_fd*e**2*sin(2*Ma) &
@@ -512,7 +493,7 @@ contains
 
     allocate(Ma(nt))
     call mean_anomaly(t, t0, p, e, w, nth, nt, Ma)
-    !$if (nth /= 0) call omp_set_num_threads(nth)
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel workshare default(shared)
     Ta = Ma + (2._fd*e - 0.25_fd*e**3 + 5._fd/96._fd*e**5) * sin(Ma) &
          &  + (1.25_fd*e**2 - 11._fd/24._fd*e**4) * sin(2*Ma) &
@@ -564,7 +545,7 @@ contains
 
     call mean_anomaly(t, t0, p, e, w, nth, npt, Ma)
 
-    !$if (nth /= 0) call omp_set_num_threads(nth)
+    !$ if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel do private(i,im,am,s) shared(Ma,npt,dm,tbl2,ae)
     do i=1,npt
        if (Ma(i) < PI) then
