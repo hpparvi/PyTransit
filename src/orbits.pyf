@@ -30,18 +30,6 @@ python module orbits_f ! in
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: z
             end subroutine z_circular
-            subroutine z_circular_mc(t,t0,t0npt,p,a,i,nth,nt,nt0,z) ! in :orbits:orbits.f90:orbits
-                real(kind=8) dimension(nt),intent(in) :: t
-                real(kind=8) dimension(nt0),intent(in) :: t0
-                integer intent(in),dimension(nt0) :: t0npt
-                real(kind=8) intent(in) :: p
-                real(kind=8) intent(in) :: a
-                real(kind=8) intent(in) :: i
-                integer intent(in) :: nth
-                integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
-                integer optional,intent(in),check(len(t0)>=nt0),depend(t0) :: nt0=len(t0)
-                real(kind=8) dimension(nt),intent(out),depend(nt) :: z
-            end subroutine z_circular_mc
             subroutine z_eccentric_iter(t,t0,p,a,i,e,w,nth,nt,z) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0
@@ -150,7 +138,7 @@ python module orbits_f ! in
                 integer intent(in) :: nth
                 integer optional,intent(in),check(len(t)>=nt),depend(t) :: nt=len(t)
                 real(kind=8) dimension(nt),intent(out),depend(nt) :: Ta
-            end subroutine ta_eccentric_newton
+              end subroutine ta_eccentric_newton
             subroutine ta_eccentric_ps3(t,t0,p,e,w,nth,nt,Ta) ! in :orbits:orbits.f90:orbits
                 real(kind=8) dimension(nt),intent(in) :: t
                 real(kind=8) intent(in) :: t0

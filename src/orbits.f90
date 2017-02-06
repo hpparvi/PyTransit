@@ -93,7 +93,7 @@ contains
     real(fd) :: offset
 
     offset = mean_anomaly_offset(e, w)
-    Ma = two_pi * (t - (t0 - offset*p/two_pi))/ p
+    Ma = modulo(two_pi * (t - (t0 - offset*p/two_pi))/ p, two_pi)
   end subroutine mean_anomaly
 
   
@@ -230,18 +230,10 @@ contains
     real(fd) :: m_offset, err
 
     allocate(Ma(nt))
-    
-    m_offset = mean_anomaly_offset(e,w)
+    call mean_anomaly(t, t0, p, e, w, nth, nt, Ma)
 
     !$ if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel private(j,k,err) shared(nt,t,t0,m_offset,p,e,Ma,Ea) default(none)
-
-    !! Calculate the mean anomaly
-    !$omp workshare
-    Ma = two_pi * (t - (t0 - m_offset*p/two_pi))/ p
-    !$omp end workshare
-
-    !! Calculate the eccentric anomaly using the Newton's method
     Ea = Ma
     !$omp do schedule(guided)
     do j = 1, nt
@@ -342,18 +334,14 @@ contains
     real(fd), dimension(:), allocatable :: Ma, Ea, ec, cta, sta
     integer :: j, k
     real(fd) :: m_offset, ect
-
-    m_offset = mean_anomaly_offset(e,w)
     allocate(Ma(nt), Ea(nt), ec(nt), cta(nt), sta(nt))
 
-    !$ if (nth /= 0) call omp_set_num_threads(nth)
+    call mean_anomaly(t, t0, p, e, w, nth, nt, Ma)
+    
+    !$if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel private(j,k,ect) shared(ec,nt,t,t0,m_offset,p,e,Ma,Ea,sta,cta,Ta) default(none)
 
-    !! Calculate the mean anomaly
-    !$omp workshare
-    Ma = two_pi * (t - (t0 - m_offset*p/two_pi))/ p
     ec = e*sin(Ma)/(1._fd - e*cos(Ma))
-    !$omp end workshare
 
     !! Calculate the eccentric anomaly using iteration
     !$omp do schedule(guided)
@@ -411,12 +399,9 @@ contains
     real(fd) :: m_offset
 
     allocate(Ma(nt))
-    m_offset = mean_anomaly_offset(e,w)
-
-    !$ if (nth /= 0) call omp_set_num_threads(nth)
+    call mean_anomaly(t, t0, p, e, w, nth, nt, Ma)
+    !$if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel workshare default(shared)
-    Ma = two_pi * (t - (t0 - m_offset*p/two_pi))/ p
-
     Ta = Ma + (2._fd*e - 0.25_fd*e**3)*sin(Ma) &
          &  + 1.25_fd*e**2*sin(2*Ma) &
          &  + 13._fd/12._fd*e**3*sin(3*Ma)
@@ -436,14 +421,11 @@ contains
     real(fd) :: m_offset
 
     allocate(Ma(nt))
-    m_offset = mean_anomaly_offset(e,w)
-
-    !$ if (nth /= 0) call omp_set_num_threads(nth)
+    call mean_anomaly(t, t0, p, e, w, nth, nt, Ma)
+    !$if (nth /= 0) call omp_set_num_threads(nth)
     !$omp parallel workshare default(shared)
-    Ma = two_pi * (t - (t0 - m_offset*p/two_pi))/ p
-
     Ta = Ma + (2._fd*e - 0.25_fd*e**3 + 5._fd/96._fd*e**5) * sin(Ma) &
-         &  + (1.25_fd*e**2 - 11._fd/24._fd*e**44) * sin(2*Ma) &
+         &  + (1.25_fd*e**2 - 11._fd/24._fd*e**4) * sin(2*Ma) &
          &  + (13._fd/12._fd * e**3 - 43._fd/64._fd * e**5) * sin(3*Ma) &
          &  + 103._fd/96._fd * e**4 * sin(4*Ma) &
          &  + 1097._fd/960._fd * e**5 * sin(5*Ma)
