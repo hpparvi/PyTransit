@@ -23,18 +23,56 @@ from .supersampler import SuperSampler
 from .orbits import Orbit
 from .limb_darkening import UniformLD, LinearLD, QuadraticLD, TriangularQLD
 
+def _extract_time_transit(time, k, tc, p, a, i, e, w, td_factor=1.1):
+    td = of.duration_eccentric_w(p, k, a, i, e, w, 1)
+    folded_time = (time - tc + 0.5*p) % p - 0.5*p
+    mask = np.abs(folded_time) < td_factor*0.5*td
+    return time[mask], mask
+
+def _extract_time_eclipse(time, k, tc, p, a, i, e, w, td_factor=1.1):
+    td  = of.duration_eccentric_w(p, k, a, i, e, w, 1)
+    tc += of.eclipse_shift_ex(p, i, e, w)
+    folded_time = (time - tc + 0.5*p) % p - 0.5*p
+    mask = np.abs(folded_time) < td_factor*0.5*td
+    return time[mask], mask
+
 class TransitModel(object):
     """Exoplanet transit light curve model 
     """
     native_ld_par = None 
     
-    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=1, exptime=0.020433598, eclipse=False, LDPar=QuadraticLD):
+    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=1, exptime=0.020433598, eclipse=False,
+                 orbit=None, LDPar=QuadraticLD, optimize=False):
+        assert isinstance(nldc, int)
+        assert isinstance(nthr, int)
+        assert isinstance(supersampling, int)
+        assert supersampling > 0
+        assert exptime > 0.
+
         self.nldc = int(nldc)
         self.nthr = int(nthr)
         self.time = None
         self.eclipse = bool(eclipse)
+        self.optimize = optimize
+
+        # Initialize the supersampler
+        # ---------------------------
         self.sampler = SuperSampler(supersampling, exptime, nthr=self.nthr)
-        self.orbit = Orbit(nthr=self.nthr)
+
+        # Initialize the orbit
+        # --------------------
+        if not orbit:
+            self.orbit = Orbit(nthr=self.nthr)
+        else:
+            if isinstance(orbit, Orbit):
+                self.orbit = orbit
+            elif isinstance(orbit, str):
+                self.orbit = Orbit(method=orbit, nthr=self.nthr)
+            else:
+                raise NotImplementedError
+
+        # Initialize the limb darkening mapping
+        # -------------------------------------
         self.ldmap = LDPar()
         
     def __call__(self, z, k, u, c=0., update=True):
@@ -64,9 +102,17 @@ class TransitModel(object):
         u   = np.asfortranarray(u)
         npb = 1 if u.ndim == 1 else u.shape[0]
 
-        ## Check if we have multiple radius ratio (k) values, approximate the k with their
-        ## mean if yes, and calculate the area ratio factors.
-        ## 
+        if self.optimize:
+            if not self.eclipse:
+                tt, tm = _extract_time_transit(t, k, t0, p, a, i, e, w, 1.1)
+            else:
+                tt, tm = _extract_time_eclipse(t, k, t0, p, a, i, e, w, 1.1)
+        else:
+            tt, tm = t, np.ones_like(t, dtype=np.bool)
+
+        # Check if we have multiple radius ratio (k) values, approximate the k with their
+        # mean if yes, and calculate the area ratio factors.
+        #
         if isinstance(k, np.ndarray):
             _k = k.mean()
             kf = (k/_k)**2
@@ -74,10 +120,12 @@ class TransitModel(object):
             _k = k
             kf = 1.
 
-        z = self._calculate_z(t, t0, p, a, i, e, w)
+        z = self._calculate_z(tt, t0, p, a, i, e, w)
         supersampled_flux = self.__call__(z, k, u=u, c=c, update=update)
-        averaged_flux = self.sampler.average(supersampled_flux)
- 
+
+        averaged_flux = np.ones_like(t) if npb == 1 else np.full((t.size, npb), 1.)
+        averaged_flux[tm] = self.sampler.average(supersampled_flux)
+
         return kf*(averaged_flux-1.)+1.
 
 

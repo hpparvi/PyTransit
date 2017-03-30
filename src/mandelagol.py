@@ -48,7 +48,7 @@ class MandelAgol(TransitModel):
         assert model in self.models, 'Unknown MA model {}'.format(model)
         assert nldc in [0,2], 'Number of limb darkening coefficients must be either 0 or 2'
 
-        super(MandelAgol, self).__init__(nldc, nthr, interpolate, supersampling, exptime, eclipse)
+        super(MandelAgol, self).__init__(nldc, nthr, interpolate, supersampling, exptime, eclipse, **kwargs)
         self.interpolate = interpolate or kwargs.get('lerp', False)
 
         if model == 'chromosphere':

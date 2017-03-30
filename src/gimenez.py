@@ -44,7 +44,7 @@ class Gimenez(TransitModel):
             eclipse: If True, evaluates the model for eclipses. If false, eclipses are filtered out (default = False). 
         """
 
-        super(Gimenez,self).__init__(nldc,nthr,interpolate,supersampling,exptime,eclipse)
+        super(Gimenez,self).__init__(nldc,nthr,interpolate,supersampling,exptime,eclipse, **kwargs)
         self._eval = self._eval_interpolate if (interpolate  or kwargs.get('lerp', False)) else self._eval_nointerpolate
         self._coeff_arr = g.init_arrays(npol, nldc)
         self.npol = npol
