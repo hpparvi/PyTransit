@@ -211,9 +211,11 @@ contains
     real(8), intent(in) :: k, u(2*npb), c(npb), edt(nk,nz), ldt(nk,nz), let(nk,nz), kt(nk), zt(nz)
     real(8), intent(out), dimension(npt, npb) :: flux
     real(8) :: ak, az, dk, dz, ed, le, ld, omega(npb)
-    real(8), dimension(2,nz) :: ed2, le2, ld2
+    real(8), dimension(:,:), allocatable :: ed2, le2, ld2
     integer :: ik, iz, i, j, iu, iv
 
+    allocate(ed2(2,nz), le2(2,nz), ld2(2,nz))
+    
     if (k<kt(1) .or. k>kt(nk)) then
        flux = 0.d0
     else
@@ -268,7 +270,7 @@ contains
        end do
        !$omp end parallel do
     end if
-
+    deallocate(ed2, le2, ld2)
   end subroutine eval_quad_bilerp
 
   subroutine calculate_interpolation_tables(kmin,kmax,nk,nz,nthr,ed,le,ld,kt,zt)
