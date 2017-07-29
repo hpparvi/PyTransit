@@ -46,7 +46,7 @@ class Orbit(object):
                        ps5=orbits.z_eccentric_ps5,
                        interpolation=orbits.z_eccentric_ip)
 
-    def __init__(self, method='newton', nthr=0, circular_e_threshold=1e-5):
+    def __init__(self, method='iteration', nthr=0, circular_e_threshold=1e-5):
         assert method in self.methods
         self.nthr = nthr
         self.method = method

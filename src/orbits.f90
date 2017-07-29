@@ -514,8 +514,8 @@ contains
   !! e  Eccentricity
   subroutine ta_eccentric_bilerp(t, t0, p, e, w, nth, npt, Ta)
     implicit none
-    integer,  parameter :: NM = 250
-    integer,  parameter :: NE = 150
+    integer,  parameter :: NM = 512
+    integer,  parameter :: NE = 256
     integer,  intent(in) :: nth, npt
     real(fd), intent(in) :: t0, p, e, w
     real(fd), intent(in) :: t(npt)

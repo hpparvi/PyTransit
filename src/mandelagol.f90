@@ -35,13 +35,62 @@ module mandelagol
   integer, parameter :: sp=kind(0.0 )
 
   real(8), parameter :: PI = acos(-1.d0)
-  real(8), parameter :: HALF_PI = 0.5d0*PI
+  real(8), parameter :: HALF_PI = 0.5_dp*PI
+  real(8), parameter :: TWO_PI  = 2.0_dp*PI
   real(8), parameter :: FOUR_PI = 4.0_dp*PI
 
   real(8), parameter :: INV_PI = 1.d0/PI
   integer, parameter :: MAXITER = 500
 contains
 
+  subroutine tm_uniform_c(t, k, t0, p, a, inc, c, pattern, nthr, nt, ns, flux)
+    implicit none
+    integer, intent(in) :: nt, ns, nthr
+    real(8), intent(in) :: t(nt), pattern(ns), t0, p, a, inc, c
+    real(8), intent(out) :: flux(nt)
+    integer :: it, is
+    real(8) :: k, d, n, sini, cosph(ns), zs(ns), z, kap1,kap0,lambdae
+
+    if(abs(k-0.5d0) < 1.d-3) then
+       k=0.5d0
+    end if
+    
+    sini = sin(inc)
+    n = TWO_PI/p
+    d = 1.0d0 / real(ns, 8)
+
+    !$ call omp_set_num_threads(nthr)
+    !$omp parallel do default(none) &
+    !$omp shared(sini,n,d,t,t0,p,a,inc,k,c,pattern,nt,ns,flux) &
+    !$omp private(it,is,cosph,zs,z,lambdae,kap0,kap1)
+    do it=1,nt
+       cosph = cos((t(it) - t0 + pattern) * n)
+       zs = sign(1._dp, cosph)*a*sqrt(1._dp - cosph*cosph*sini*sini)
+       
+       do is=1,ns
+          z = zs(is)
+          if(z < 0.d0 .or. z > 1.d0+k) then
+             flux(it) = flux(it) + 1.d0
+
+          else if(z > abs(1.d0-k) .and. z < 1.d0+k) then
+             kap1=acos(min((1.d0-k*k+z*z)/2.d0/z,1.d0))
+             kap0=acos(min((k*k+z*z-1.d0)/2.d0/k/z,1.d0))
+             lambdae=k*k*kap0+kap1
+             lambdae=(lambdae-0.5d0*sqrt(max(4.d0*z*z-(1.d0+z*z-k*k)**2,0.d0)))/pi
+             flux(it) = flux(it) + 1.d0-lambdae
+
+          else if(z < 1.d0-k) then
+             flux(it) = flux(it) + 1.d0-k*k
+             
+          else if(k > 1.d0 .and. z < k-1.d0) then
+             flux(it) = flux(it) + 0.d0
+          end if
+       end do
+       flux(it) = c + (1.d0 - c)*flux(it)
+    end do
+    !$omp end parallel do
+  end subroutine tm_uniform_c
+  
   subroutine eval_uniform(z0,k,c,nthr,nz,flux)
     implicit none
     integer, intent(in) :: nz,nthr
