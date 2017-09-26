@@ -1,22 +1,25 @@
+import sys
 from numpy.distutils.core import setup, Extension
-from numpy.distutils.misc_util import Configuration
-import distutils.sysconfig as ds
+
+e_gimenez = Extension('pytransit.gimenez_f', ['src/gimenez.f90'], libraries=['gomp', 'm'], define_macros=[('DCHUNK_SIZE', 128)])
+e_mandelagol = Extension('pytransit.mandelagol_f', ['src/mandelagol.f90'], libraries=['gomp', 'm'])
+e_utils = Extension('pytransit.utils_f', ['src/utils.f90'], libraries=['gomp', 'm'])
+e_orbits = Extension('pytransit.orbits_f',  ['src/orbits.f90','src/orbits.pyf'], libraries=['gomp','m'])
+
+version = '1.5'
 
 setup(name='PyTransit',
-      version='1.0',
+      version=version,
       description='Fast and painless exoplanet transit light curve modelling.',
       author='Hannu Parviainen',
       author_email='hpparvi@gmail.com',
       url='https://github.com/hpparvi/PyTransit',
       extra_options = ['-fopenmp'],
       package_dir={'pytransit':'src'},
-      packages=['pytransit','pytransit.utils','pytransit.param'],
-      package_data={'':['*.cl']},
-      ext_modules=[Extension('pytransit.gimenez_f', ['src/gimenez.f90'], libraries=['gomp','m'], define_macros=[('DCHUNK_SIZE',128)]),
-                   Extension('pytransit.mandelagol_f', ['src/mandelagol.f90'], libraries=['gomp','m']),
-                   Extension('pytransit.utils_f', ['src/utils.f90'], libraries=['gomp','m']),
-                   Extension('pytransit.orbits_f',  ['src/orbits.f90','src/orbits.pyf'], libraries=['gomp','m'])],
-      install_requires=["numpy"],
+      packages=['pytransit','pytransit.utils','pytransit.param', 'pytransit.contamination'],
+      package_data={'':['*.cl'], 'pytransit.contamination':['data/*']},
+      ext_modules=[e_gimenez, e_mandelagol, e_utils, e_orbits],
+      install_requires=["numpy", "scipy", "pandas", "xarray", "tables"],
       license='GPLv2',
       classifiers=[
           "Topic :: Scientific/Engineering",
@@ -29,4 +32,4 @@ setup(name='PyTransit',
           "Programming Language :: Fortran",
           "Programming Language :: Other"
       ]
-     )
+      )
