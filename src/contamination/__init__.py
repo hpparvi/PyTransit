@@ -10,4 +10,4 @@ def true_radius_ratio(apparent_k, contamination):
 def apparent_radius_ratio(true_k, contamination):
     return true_k * sqrt(1 - contamination)
 
-__all__ = "TLC Instrument ClearFilter BoxcarFilter TabulatedFilter true_radius_ratio apparent_radius_ratio".split()
+__all__ = "SMContamination BBContamination Instrument ClearFilter BoxcarFilter TabulatedFilter true_radius_ratio apparent_radius_ratio".split()
