@@ -25,9 +25,9 @@ import numpy as np
 import pyopencl as cl
 from os.path import dirname, join
 
-from mandelagol_f import mandelagol as ma
-from orbits_f import orbits as of
-from tm import TransitModel
+from .mandelagol_f import mandelagol as ma
+from .orbits_f import orbits as of
+from .tm import TransitModel
 
 class MandelAgolCL(TransitModel):
     """
