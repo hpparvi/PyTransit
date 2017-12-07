@@ -41,7 +41,7 @@ class TransitModel(object):
     """
     native_ld_par = None 
     
-    def __init__(self, nldc=2, nthr=0, interpolate=False, supersampling=1, exptime=0.020433598, eclipse=False,
+    def __init__(self, nldc=2, nthr=1, interpolate=False, supersampling=1, exptime=0.020433598, eclipse=False,
                  orbit=None, LDPar=QuadraticLD, optimize=False):
         assert isinstance(nldc, int)
         assert isinstance(nthr, int)
