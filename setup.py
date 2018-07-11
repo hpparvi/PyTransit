@@ -1,12 +1,6 @@
-import sys
-from numpy.distutils.core import setup, Extension
+from setuptools import setup, find_packages
 
-e_gimenez = Extension('pytransit.gimenez_f', ['src/gimenez.f90'], libraries=['gomp', 'm'], define_macros=[('DCHUNK_SIZE', 128)])
-e_mandelagol = Extension('pytransit.mandelagol_f', ['src/mandelagol.f90'], libraries=['gomp', 'm'])
-e_utils = Extension('pytransit.utils_f', ['src/utils.f90'], libraries=['gomp', 'm'])
-e_orbits = Extension('pytransit.orbits_f',  ['src/orbits.f90','src/orbits.pyf'], libraries=['gomp','m'])
-
-version = '1.5'
+version = '2.0'
 
 setup(name='PyTransit',
       version=version,
@@ -14,12 +8,12 @@ setup(name='PyTransit',
       author='Hannu Parviainen',
       author_email='hpparvi@gmail.com',
       url='https://github.com/hpparvi/PyTransit',
-      extra_options = ['-fopenmp'],
       package_dir={'pytransit':'src'},
+      #packages=find_packages(),
       packages=['pytransit','pytransit.utils','pytransit.param', 'pytransit.contamination'],
       package_data={'':['*.cl'], 'pytransit.contamination':['data/*']},
-      ext_modules=[e_gimenez, e_mandelagol, e_utils, e_orbits],
-      install_requires=["numpy", "scipy", "pandas", "xarray", "tables"],
+      install_requires=["numpy", "numba", "scipy", "pandas", "xarray", "tables"],
+      include_package_data=True,
       license='GPLv2',
       classifiers=[
           "Topic :: Scientific/Engineering",
@@ -31,5 +25,6 @@ setup(name='PyTransit',
           "Programming Language :: Python",
           "Programming Language :: Fortran",
           "Programming Language :: Other"
-      ]
+      ],
+      keywords='astronomy astrophysics exoplanets'
       )

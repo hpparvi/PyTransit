@@ -17,8 +17,8 @@
 
 from math import fabs
 import numpy as np
-from .orbits_f import orbits as of
-from .utils_f import utils as uf
+#from .orbits_f import orbits as of
+#from .utils_f import utils as uf
 from .supersampler import SuperSampler
 from .orbits import Orbit
 from .limb_darkening import UniformLD, LinearLD, QuadraticLD, TriangularQLD
