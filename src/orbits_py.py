@@ -186,6 +186,33 @@ def z_newton_p(ts, t0, p, a, i, e, w):
         zs[j] = z
     return zs
 
+@jit("f8[:,:](f8[:], f8[:,:])", parallel=True, nopython=True, fastmath=True)
+def z_newton_mp(ts, pvs):
+    zs = zeros((pvs.shape[0], ts.size))
+    for j in prange(zs.size):
+        ipv, ipt = j // ts.size, j % ts.size
+        t0, p, a, i, e, w = pvs[ipv]
+        t = ts[ipt]
+        ma_offset = arctan2(sqrt(1.0-e**2) * sin(HALF_PI - w), e + cos(HALF_PI - w))
+        ma_offset -= e*sin(ma_offset)
+        Ma = mod(TWO_PI * (t - (t0 - ma_offset * p / TWO_PI)) / p, TWO_PI)
+        Ea = Ma
+        err = 0.05
+        k = 0
+        while abs(err) > 1e-8 and k<1000:
+            err   = Ea - e*sin(Ea) - Ma
+            Ea = Ea - err/(1.0-e*cos(Ea))
+            k += 1
+        sta = sqrt(1.0-e**2) * sin(Ea)/(1.0-e*cos(Ea))
+        cta = (cos(Ea)-e)/(1.0-e*cos(Ea))
+        Ta  = arctan2(sta, cta)
+        z  = a*(1.0-e**2)/(1.0+e*cos(Ta)) * sqrt(1.0 - sin(w+Ta)**2 * sin(i)**2)
+        z *= copysign(1.0, sin(w+Ta))
+        zs[ipv,ipt] = z
+    return zs
+
+
+
 # Z: Iteration
 # ------------
 
