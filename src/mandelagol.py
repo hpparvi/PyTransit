@@ -16,8 +16,8 @@
 ## 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 import numpy as np
-#from .mandelagol_f import mandelagol as ma
-#from .orbits_f import orbits as of
+import pytransit.mandelagol_py as ma
+import pytransit.orbits as of
 from .tm import TransitModel
 
 class MandelAgol(TransitModel):
@@ -56,7 +56,7 @@ class MandelAgol(TransitModel):
                 self._eval = self._eval_uniform
             else:
                 if model=='interpolated_quadratic' or self.interpolate:
-                    self.ed,self.le,self.ld,self.kt,self.zt = ma.calculate_interpolation_tables(klims[0],klims[1],nk,nz,4)
+                    self.ed,self.le,self.ld,self.kt,self.zt = ma.calculate_interpolation_tables(klims[0],klims[1],nk,nz)
                     self.klims = klims
                     self.nk = nk
                     self.nz = nz
@@ -64,7 +64,7 @@ class MandelAgol(TransitModel):
                 self._eval = self._eval_quadratic
 
 
-    def _eval_uniform(self, z, k, u, c, update=True):
+    def _eval_uniform(self, z, k, u, c):
         """Wraps the Fortran implementation of a transit over a uniform disk
 
             Args:
@@ -77,10 +77,10 @@ class MandelAgol(TransitModel):
             Returns:
                 An array of model flux values for each z.
         """
-        return ma.eval_uniform(z, k, c, self.nthr)
+        return ma.eval_uniform(z, k, c)
 
     
-    def _eval_chromosphere(self, z, k, u, c, update=True):
+    def _eval_chromosphere(self, z, k, u, c):
         """Wraps the Fortran implementation of a transit over a uniform disk
 
             Args:
@@ -91,10 +91,10 @@ class MandelAgol(TransitModel):
             Returns:
                 An array of model flux values for each z.
         """
-        return ma.eval_chromosphere(z, k, c, self.nthr)
+        return ma.eval_chromosphere(z, k, c)
 
     
-    def _eval_quadratic(self, z, k, u, c, update=True):
+    def _eval_quadratic(self, z, k, u, c):
         """Wraps the Fortran implementation of the quadratic Mandel-Agol model
 
           Args:
@@ -111,12 +111,12 @@ class MandelAgol(TransitModel):
             c = c*np.ones(npb)
             
         if self.interpolate:
-            return ma.eval_quad_bilerp(z,k,u,c,self.nthr, self.ed,self.ld,self.le,self.kt,self.zt)
+            return ma.eval_quad_ip(z, k, u, c, self.ed, self.ld, self.le, self.kt, self.zt)
         else:
-            return ma.eval_quad(z, k, u, c, self.nthr)
+            return ma.eval_quad(z, k, u, c)
 
 
-    def __call__(self, z, k, u, c=0., b=1e-8, update=True):
+    def __call__(self, z, k, u, c=0.0):
         """Evaluates the model for the given z, k, and u. 
         
         Evaluates the transit model given an array of normalised distances, a radius ratio, and
@@ -131,8 +131,8 @@ class MandelAgol(TransitModel):
         Returns:
             An array of model flux values for each z.
         """
-        flux = self._eval(z, k, u, c, update)
-        return flux if np.asarray(u).size > 2 else flux.ravel()
+        flux = self._eval(z, k, u, c)
+        return flux.ravel() if flux.shape[0] == 1 else flux
 
 
     

@@ -1,4 +1,4 @@
-from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like
+from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, linspace, array, atleast_2d, floor
 from numba import jit, prange
 
 HALF_PI = 0.5 * pi
@@ -79,14 +79,14 @@ def ellk(k):
     return ek1 - ek2
 
 @jit(["f4[:](f4[:],f4,f4)", "f8[:](f8[:],f8,f8)"], cache=True, nopython=True)
-def eval_uniform(z0, k, c):
-    flux = zeros_like(z0)
+def eval_uniform(zs, k, c):
+    flux = zeros_like(zs)
 
     if abs(k - 0.5) < 1e-3:
         k = 0.5
 
-    for i in range(len(z0)):
-        z = z0[i]
+    for i in range(len(zs)):
+        z = zs[i]
         if z < 0.0 or z > 1.0 + k:
             flux[i] = 1.0
         elif k > 1.0 and z < k - 1.0:
@@ -104,7 +104,7 @@ def eval_uniform(z0, k, c):
 
 
 @jit("Tuple((f8[:,:], f8[:], f8[:], f8[:]))(f8[:], f8, f8[:], f8)", cache=True, nopython=True, parallel=False)
-def eval_quad(z0, k, u, c=0.0):
+def eval_quad(z0, k, u, c):
     if abs(k - 0.5) < 1.0e-4:
         k = 0.5
 
@@ -200,7 +200,7 @@ def eval_quad(z0, k, u, c=0.0):
 
         # The occulting star transits the source:
         # Table 3, Case IV.:
-        if (k <= 1.0 and z <= (1.0 - k)):
+        if k <= 1.0 and z <= (1.0 - k):
             q = sqrt((x2 - x1) / (1.0 - x1))
             Kk = ellk(q)
             Ek = ellec(q)
@@ -254,3 +254,67 @@ def eval_chromosphere(zs, k, c):
     return flux
 
 
+def calculate_interpolation_tables(kmin=0.05, kmax=0.2, nk=512, nz=512):
+    zs = linspace(0, 1 + 1.001 * kmax, nz)
+    ks = linspace(kmin, kmax, nk)
+
+    ld = zeros((nk, nz))
+    le = zeros((nk, nz))
+    ed = zeros((nk, nz))
+
+    for ik, k in enumerate(ks):
+        _, ld[ik, :], le[ik, :], ed[ik, :] = eval_quad(zs, k, array([0.0, 0.0]), 0.0)
+
+    return ed, le, ld, ks, zs
+
+
+@jit(cache=False, nopython=True, parallel=True, fastmath=True)
+def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
+    u = atleast_2d(u)
+    npb = u.shape[0]
+    flux = zeros((len(zs), npb))
+    omega = zeros(npb)
+    dk = kt[1] - kt[0]
+    dz = zt[1] - zt[0]
+
+    for i in range(npb):
+        omega[i] = 1.0 - u[i, 0] / 3.0 - u[i, 1] / 6.0
+
+    ik = int(floor((k - kt[0]) / dk))
+    ak1 = (k - kt[ik]) / dk
+    ak2 = 1.0 - ak1
+
+    ed2 = edt[ik:ik + 2, :]
+    ld2 = ldt[ik:ik + 2, :]
+    le2 = let[ik:ik + 2, :]
+
+    for i in prange(len(zs)):
+        z = zs[i]
+        if (z >= 1.0 + k) or (z < 0.0):
+            flux[i, :] = 1.0
+        else:
+            iz = int(floor((z - zs[0]) / dz))
+            az1 = (z - zt[iz]) / dz
+            az2 = 1.0 - az1
+
+            ed = (ed2[0, iz] * ak2 * az2
+                  + ed2[1, iz] * ak1 * az2
+                  + ed2[0, iz + 1] * ak2 * az1
+                  + ed2[1, iz + 1] * ak1 * az1)
+
+            ld = (ld2[0, iz] * ak2 * az2
+                  + ld2[1, iz] * ak1 * az2
+                  + ld2[0, iz + 1] * ak2 * az1
+                  + ld2[1, iz + 1] * ak1 * az1)
+
+            le = (le2[0, iz] * ak2 * az2
+                  + le2[1, iz] * ak1 * az2
+                  + le2[0, iz + 1] * ak2 * az1
+                  + le2[1, iz + 1] * ak1 * az1)
+
+            for j in range(npb):
+                flux[i, j] = 1.0 - ((1.0 - u[j, 0] - 2.0 * u[j, 1]) * le + (u[j, 0] + 2.0 * u[j, 1]) * ld + u[
+                    j, 1] * ed) / omega[j]
+                flux[i, j] = c + (1.0 - c) * flux[i, j]
+
+    return flux
