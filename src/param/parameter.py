@@ -151,6 +151,7 @@ class ParameterSet(list):
     def __init__(self, *args):
         super().__init__(*args)
         self.blocks = []
+        self.bounds = None
         self.frozen = False
 
     def add_global_block(self, name, pars):
@@ -186,6 +187,8 @@ class ParameterSet(list):
     def _update_indices(self):
         if not self.frozen:
             self.bounds = array([p.bounds for p in self])
+            self.lbounds = self.bounds[:, 0]
+            self.ubounds = self.bounds[:, 1]
             for i, p in enumerate(self):
                 p.pid = i
         else:
