@@ -1,5 +1,5 @@
-from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, linspace, array, atleast_2d, floor
-from numba import jit, prange
+from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, linspace, array, atleast_2d, floor, full
+from numba import jit, njit, prange
 
 HALF_PI = 0.5 * pi
 FOUR_PI = 4.0 * pi
@@ -103,13 +103,18 @@ def eval_uniform(zs, k, c):
     return flux
 
 
-@jit("Tuple((f8[:,:], f8[:], f8[:], f8[:]))(f8[:], f8, f8[:], f8)", cache=True, nopython=True, parallel=False)
+@njit("Tuple((f8[:,:], f8[:], f8[:], f8[:]))(f8[:], f8, f8[:,:], f8[:])", cache=True, parallel=False)
 def eval_quad(z0, k, u, c):
     if abs(k - 0.5) < 1.0e-4:
         k = 0.5
 
     npt = len(z0)
-    npb = 1
+    npb = u.shape[0]
+
+    if c.size == 1 and npb > 1:
+        cs = full(npb, c[0])
+    else:
+        cs = c
 
     k2 = k ** 2
     omega = zeros(npb)
@@ -119,7 +124,7 @@ def eval_quad(z0, k, u, c):
     ed = zeros(npt)
 
     for i in range(npb):
-        omega[i] = 1.0 - u[2 * i - 1] / 3.0 - u[2 * i] / 6.0
+        omega[i] = 1.0 - u[i,0] / 3.0 - u[i,1] / 6.0
 
     for i in prange(npt):
         z = z0[i]
@@ -216,10 +221,8 @@ def eval_quad(z0, k, u, c):
             ed[i] = k2 / 2.0 * (k2 + 2.0 * z2)
 
         for j in range(npb):
-            iu = 2 * j - 1
-            iv = 2 * j
-            flux[i, j] = 1.0 - ((1.0 - u[iu] - 2.0 * u[iv]) * le[i] + (u[iu] + 2.0 * u[iv]) * ld[i] + u[iv] * ed[i]) / omega[j]
-        flux[i, :] = c + (1.0 - c) * flux[i, :]
+            flux[i, j] = 1.0 - ((1.0 - u[j,0] - 2.0 * u[j,1]) * le[i] + (u[j,0] + 2.0 * u[j,1]) * ld[i] + u[j,1] * ed[i]) / omega[j]
+        flux[i, :] = cs + (1.0 - cs) * flux[i, :]
 
     return flux, ld, le, ed
 
@@ -268,9 +271,8 @@ def calculate_interpolation_tables(kmin=0.05, kmax=0.2, nk=512, nz=512):
     return ed, le, ld, ks, zs
 
 
-@jit(cache=False, nopython=True, parallel=True, fastmath=True)
+@njit("f8[:,:](f8[:], f8, f8[:,:], f8[:], f8[:,:], f8[:,:], f8[:,:], f8[:], f8[:])", cache=False, parallel=True, fastmath=True)
 def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
-    u = atleast_2d(u)
     npb = u.shape[0]
     flux = zeros((len(zs), npb))
     omega = zeros(npb)
@@ -313,8 +315,7 @@ def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
                   + le2[1, iz + 1] * ak1 * az1)
 
             for j in range(npb):
-                flux[i, j] = 1.0 - ((1.0 - u[j, 0] - 2.0 * u[j, 1]) * le + (u[j, 0] + 2.0 * u[j, 1]) * ld + u[
-                    j, 1] * ed) / omega[j]
-                flux[i, j] = c + (1.0 - c) * flux[i, j]
+                flux[i, j] = 1.0 - ((1.0 - u[j, 0] - 2.0 * u[j, 1]) * le + (u[j, 0] + 2.0 * u[j, 1]) * ld + u[j, 1] * ed) / omega[j]
+                flux[i, j] = c[j] + (1.0 - c[j]) * flux[i, j]
 
     return flux

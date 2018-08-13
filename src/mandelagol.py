@@ -15,16 +15,19 @@
 ## with this program; if not, write to the Free Software Foundation, Inc.,
 ## 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-import numpy as np
+from numpy import atleast_2d, atleast_1d
+
 import pytransit.mandelagol_py as ma
-import pytransit.orbits as of
-from .tm import TransitModel
+from pytransit.tm import TransitModel
 
 class MandelAgol(TransitModel):
-    """Linear and quadratic Mandel-Agol transit models (ApJ 580, L171-L175 2002).
+    """Quadratic Mandel-Agol transit model (ApJ 580, L171-L175 2002).
 
-    This class wraps the Fortran implementations of the linear and quadratic Mandel & Agol
-    transit models.
+    This class wraps the Numba implementations of the
+        - uniform
+        - quadratic
+        - chromosphere
+    Mandel & Agol transit models.
     """
 
     models = 'uniform quadratic interpolated_quadratic chromosphere'.split()
@@ -60,12 +63,11 @@ class MandelAgol(TransitModel):
                     self.klims = klims
                     self.nk = nk
                     self.nz = nz
-        
                 self._eval = self._eval_quadratic
 
 
-    def _eval_uniform(self, z, k, u, c):
-        """Wraps the Fortran implementation of a transit over a uniform disk
+    def _eval_uniform(self, z, k, u=None, c=0.0):
+        """Wraps the Numba implementation of a transit over a uniform disk
 
             Args:
                 z: Array of normalised projected distances.
@@ -80,8 +82,8 @@ class MandelAgol(TransitModel):
         return ma.eval_uniform(z, k, c)
 
     
-    def _eval_chromosphere(self, z, k, u, c):
-        """Wraps the Fortran implementation of a transit over a uniform disk
+    def _eval_chromosphere(self, z, k, u=None, c=0.0):
+        """Wraps the Numba implementation of a transit over a chromosphere
 
             Args:
                 z: Array of normalised projected distances.
@@ -94,26 +96,22 @@ class MandelAgol(TransitModel):
         return ma.eval_chromosphere(z, k, c)
 
     
-    def _eval_quadratic(self, z, k, u, c):
-        """Wraps the Fortran implementation of the quadratic Mandel-Agol model
+    def _eval_quadratic(self, z, k, u, c=0.0):
+        """Wraps the Numba implementation of the quadratic Mandel-Agol model
 
           Args:
                 z: Array of normalised projected distances
                 k: Planet to star radius ratio
-                u: Array of limb darkening coefficients.
-                c: Array of contamination values as [c1, c2, ... c_npb]
-                update: Not used.
-
+                u: Array of limb darkening coefficients
+                c: scalar or array of contamination values as [c1, c2, ... c_npb]
         """
-        u = np.asarray(u).ravel()
-        npb = len(u)//2
-        if not isinstance(c, np.ndarray) or c.size != npb:
-            c = c*np.ones(npb)
-            
+        u = atleast_2d(u)
+        c = atleast_1d(c)
+
         if self.interpolate:
             return ma.eval_quad_ip(z, k, u, c, self.ed, self.ld, self.le, self.kt, self.zt)
         else:
-            return ma.eval_quad(z, k, u, c)
+            return ma.eval_quad(z, k, u, c)[0]
 
 
     def __call__(self, z, k, u, c=0.0):
@@ -140,11 +138,11 @@ class MAChromosphere(MandelAgol):
     def __init__(self, nthr=0, supersampling=1, exptime=0.020433598):
         super().__init__(model='chromosphere', nthr=nthr, supersampling=supersampling, exptime=exptime)
 
-    def __call__(self, z, k, c=0, **kwargs):
-        return self._eval(z, k, [], c)
+    def __call__(self, z, k, c=0.0, **kwargs):
+        return self._eval(z, k, None, c)
 
     def evaluate(self, t, k, t0, p, a, i, e=0., w=0., c=0.):
-        return super().evaluate(t, k, [], t0, p, a, i, e, w)
+        return super().evaluate(t, k, [], t0, p, a, i, e, w, c)
 
 
     

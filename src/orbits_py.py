@@ -1,5 +1,5 @@
-from numpy import pi, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like
-from numba import jit, prange
+from numpy import pi, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like, zeros, linspace, floor
+from numba import jit, njit, prange
 
 
 HALF_PI = 0.5 * pi
@@ -25,6 +25,14 @@ def z_from_ta_v(Ta, a, i, e, w):
     z  = a*(1.0-e**2)/(1.0+e*cos(Ta)) * sqrt(1.0 - sin(w+Ta)**2 * sin(i)**2)
     z *= sign(1.0, sin(w+Ta))
     return z
+
+@njit
+def rclip(v, vmin, vmax):
+    return min(max(v, vmin), vmax)
+
+@njit
+def iclip(v, vmin, vmax):
+    return int(min(max(v, vmin), vmax))
 
 # Mean Anomaly
 # ============
@@ -146,25 +154,100 @@ def ta_ps5(t, t0, p, e, w):
              + 1097.0/960.0 * e**5 * sin(5.0*Ma))
     return Ta
 
+@njit
+def ta_from_ma(Ma, e):
+    Ta = zeros_like(Ma)
+    for j in range(len(Ma)):
+        ec = e*sin(Ma[j])/(1.0 - e*cos(Ma[j]))
+        for k in range(15):
+            ect = ec
+            ec  = e*sin(Ma[j]+ec)
+            if abs(ect-ec) < 1e-4:
+                break
+        Ea = Ma[j] + ec
+        sta = sqrt(1.0-e**2) * sin(Ea)/(1.0-e*cos(Ea))
+        cta = (cos(Ea)-e)/(1.0-e*cos(Ea))
+        Ta[j] = arctan2(sta, cta)
+    return Ta
+
+@njit
+def ta_ip_calculate_table(ne=256, nm=512):
+    es = linspace(0, 0.95, ne)
+    ms = linspace(0,   pi, nm)
+    tae = zeros((ne, nm))
+    for i,e in enumerate(es):
+        tae[i,:]  = ta_from_ma(ms, e)
+        tae[i,:] -= ms
+    return tae, es, ms
+
+@njit(parallel=True)
+def ta_ip(t, t0, p, e, w, es, ms, tae):
+    ne = es.size
+    nm = ms.size
+    de = es[1] - es[0]
+    dm = ms[1] - ms[0]
+
+    ie = iclip(         floor(e/de),      0,   ne-1)
+    ae = rclip((e - de*(ie-1)) / de,    0.0,    1.0)
+    tae2 = tae[ie:ie+2,:]
+
+    Ma = mean_anomaly(t, t0, p, e, w)
+    Ta = zeros_like(Ma)
+
+    for i in range(len(t)):
+        if Ma[i] < pi:
+            im = iclip(floor(Ma[i]/dm), 0, nm-1)
+            am = rclip((Ma[i] - dm*(im-1)) / dm, 0.0, 1.0)
+            s = 1.0
+        else:
+            im = iclip(floor((TWO_PI - Ma[i])/dm), 0, nm-1)
+            am = rclip((TWO_PI - (Ma[i] - dm*(im-1))) / dm, 0.0, 1.0)
+            s = -1.0
+
+        Ta[i] = ( tae2[0,im  ]*(1.0-ae)*(1.0-am)
+                + tae2[1,im  ]*     ae *(1.0-am)
+                + tae2[0,im+1]*(1.0-ae)*     am
+                + tae2[1,im+1]*     ae *     am  )
+        Ta[i] = Ma[i] + s * Ta[i]
+
+        if (Ta[i] < 0.0):
+            Ta[i] = Ta[i] + TWO_PI
+
+    return Ta
 
 # Projected distance Z
 # ====================
+# These functions calculate the projected distance (z) using different ways to calculate the
+# tue anomaly (Ta). The functions have different versions optimized for different use-cases
+#
+#  - z_*_s  : scalar time
+#  - z_*_v  : vector time
+#  - z_*_p  : vector time, parallelized and usually fastest
+#  - z_*_mp : vector time and two-dimensional parameter array, can be faster than the others
+#
 
 # Z: Newton's method
 # ------------------
 
-@jit(cache=True, nopython=True)
-def z_newton_s(t, t0, p, a, i, e, w):
+@njit(cache=True)
+def z_newton_s(t, pv):
+    """Normalized projected distance for scalar t.
+
+    pv = [t0, p, a, i, e, w]
+    """
+    t0, p, a, i, e, w = pv
     Ta = ta_newton_s(t, t0, p, e, w)
     return z_from_ta_s(Ta, a, i, e, w)
 
-@jit("f8[:](f8[:], f8, f8, f8, f8, f8, f8)", cache=True, nopython=True)
-def z_newton_v(ts, t0, p, a, i, e, w):
+@njit("f8[:](f8[:], f8[:])", cache=True)
+def z_newton_v(ts, pv):
+    t0, p, a, i, e, w = pv
     Ta = ta_newton_v(ts, t0, p, e, w)
     return z_from_ta_v(Ta, a, i, e, w)
 
-@jit("f8[:](f8[:], f8, f8, f8, f8, f8, f8)", parallel=True, nopython=True, fastmath=True)
-def z_newton_p(ts, t0, p, a, i, e, w):
+@njit("f8[:](f8[:], f8[:])", parallel=True, fastmath=True)
+def z_newton_p(ts, pv):
+    t0, p, a, i, e, w = pv
     zs = zeros_like(ts)
     for j in prange(len(ts)):
         t = ts[j]
@@ -186,7 +269,7 @@ def z_newton_p(ts, t0, p, a, i, e, w):
         zs[j] = z
     return zs
 
-@jit("f8[:,:](f8[:], f8[:,:])", parallel=True, nopython=True, fastmath=True)
+@njit("f8[:,:](f8[:], f8[:,:])", parallel=True, fastmath=True)
 def z_newton_mp(ts, pvs):
     zs = zeros((pvs.shape[0], ts.size))
     for j in prange(zs.size):
@@ -216,18 +299,21 @@ def z_newton_mp(ts, pvs):
 # Z: Iteration
 # ------------
 
-@jit(cache=True, nopython=True)
-def z_iter_s(t, t0, p, a, i, e, w):
+@njit(cache=True)
+def z_iter_s(t, pv):
+    t0, p, a, i, e, w = pv
     Ta = ta_iter_s(t, t0, p, e, w)
     return z_from_ta_s(Ta, a, i, e, w)
 
-@jit("f8[:](f8[:], f8, f8, f8, f8, f8, f8)", cache=True, nopython=True)
-def z_iter_v(ts, t0, p, a, i, e, w):
+@njit("f8[:](f8[:], f8[:])", cache=True)
+def z_iter_v(ts, pv):
+    t0, p, a, i, e, w = pv
     Ta = ta_iter_v(ts, t0, p, e, w)
     return z_from_ta_v(Ta, a, i, e, w)
 
-@jit("f8[:](f8[:],f8,f8,f8,f8, f8, f8)", parallel=True, nopython=True, fastmath=True)
-def z_iter_p(ts, t0, p, a, i, e, w):
+@njit("f8[:](f8[:], f8[:])", parallel=True, fastmath=True)
+def z_iter_p(ts, pv):
+    t0, p, a, i, e, w = pv
     zs = zeros_like(ts)
     for j in prange(len(ts)):
         t = ts[j]
@@ -252,10 +338,12 @@ def z_iter_p(ts, t0, p, a, i, e, w):
 # Z: Series expansion
 # -------------------
 
-@jit("f8[:](f8[:],f8,f8,f8,f8, f8, f8)", cache=True, nopython=True)
-def z_ps3(t, t0, p, a, i, e, w):
+@njit("f8[:](f8[:], f8[:])", cache=True)
+def z_ps3(t, pv):
+    t0, p, a, i, e, w = pv
     return z_from_ta_v(ta_ps3(t, t0, p, e, w), a, i, e, w)
 
-@jit("f8[:](f8[:],f8,f8,f8,f8, f8, f8)", cache=True, nopython=True)
-def z_ps5(t, t0, p, a, i, e, w):
+@njit("f8[:](f8[:], f8[:])", cache=True)
+def z_ps5(t, pv):
+    t0, p, a, i, e, w = pv
     return z_from_ta_v(ta_ps5(t, t0, p, e, w), a, i, e, w)
