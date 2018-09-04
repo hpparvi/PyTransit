@@ -266,12 +266,12 @@ def calculate_interpolation_tables(kmin=0.05, kmax=0.2, nk=512, nz=512):
     ed = zeros((nk, nz))
 
     for ik, k in enumerate(ks):
-        _, ld[ik, :], le[ik, :], ed[ik, :] = eval_quad(zs, k, array([0.0, 0.0]), 0.0)
+        _, ld[ik, :], le[ik, :], ed[ik, :] = eval_quad(zs, k, array([[0.0, 0.0]]), array([0.0]))
 
     return ed, le, ld, ks, zs
 
 
-@njit("f8[:,:](f8[:], f8, f8[:,:], f8[:], f8[:,:], f8[:,:], f8[:,:], f8[:], f8[:])", cache=False, parallel=True, fastmath=True)
+@njit("f8[:,:](f8[:], f8, f8[:,:], f8[:], f8[:,:], f8[:,:], f8[:,:], f8[:], f8[:])", cache=False, parallel=False, fastmath=True)
 def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
     npb = u.shape[0]
     flux = zeros((len(zs), npb))
@@ -295,7 +295,7 @@ def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
         if (z >= 1.0 + k) or (z < 0.0):
             flux[i, :] = 1.0
         else:
-            iz = int(floor((z - zs[0]) / dz))
+            iz = int(floor((z - zt[0]) / dz))
             az1 = (z - zt[iz]) / dz
             az2 = 1.0 - az1
 
