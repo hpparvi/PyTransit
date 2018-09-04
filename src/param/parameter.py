@@ -1,7 +1,9 @@
 import math as m
 from itertools import product
-from numpy import inf, array, zeros, unique, pi
+from numpy import inf, array, zeros, unique, pi, log, sqrt
 from numpy.random import normal, uniform
+from scipy.stats import gamma as gm
+
 
 class Prior:
     def __init__(self):
@@ -36,6 +38,7 @@ class NormalPrior(Prior):
     def rvs(self, size=1):
         return normal(self.mean, self.std, size)
 
+
 class UniformPrior(Prior):
     def __init__(self, a, b):
         self.a, self.b = a, b
@@ -61,6 +64,19 @@ class LogLogisticPrior(Prior):
 
     def rvs(self, size=1):
         return uniform(1e-3, 1.0, size)
+
+
+class GammaPrior(Prior):
+    def __init__(self, a):
+        self.a = a
+        self.A = -m.lgamma(a)
+
+    def logpdf(self, x):
+        return self.A + (self.a - 1.) * log(x) - x
+
+    def rvs(self, size):
+        return gm(self.a).rvs(size)
+
 
 class Parameter:
     def __init__(self, name, description='', unit='', prior=None, bounds=(-inf, inf), **kwargs):
