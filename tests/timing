@@ -1,0 +1,24 @@
+#!/usr/bin/env python
+
+from timeit import timeit
+from numpy import array, linspace, abs, repeat, median
+from pytransit import MandelAgol as MA
+
+z = repeat(abs(linspace(-1.25, 1.25, 500)), 5)
+tm_ex = MA(interpolate=False, nthr=1)
+tm_ip = MA(interpolate=True, nthr=1, nk=512, nz=512)
+
+nreps = 1000
+nt = 5
+
+times_ip = 1e6*array([timeit("tm_ip(z, 0.1, [0.2, 0.1], 0.0)",
+                  number=nreps, globals=globals()) for i in range(nt)])/nreps
+
+times_ex = 1e6*array([timeit("tm_ex(z, 0.1, [0.2, 0.1], 0.0)",
+                      number=nreps, globals=globals()) for i in range(nt)])/nreps
+
+print("Execution times for tm(z)")
+print("-------------------------")
+print("")
+print("  Exact:\t {:7.3f} μs ± {:6.3f} μs".format(median(times_ex), times_ex.std()))
+print("  Interpolated:\t {:7.3f} μs ± {:6.3f} μs".format(median(times_ip), times_ip.std()))
