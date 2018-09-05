@@ -19,7 +19,7 @@ from math import fabs
 import numpy as np
 #from .orbits_f import orbits as of
 #from .utils_f import utils as uf
-from numpy import atleast_2d
+from numpy import atleast_2d, array, ones
 from .supersampler import SuperSampler
 from .orbits import Orbit
 from .limb_darkening import UniformLD, LinearLD, QuadraticLD, TriangularQLD
@@ -124,8 +124,8 @@ class TransitModel(object):
         z = self._calculate_z(tt, t0, p, a, i, e, w)
         supersampled_flux = self.__call__(z, k, u=u, c=c)
 
-        averaged_flux = np.ones_like(t) if npb == 1 else np.full((t.size, npb), 1.)
-        averaged_flux[tm] = self.sampler.average(supersampled_flux)
+        averaged_flux = ones((t.size, npb))
+        averaged_flux[tm,:] = self.sampler.average(supersampled_flux)
 
         return kf*(averaged_flux-1.)+1.
 
