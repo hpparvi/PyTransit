@@ -5,7 +5,7 @@ HALF_PI = 0.5 * pi
 FOUR_PI = 4.0 * pi
 INV_PI = 1 / pi
 
-@jit(["f4(f4,f4)", "f8(f8,f8)"], cache=True, nopython=True)
+@njit(["f4(f4,f4)", "f8(f8,f8)"], cache=False)
 def ellpicb(n, k):
     """The complete elliptical integral of the third kind
 
@@ -43,7 +43,7 @@ def ellpicb(n, k):
     return 0.0
 
 
-@jit(cache=True, nopython=True)
+@njit(cache=False)
 def ellec(k):
     a1 = 0.443251414630
     a2 = 0.062606012200
@@ -60,7 +60,7 @@ def ellec(k):
     return ee1 + ee2
 
 
-@jit(cache=True, nopython=True)
+@njit(cache=False)
 def ellk(k):
     a0 = 1.386294361120
     a1 = 0.096663442590
@@ -78,7 +78,7 @@ def ellk(k):
     ek2 = (b0 + m1 * (b1 + m1 * (b2 + m1 * (b3 + m1 * b4)))) * log(m1)
     return ek1 - ek2
 
-@jit(["f4[:](f4[:],f4,f4)", "f8[:](f8[:],f8,f8)"], cache=True, nopython=True)
+@njit(["f4[:](f4[:],f4,f4)", "f8[:](f8[:],f8,f8)"], cache=False)
 def eval_uniform(zs, k, c):
     flux = zeros_like(zs)
 
@@ -103,7 +103,7 @@ def eval_uniform(zs, k, c):
     return flux
 
 
-@njit("Tuple((f8[:,:], f8[:], f8[:], f8[:]))(f8[:], f8, f8[:,:], f8[:])", cache=True, parallel=False)
+@njit("Tuple((f8[:,:], f8[:], f8[:], f8[:]))(f8[:], f8, f8[:,:], f8[:])", cache=False, parallel=False)
 def eval_quad(z0, k, u, c):
     if abs(k - 0.5) < 1.0e-4:
         k = 0.5
@@ -226,7 +226,7 @@ def eval_quad(z0, k, u, c):
 
     return flux, ld, le, ed
 
-@jit(cache=True, nopython=True)
+@njit(cache=False)
 def eval_chromosphere(zs, k, c):
     """Optically thin chromosphere model presented in
        Schlawin, Agol, Walkowicz, Covey & Lloyd (2010)"""
@@ -318,4 +318,52 @@ def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
                 flux[i, j] = 1.0 - ((1.0 - u[j, 0] - 2.0 * u[j, 1]) * le + (u[j, 0] + 2.0 * u[j, 1]) * ld + u[j, 1] * ed) / omega[j]
                 flux[i, j] = c[j] + (1.0 - c[j]) * flux[i, j]
 
+    return flux
+
+@njit("f8[:](f8[:], int[:], f8, f8[:,:], f8[:], f8[:,:], f8[:,:], f8[:,:], f8[:], f8[:])", cache=False, parallel=False, fastmath=True)
+def eval_quad_ip_mp(zs, pbi, k, u, c, edt, ldt, let, kt, zt):
+    npb = u.shape[0]
+    flux = zeros(zs.size)
+    omega = zeros(npb)
+    dk = kt[1] - kt[0]
+    dz = zt[1] - zt[0]
+
+    for i in range(npb):
+        omega[i] = 1.0 - u[i, 0] / 3.0 - u[i, 1] / 6.0
+
+    ik = int(floor((k - kt[0]) / dk))
+    ak1 = (k - kt[ik]) / dk
+    ak2 = 1.0 - ak1
+
+    ed2 = edt[ik:ik + 2, :]
+    ld2 = ldt[ik:ik + 2, :]
+    le2 = let[ik:ik + 2, :]
+
+    for i,j in prange(zs.size):
+        j = pbi[i]
+        z = zs[i]
+        if (z >= 1.0 + k) or (z < 0.0):
+            flux[i] = 1.0
+        else:
+            iz = int(floor((z - zt[0]) / dz))
+            az1 = (z - zt[iz]) / dz
+            az2 = 1.0 - az1
+
+            ed = (ed2[0, iz] * ak2 * az2
+                  + ed2[1, iz] * ak1 * az2
+                  + ed2[0, iz + 1] * ak2 * az1
+                  + ed2[1, iz + 1] * ak1 * az1)
+
+            ld = (ld2[0, iz] * ak2 * az2
+                  + ld2[1, iz] * ak1 * az2
+                  + ld2[0, iz + 1] * ak2 * az1
+                  + ld2[1, iz + 1] * ak1 * az1)
+
+            le = (le2[0, iz] * ak2 * az2
+                  + le2[1, iz] * ak1 * az2
+                  + le2[0, iz + 1] * ak2 * az1
+                  + le2[1, iz + 1] * ak1 * az1)
+
+            flux[i] = 1.0 - ((1.0 - u[j, 0] - 2.0 * u[j, 1]) * le + (u[j, 0] + 2.0 * u[j, 1]) * ld + u[j, 1] * ed) / omega[j]
+            flux[i] = c[j] + (1.0 - c[j]) * flux[i]
     return flux
