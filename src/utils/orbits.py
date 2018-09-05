@@ -4,6 +4,7 @@ import numpy as np
 from scipy.constants import G, pi
 
 from numpy import cos, sin, arccos, sqrt
+from numba import njit
 
 d_h = 24.
 d_m = 60 * d_h
@@ -13,6 +14,7 @@ au,   au_e             = 1.496e11, 0.0
 msun, msun_e           = 1.9891e30, 0.0      
 rsun, rsun_e           = 0.5*1.392684e9, 0.0
 
+@njit
 def p_from_am(a=1., ms=1.):
     """Orbital period from the semi-major axis and stellar mass.
 
@@ -29,7 +31,7 @@ def p_from_am(a=1., ms=1.):
     """
     return sqrt((4*pi**2*(a*au)**3)/(G*ms*msun)) / d_s
 
-    
+@njit
 def a_from_mp(ms, period):
     """Semi-major axis from the stellar mass and planet's orbital period.
 
@@ -46,7 +48,7 @@ def a_from_mp(ms, period):
     """
     return ((G*(ms*msun)*(period*d_s)**2)/(4*pi**2))**(1/3)/au
 
-
+@njit
 def as_from_rhop(rho, period):
     """Scaled semi-major axis from the stellar density and planet's orbital period.
 
@@ -63,7 +65,7 @@ def as_from_rhop(rho, period):
     """
     return (G/(3*pi))**(1/3)*((period*d_s)**2 * 1e3*rho)**(1/3)
 
-
+@njit
 def a_from_rhoprs(rho, period, rstar):
     """Semi-major axis from the stellar density, stellar radius, and planet's orbital period.
 
@@ -81,12 +83,12 @@ def a_from_rhoprs(rho, period, rstar):
     """
     return as_from_rhop(rho,period)*rstar*rsun/au
 
-
+@njit
 def af_transit(e,w):
     """Calculates the -- factor during the transit"""
     return (1.0-e**2)/(1.0 + e*sin(w))
 
-
+@njit
 def i_from_baew(b,a,e,w):
     """Orbital inclination from the impact parameter, scaled semi-major axis, eccentricity and argument of periastron
 
@@ -105,7 +107,7 @@ def i_from_baew(b,a,e,w):
     """
     return arccos(b / (a*af_transit(e, w)))
 
-
+@njit
 def i_from_ba(b,a):
     """Orbital inclination from the impact parameter and scaled semi-major axis.
 
