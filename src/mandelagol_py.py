@@ -320,8 +320,8 @@ def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
 
     return flux
 
-@njit("f8[:](f8[:], int[:], f8, f8[:,:], f8[:], f8[:,:], f8[:,:], f8[:,:], f8[:], f8[:])", cache=False, parallel=False, fastmath=True)
-def eval_quad_ip_mp(zs, pbi, k, u, c, edt, ldt, let, kt, zt):
+@njit("f8[:](f8[:], i8[:], f8[:], f8[:,:], f8[:], f8[:,:], f8[:,:], f8[:,:], f8[:], f8[:])", cache=False, parallel=False, fastmath=True)
+def eval_quad_ip_mp(zs, pbi, ks, u, c, edt, ldt, let, kt, zt):
     npb = u.shape[0]
     flux = zeros(zs.size)
     omega = zeros(npb)
@@ -331,17 +331,21 @@ def eval_quad_ip_mp(zs, pbi, k, u, c, edt, ldt, let, kt, zt):
     for i in range(npb):
         omega[i] = 1.0 - u[i, 0] / 3.0 - u[i, 1] / 6.0
 
-    ik = int(floor((k - kt[0]) / dk))
-    ak1 = (k - kt[ik]) / dk
-    ak2 = 1.0 - ak1
-
-    ed2 = edt[ik:ik + 2, :]
-    ld2 = ldt[ik:ik + 2, :]
-    le2 = let[ik:ik + 2, :]
-
-    for i,j in prange(zs.size):
-        j = pbi[i]
+    j = -1
+    for i in prange(zs.size):
+        k = ks[pbi[i]]
         z = zs[i]
+
+        if pbi[i] != j:
+            ik = int(floor((k - kt[0]) / dk))
+            ak1 = (k - kt[ik]) / dk
+            ak2 = 1.0 - ak1
+            ed2 = edt[ik:ik + 2, :]
+            ld2 = ldt[ik:ik + 2, :]
+            le2 = let[ik:ik + 2, :]
+
+        j = pbi[i]
+
         if (z >= 1.0 + k) or (z < 0.0):
             flux[i] = 1.0
         else:

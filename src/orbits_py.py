@@ -1,4 +1,4 @@
-from numpy import pi, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like, zeros, linspace, floor
+from numpy import pi, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like, zeros, linspace, floor, arcsin
 from numba import jit, njit, prange
 
 HALF_PI = 0.5 * pi
@@ -355,3 +355,17 @@ def z_ps3(t, pv):
 def z_ps5(t, pv):
     t0, p, a, i, e, w = pv
     return z_from_ta_v(ta_ps5(t, t0, p, e, w), a, i, e, w)
+
+@njit
+def impact_parameter(a, i):
+    return a * cos(i)
+
+@njit
+def impact_parameter_ec(a, i, e, w, tr_sign):
+    return a * cos(i) * ((1.-e**2) / (1.+tr_sign*e*sin(w)))
+
+@njit
+def duration_eccentric(p, k, a, i, e, w, tr_sign):
+    b  = impact_parameter_ec(a, i, e, w, tr_sign)
+    ae = sqrt(1.-e**2)/(1.+tr_sign*e*sin(w))
+    return p/pi  * arcsin(sqrt((1.+k)**2-b**2)/(a*sin(i))) * ae
