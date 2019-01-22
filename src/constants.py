@@ -28,9 +28,6 @@
 """
 from __future__ import division
 
-from scipy.constants import G, pi
-import numpy as np
-
 d_h = 24.
 d_m = 60 * d_h
 d_s = 60 * d_m
