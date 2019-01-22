@@ -17,8 +17,8 @@
 
 import numpy as np
 from math import fabs
-from .gimenez_f import gimenez as g
-from .orbits_f import orbits as of
+#from .gimenez_f import gimenez as g
+#from .orbits_f import orbits as of
 from .tm import TransitModel
 
 class Gimenez(TransitModel):

@@ -17,8 +17,9 @@
 
 from math import fabs
 import numpy as np
-from .orbits_f import orbits as of
-from .utils_f import utils as uf
+#from .orbits_f import orbits as of
+#from .utils_f import utils as uf
+from numpy import atleast_2d, array, ones
 from .supersampler import SuperSampler
 from .orbits import Orbit
 from .limb_darkening import UniformLD, LinearLD, QuadraticLD, TriangularQLD
@@ -79,7 +80,7 @@ class TransitModel(object):
         raise NotImplementedError
 
 
-    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, interpolate_z=False):
+    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0.):
         """Evaluates the transit model given a time array and necessary parameters.
 
         Args:
@@ -99,8 +100,8 @@ class TransitModel(object):
             An array of model flux values for each time sample.
         """
 
-        u   = np.asfortranarray(u)
-        npb = 1 if u.ndim == 1 else u.shape[0]
+        u = atleast_2d(u)
+        npb = u.shape[0]
 
         if self.optimize:
             if not self.eclipse:
@@ -121,10 +122,10 @@ class TransitModel(object):
             kf = 1.
 
         z = self._calculate_z(tt, t0, p, a, i, e, w)
-        supersampled_flux = self.__call__(z, k, u=u, c=c, update=update)
+        supersampled_flux = self.__call__(z, k, u=u, c=c)
 
-        averaged_flux = np.ones_like(t) if npb == 1 else np.full((t.size, npb), 1.)
-        averaged_flux[tm] = self.sampler.average(supersampled_flux)
+        averaged_flux = ones((t.size, npb))
+        averaged_flux[tm,:] = self.sampler.average(supersampled_flux)
 
         return kf*(averaged_flux-1.)+1.
 

@@ -25,9 +25,8 @@ import numpy as np
 import pyopencl as cl
 from os.path import dirname, join
 
-from mandelagol_f import mandelagol as ma
-from orbits_f import orbits as of
-from tm import TransitModel
+import pytransit.mandelagol_py as ma
+from pytransit.tm import TransitModel
 
 class MandelAgolCL(TransitModel):
     """
@@ -52,14 +51,18 @@ class MandelAgolCL(TransitModel):
       I = m(z,k,u)       # Evaluate the model for projected distance z, radius ratio k, and limb darkening coefficients u
       
     """
-    def __init__(self, supersampling=0, exptime=0.020433598, klims=(0.07,0.13), nk=128, nz=256, **kwargs):
-        super(MandelAgolCL, self).__init__(2, 0, True, supersampling, exptime)
+    def __init__(self, supersampling=1, exptime=0.020433598, eclipse=False, klims=(0.05,0.25), nk=256, nz=256, **kwargs):
+        super(MandelAgolCL, self).__init__(nldc=2, nthr=0, interpolate=True, supersampling=1, exptime=1,
+                                           eclipse=eclipse, klims=klims, nk=nk, nz=nz)
+
+        super().__init__(nldc=2, nthr=0, interpolate=True, supersampling=1, exptime=1,
+                         eclipse=eclipse, klims=klims, nk=nk, nz=nz)
 
         self.ctx = kwargs.get('cl_ctx', cl.create_some_context())
         self.queue = kwargs.get('cl_queue', cl.CommandQueue(self.ctx))
 
         self.ed,self.le,self.ld,self.kt,self.zt = map(lambda a: np.array(a,dtype=np.float32,order='C'),
-                                                      ma.calculate_interpolation_tables(klims[0],klims[1],nk,nz,4))
+                                                      ma.calculate_interpolation_tables(klims[0],klims[1],nk,nz))
         self.klims = klims
         self.nk    = np.int32(nk)
         self.nz    = np.int32(nz)
@@ -70,53 +73,120 @@ class MandelAgolCL(TransitModel):
         self.k0, self.k1 = map(np.float32, self.kt[[0,-1]])
         self.dk = np.float32(self.kt[1]-self.kt[0])
         self.dz = np.float32(self.zt[1]-self.zt[0])
+        self.nss = int32(supersampling)
+        self.etime = float32(exptime)
 
         mf = cl.mem_flags
+
+        # Create the buffers for the Mandel & Agol coefficient arrays
         self._b_ed = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ed)
         self._b_le = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.le)
         self._b_ld = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ld)
         self._b_kt = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.kt)
         self._b_zt = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.zt)
 
-        self._b_u = None
-        self._b_z = None
-        self._b_f = None
+        # Declare the buffers for the ld coefficients, time, and flux arrays. These will
+        # be initialised when the model is first evaluated, and reinitialised if the
+        # array sizes change.
+        #
+        self._b_u = None       # Limb darkening coefficient buffer
+        self._b_t = None       # Time buffer
+        self._b_f = None       # Flux buffer
+        self._b_p = None       # Parameter vector buffer
+
+        self._time_id = None   # Time array ID
 
         self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'ma_lerp.cl'),'r').read()).build()
+        #self.prg = cl.Program(self.ctx, open('../src/ma_lerp.cl','r').read()).build()
 
 
-    def _eval(self, z, k, u, c, update=True, copy_f_buffer=True, copy_z_buffer=True, *nargs, **kwargs):
-        z = np.asarray(z, np.float32)
+    def _eval(self, t, k, u, t0, p, a, i, e=0., w=0., c=0.):
         u = np.array(u, np.float32, order='C').T
 
-        if (z.size != self.nptb) or (u.size != self.u.size):
-            if self._b_z is not None:
-                self._b_z.release()
+        # Release and reinitialise the GPU buffers if the sizes of the time or
+        # limb darkening coefficient arrays change.
+        if (t.size != self.nptb) or (u.size != self.u.size):
+            if self._b_t is not None:
+                self._b_t.release()
                 self._b_f.release()
                 self._b_u.release()
+                self._b_p.release()
 
             self.npb = 1 if u.ndim == 1 else u.shape[1]
-            self.nptb = z.size
+            self.nptb = t.size
 
             self.u = np.zeros((2,self.npb), np.float32)
-            self.f = np.zeros((z.size, self.npb), np.float32)
+            self.f = np.zeros((t.size, self.npb), np.float32)
+            self.pv = np.zeros(7, np.float32)
 
-            mf = cl.mem_flags    
-            self._b_z = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=z)
-            self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.f.nbytes)
+            mf = cl.mem_flags
+            self._b_t = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=t)
+            self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, t.nbytes)
             self._b_u = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.u)
+            self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
 
-        if copy_z_buffer:
-            cl.enqueue_copy(self.queue, self._b_z, z)
+        # Copy the time array to the GPU if it has been changed
+        if id(t) != self._time_id:
+            cl.enqueue_copy(self.queue, self._b_t, t)
+            self._time_id = id(t)
+
+        # Copy the limb darkening coefficient array to the GPU
         cl.enqueue_copy(self.queue, self._b_u, u)
 
-        self.prg.ma(self.queue, self.f.shape, None, self._b_z, self._b_u,
-                    self._b_ed, self._b_le, self._b_ld,
-                    np.float32(k), self.k0, self.k1,
-                    self.nk, self.nz, self.dk, self.dz, self._b_f)
+        # Copy the parameter vector to the GPU
+        self.pv[:] = array([k, t0, p, a, i, e, w], dtype=float32)
+        cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
-        if copy_f_buffer:
-            cl.enqueue_copy(self.queue, self.f, self._b_f)
+        self.prg.ma_eccentric(self.queue, t.shape, None, self._b_t, self._b_p, self._b_u,
+                    self._b_ed, self._b_le, self._b_ld, self.nss, self.etime,
+                    self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self._b_f)
+        cl.enqueue_copy(self.queue, self.f, self._b_f)
+        return self.f
+
+
+    def _eval_pop(self, t, pvp, u):
+        u = np.array(u, np.float32, order='C').T
+        self.npv = uint32(pvp.shape[0])
+        self.spv = uint32(pvp.shape[1])
+
+        # Release and reinitialise the GPU buffers if the sizes of the time or
+        # limb darkening coefficient arrays change.
+        if (t.size != self.nptb) or (u.size != self.u.size):
+            if self._b_t is not None:
+                self._b_t.release()
+                self._b_f.release()
+                self._b_u.release()
+                self._b_p.release()
+
+            self.npb = 1 if u.ndim == 1 else u.shape[1]
+            self.nptb = t.size
+
+            self.u = np.zeros((2, self.npb), np.float32)
+            self.f = np.zeros((t.size, self.npv), np.float32)
+            self.pv = np.zeros(pvp.shape, np.float32)
+
+            mf = cl.mem_flags
+            self._b_t = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=t)
+            self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, t.nbytes * self.npv)
+            self._b_u = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.u)
+            self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
+
+        # Copy the time array to the GPU if it has been changed
+        if id(t) != self._time_id:
+            cl.enqueue_copy(self.queue, self._b_t, t)
+            self._time_id = id(t)
+
+        # Copy the limb darkening coefficient array to the GPU
+        cl.enqueue_copy(self.queue, self._b_u, u)
+
+        # Copy the parameter vector to the GPU
+        self.pv[:] = pvp
+        cl.enqueue_copy(self.queue, self._b_p, self.pv)
+
+        self.prg.ma_eccentric_pop(self.queue, (t.size, self.npv), None, self._b_t, self._b_p, self._b_u,
+                                  self._b_ed, self._b_le, self._b_ld, self.nss, self.etime,
+                                  self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self.spv, self._b_f)
+        cl.enqueue_copy(self.queue, self.f, self._b_f)
         return self.f
 
 

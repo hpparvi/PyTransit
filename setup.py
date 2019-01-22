@@ -1,22 +1,19 @@
-from numpy.distutils.core import setup, Extension
-from numpy.distutils.misc_util import Configuration
-import distutils.sysconfig as ds
+from setuptools import setup, find_packages
+
+version = '2.0'
 
 setup(name='PyTransit',
-      version='1.0',
+      version=version,
       description='Fast and painless exoplanet transit light curve modelling.',
       author='Hannu Parviainen',
       author_email='hpparvi@gmail.com',
       url='https://github.com/hpparvi/PyTransit',
-      extra_options = ['-fopenmp'],
       package_dir={'pytransit':'src'},
-      packages=['pytransit','pytransit.utils','pytransit.param'],
-      package_data={'':['*.cl']},
-      ext_modules=[Extension('pytransit.gimenez_f', ['src/gimenez.f90'], libraries=['gomp','m'], define_macros=[('DCHUNK_SIZE',128)]),
-                   Extension('pytransit.mandelagol_f', ['src/mandelagol.f90'], libraries=['gomp','m']),
-                   Extension('pytransit.utils_f', ['src/utils.f90'], libraries=['gomp','m']),
-                   Extension('pytransit.orbits_f',  ['src/orbits.f90','src/orbits.pyf'], libraries=['gomp','m'])],
-      install_requires=["numpy"],
+      #packages=find_packages(),
+      packages=['pytransit','pytransit.utils','pytransit.param', 'pytransit.contamination'],
+      package_data={'':['*.cl'], 'pytransit.contamination':['data/*']},
+      install_requires=["numpy", "numba", "scipy", "pandas", "xarray", "tables"],
+      include_package_data=True,
       license='GPLv2',
       classifiers=[
           "Topic :: Scientific/Engineering",
@@ -28,5 +25,6 @@ setup(name='PyTransit',
           "Programming Language :: Python",
           "Programming Language :: Fortran",
           "Programming Language :: Other"
-      ]
-     )
+      ],
+      keywords='astronomy astrophysics exoplanets'
+      )
