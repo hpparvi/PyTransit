@@ -26,8 +26,6 @@ This module offers the QPower2 class implementing the transit model by Maxted & 
 from pytransit.qpower2_py import qpower2
 from pytransit.tm import TransitModel
 
-from numpy import select, pi
-
 class QPower2(TransitModel):
     """QPower2 transit model (Maxted & Gill, ArXIV:1812.01606).
     """
