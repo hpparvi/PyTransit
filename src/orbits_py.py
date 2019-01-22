@@ -322,11 +322,11 @@ def z_iter_v(ts, pv):
 @njit("f8[:](f8[:], f8[:])", parallel=True, fastmath=True)
 def z_iter_p(ts, pv):
     t0, p, a, i, e, w = pv
+    ma_offset = arctan2(sqrt(1.0 - e ** 2) * sin(HALF_PI - w), e + cos(HALF_PI - w))
+    ma_offset -= e * sin(ma_offset)
     zs = zeros_like(ts)
     for j in prange(len(ts)):
         t = ts[j]
-        ma_offset = arctan2(sqrt(1.0-e**2) * sin(HALF_PI - w), e + cos(HALF_PI - w))
-        ma_offset -= e*sin(ma_offset)
         Ma = mod(TWO_PI * (t - (t0 - ma_offset * p / TWO_PI)) / p, TWO_PI)
         ec = e*sin(Ma)/(1.0 - e*cos(Ma))
         for k in range(15):

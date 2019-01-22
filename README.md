@@ -8,7 +8,7 @@ PyTransit
 [![ASCL](https://img.shields.io/badge/ASCL-A1505.024-blue.svg?style=flat)](http://ascl.net/1505.024)
 [![DOI](https://zenodo.org/badge/5871/hpparvi/PyTransit.svg)](https://zenodo.org/badge/latestdoi/5871/hpparvi/PyTransit)
 
-Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. PyTransit implements the quadratic Mandel & Agol and the Gimenéz transit models with various optimisations, and offers both a simple interface for model evaluation and a lower-level access for fine-tuning the model.   
+Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. PyTransit offers optimised CPU and GPU implementations of popular exoplanet transit models with a unified interface. The Mandel & Agol and Gimenez models come with specialised optimisations for transmission spectroscopy that allow a transit model to be calculated in multiple passbands with only a minor additional computational cost to a single passband.
 
 ```Python
 from pytransit import MandelAgol
@@ -18,18 +18,37 @@ f = m.evaluate(t, *pv)
 
 ![](notebooks/model_example_1.png)
 
+The package has been used in research since 2010, and is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433), which also details the model-specific optimisations and model performance.
 
-The package is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433). Also, take a look at the [Bayesian parameter estimation tutorial](http://nbviewer.ipython.org/github/hpparvi/exo_tutorials/blob/master/01_broadband_parameter_estimation.ipynb) for an example on how to use the model in a basic exoplanet transit modelling situation.
+## What's new in PyTransit v2.0 beta (2019)
+
+**Freedom from Fortran**
+- PyTransit v2.0 replaces all the old Fortran code with numba-accelerated Python versions!
+
+**Mature GPU implementations**
+- The GPU versions of the models are now mature, and can be used with minor hassle.
+- Simultaneous model computation for a set of parameter vectors accelerates population-based sampling and optimisation methods, such as *Affine Invariant Sampling (emcee)* and *Differential Evolution*.
+
+**Two new transit models**
+- Power-2 transit model by [Maxted & Gill](ArXiv:1812.01606)
+- Optically thin shell model by [Schlawin et al. (ApJL 722, 75--79, 2010)](http://adsabs.harvard.edu/abs/2010ApJ...722L..75S)
+
+**Contamination module**
+- Introduced a module that can be used to estimate third-light contamination (blending) based on multicolour transit light curves.
+- Detailed in Parviainen et al.  (a, in prep., 2019), and used in Parviainen et al. (b, in prep. 2019)
+
+**Utility modules and functions**
+- The `pytransit.modelling.lpf` (LogPosteriorFunction) module contains classes that can be used as a starting point for a transit analysis.
 
 ## Features
 
 **Transit models**
   - Series-expansion based transit model by [A. Gimenez (A&A 450, 1231--1237, 2006)](http://adsabs.harvard.edu/abs/2006A&A...450.1231G).
   - Quadratic limb-darkening and uniform disk transit models by [Mandel & Agol (ApJ 580, L171–L175, 2002)](http://adsabs.harvard.edu/abs/2002ApJ...580L.171M).
+  - Power-2 transit model by [Maxted & Gill](ArXiv:1812.01606)
   - Optically thin shell model by [Schlawin et al. (ApJL 722, 75--79, 2010)](http://adsabs.harvard.edu/abs/2010ApJ...722L..75S) to model narrow-band transits observations of chromospheric emission lines.
- 
+
 **Common features**
-  - Optimized and parallelized Fortran implementations. 
   - Efficient model evaluation for multicolour observations and transmission spectroscopy.
   - Built-in model interpolation for the modelling of large datasets.
   - Built-in supersampling to account for extended exposure times.
@@ -41,24 +60,16 @@ The package is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433)
 Installation
 ------------
 
-First clone the repository from github
+### PIP
+
+### GitHub
+
+Clone the repository from github and do the normal python package installation
 
     git clone https://github.com/hpparvi/PyTransit.git
     cd PyTransit
+    python setup.py install
 
-and then do the normal python package build & installation. 
-
-#### Intel & AMD
-
-    python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native" build
-    python setup.py install --user
-
-#### Mac
-
-    python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native -mno-avx" build
-    python setup.py install --user
-
-The code has been tested with gfortran and Intel compilers, but it should compile with others as well (if it doesn't, please let me know).
 
 Citing
 ------
@@ -117,8 +128,8 @@ m = Gimenez()
 f = m.evaluate(t, *pv)
 ```
 
-Here we first initialize the model accepting the defaults (quadratic limb darkening law, no supersampling, 
-and the use of all available cores), and then calculate the model for times in the time array `t`, `pv` being 
+Here we first initialize the model accepting the defaults (quadratic limb darkening law, no supersampling,
+and the use of all available cores), and then calculate the model for times in the time array `t`, `pv` being
 a list containing the system parameters.
 
 For a slightly more useful example, we can do:
@@ -147,25 +158,25 @@ evaluating the model several times for different coefficient sets):
 
     m = MandelAgol()
     f = m.evaluate(t, k, u, t0, p, a, i, e, w)
-    
+
 In this case, the model returns several light curve models, each corresponding to a single ldc set.
 
 ### Supersampling
-The transit model offers built-in *supersampling* for transit fitting to transit photometry with poor time 
+The transit model offers built-in *supersampling* for transit fitting to transit photometry with poor time
 sampling (such as *Kepler*'s long cadence data):
 
     m = MandelAgol(supersampling=8, exptime=0.02)
     ...
 
 ### Tweaking the Gimenéz model
-The Gimenéz model accuracy and the number of limb darkening coefficients can be set in the initialization. 
-Finally, for fitting to large datasets, the model can be evaluated using interpolation. 
+The Gimenéz model accuracy and the number of limb darkening coefficients can be set in the initialization.
+Finally, for fitting to large datasets, the model can be evaluated using interpolation.
 
 Basic transit model usage with linear limb darkening law, lower accuracy, and four cores:
 
     m = Gimenez(npol=50, nldc=1, nthr=4)
     ...
-      
+
 Transit model using linear interpolation:
 
     m = Gimenez(interpolate=True)
@@ -174,7 +185,7 @@ Transit model using linear interpolation:
 
 ### Advanced
 
-Calculate projected distance for a circular or eccentric orbit given time t, transit center time t0, period p, 
+Calculate projected distance for a circular or eccentric orbit given time t, transit center time t0, period p,
 scaled semi-major axis a, inclination i, eccentricity e, and argument of periastron w:
 
     import numpy as np
@@ -194,7 +205,7 @@ Transit model using linear interpolation, two different sets of z:
     m  = Gimenez(interpolate=True)      # Initialize the model
     I1 = m(z1,k,u)               # Evaluate the model for z1, update the interpolation table
     I2 = m(z2,k,u, update=False) # Evaluate the model for z2, don't update the interpolation table
-    
+
 Author
 ------
   - Hannu Parviainen <hpparvi@gmail.com>, University of Oxford
