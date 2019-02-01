@@ -1,8 +1,24 @@
+#  PyTransit: fast and easy exoplanet transit modelling in Python.
+#  Copyright (C) 2010-2019  Hannu Parviainen
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import math as mt
 
 from numba import njit
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like,
-                   clip, argsort, any, s_, zeros, arccos, nan, isnan, full, pi, sum, repeat, arange)
+                   clip, argsort, any, s_, zeros, arccos, nan, isnan, full, pi, sum, repeat, asarray, ndarray)
 from numpy.random import uniform, normal
 from scipy.stats import norm
 from tqdm import tqdm
@@ -26,23 +42,31 @@ try:
 except ImportError:
     with_george = False
 
+try:
+    from ldtk import LDPSetCreator
+    with_ldtk = True
+except ImportError:
+    with_ldtk = False
+
+from pytransit.transitmodel import TransitModel
 from pytransit import MandelAgol as MA
 from pytransit.mandelagol_py import eval_quad_ip_mp
 from pytransit.orbits_py import z_circular, duration_eccentric
 from pytransit.param.parameter import ParameterSet, PParameter, GParameter
 from pytransit.param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
-from pytransit.contamination import SMContamination
 from pytransit.contamination.filter import sdss_g, sdss_r, sdss_i, sdss_z
-from pytransit.contamination.instrument import Instrument
 from pytransit.utils.orbits import as_from_rhop
+
 
 @njit(cache=False)
 def lnlike_normal(o, m, e):
     return -sum(log(e)) -0.5*p.size*log(2.*pi) - 0.5*sum((o-m)**2/e**2)
 
+
 @njit("f8(f8[:], f8[:], f8)", cache=False)
 def lnlike_normal_s(o, m, e):
     return -o.size*log(e) -0.5*o.size*log(2.*pi) - 0.5*sum((o-m)**2)/e**2
+
 
 @njit("f8[:](f8[:], f8[:])", fastmath=False, cache=False)
 def unpack_orbit(pv, zpv):
@@ -54,6 +78,7 @@ def unpack_orbit(pv, zpv):
         zpv[3] = arccos(pv[3] / zpv[2])
     return zpv
 
+
 @njit("f8[:,:](f8[:], f8[:,:])", fastmath=True, cache=False)
 def qq_to_uv(pv, uv):
     a, b = sqrt(pv[::2]), 2.*pv[1::2]
@@ -63,135 +88,59 @@ def qq_to_uv(pv, uv):
 
 
 class BaseLPF:
+    _lpf_name = 'base'
 
-    models = "pb_independent_k pb_dependent_k pb_dependent_contamination physical_contamination".split()
+    def __init__(self, target: str, passbands: list, times: list=None, fluxes:list=None,
+                 pbids:list=None, tm:TransitModel=None):
+        self.tm = tm or MA(interpolate=True, klims=(0.01, 0.75), nk=512, nz=512)
 
-    def __init__(self, target, filters, times=None, fluxes=None, covars=None, model='pb_independent_k', **kwargs):
-        assert (model in self.models), 'Model must be one of:\n\t' + ', '.join(self.models)
-        self.tm = MA(interpolate=True, klims=(0.01, 0.75), nk=512, nz=512)
-        self.model = model
-        self.target = target
-        self.filters = filters
-        self.npb = npb = len(filters)
+        self.target = target            # Name of the planet
+        self.passbands = passbands      # Passbands, should be arranged from the bluest to reddest
+        self.npb = npb = len(passbands) # Number of passbands
 
-        self.de = None
-        self.sampler = None
-        self.ldsc = None
-        self.ldps = None
+        # Declare high-level objects
+        # --------------------------
+        self.ps = None          # Parametrisation
+        self.de = None          # Differential evolution optimiser
+        self.sampler = None     # MCMC sampler
+        self.instrument = None  # Instrument
+        self.ldsc = None        # Limb darkening set creator
+        self.ldps = None        # Limb darkening profile set
+        self.cntm = None        # Contamination model
 
-        if times and fluxes and covars:
-            self.nlc = len(times)
-            self.times = times
-            self.fluxes = fluxes
-            self.covariates = covars
-            self.wn = [diff(f).std() / sqrt(2) for f in fluxes]
-            self.timea = concatenate(self.times)
-            self.ofluxa = concatenate(self.fluxes)
-            self.mfluxa = zeros_like(self.ofluxa)
-            self.pbida = concatenate([full(t.size, ds.pbid) for t, ds in zip(self.times, self.datasets)])
-            self.lcida = concatenate([full(t.size, i) for i, t in enumerate(self.times)])
+        # Declare data arrays and variables
+        # ---------------------------------
+        self.nlc: int = 0               # Number of light curves
+        self.times: list = None         # List of time arrays
+        self.fluxes: list = None        # List of flux arrays
+        self.covariates: list = None    # List of covariates
+        self.wn: ndarray = None         # Array of white noise estimates
+        self.timea: ndarray = None      # Array of concatenated times
+        self.ofluxa: ndarray = None     # Array of concatenated observed fluxes
+        self.mfluxa: ndarray = None     # Array of concatenated model fluxes
+        self.pbida: ndarray = None      # Array of passband indices for each datapoint
+        self.lcida: ndarray = None      # Array of light curve indices for each datapoint
+        self.lcslices: list = None      # List of light curve slices
 
-            self.lcslices = []
-            sstart = 0
-            for i in range(self.nlc):
-                s = self.times[i].size
-                self.lcslices.append(s_[sstart:sstart + s])
-                sstart += s
-
-        # Set up the instrument and contamination model
-        # --------------------------------------------
-        self.instrument = Instrument('MuSCAT2', [sdss_g, sdss_r, sdss_i, sdss_z])
-        self.cm = SMContamination(self.instrument, "i'")
-
-        # Initialise the lnprior hook list
-        # --------------------------------
-        self.lnpriors = []
+        # Set up the observation data
+        # ---------------------------
+        if times and fluxes and pbids:
+            self._init_data(times, fluxes, pbids)
 
         # Setup parametrisation
         # =====================
+        self._init_parameters()
 
-        # Basic system parameters
-        # -----------------------
-        self.ps = ps = ParameterSet()
-        psystem = [
-            GParameter('tc', 'zero_epoch', 'd', N(0, 1), (-inf, inf)),
-            GParameter('pr', 'period', 'd', N(1, 1e-5), (0, inf)),
-            GParameter('rho', 'stellar_density', 'g/cm^3', U(0.1, 25.0), (0, inf)),
-            GParameter('b', 'impact_parameter', 'R_s', U(0.0, 1.0), (0, 1))]
-        ps.add_global_block('system', psystem)
-
-        # Radius ratio and contamination
-        # ------------------------------
-        # We have four scenarios for the radius ratio and contamination
-        #
-        #  1. Separate radius ratio for each passband (nongray atmosphere)
-        #  2. Common radius ratio for each passband (gray atmosphere)
-        #  3. Common radius ratio with possible contamination
-        #  4. Common radius ratio with physically based contamination
-        #
-        if model == 'pb_dependent_k':
-            pk2 = [PParameter('k2_{}'.format(pb), 'area_ratio', 'A_s', GM(0.1), (0.01 ** 2, 0.55 ** 2)) for pb in
-                   filters]
-            ps.add_passband_block('k2', 1, npb, pk2)
-            self._pid_k2 = arange(ps.blocks[-1].start, ps.blocks[-1].stop)
-            self._start_k2 = ps.blocks[-1].start
-            self._sl_k2 = ps.blocks[-1].slice
-            self._pid_cn = None
-        elif model == 'pb_independent_k':
-            pk2 = [PParameter('k2', 'area_ratio', 'A_s', GM(0.1), (0.01 ** 2, 0.55 ** 2))]
-            ps.add_passband_block('k2', 1, 1, pk2)
-            self._pid_k2 = repeat(ps.blocks[-1].start, npb)
-            self._start_k2 = ps.blocks[-1].start
-            self._sl_k2 = ps.blocks[-1].slice
-            self._pid_cn = None
-        elif model == 'pb_dependent_contamination':
-            pk2 = [PParameter('k2', 'area_ratio', 'A_s', GM(0.1), (0.01 ** 2, 0.55 ** 2))]
-            pcn = [PParameter('cnt_{}'.format(pb), 'contamination', '', U(0., 1.), (0., 1.)) for pb in filters]
-            ps.add_passband_block('k2', 1, 1, pk2)
-            self._pid_k2 = repeat(ps.blocks[-1].start, npb)
-            self._start_k2 = ps.blocks[-1].start
-            self._sl_k2 = ps.blocks[-1].slice
-            ps.add_passband_block('contamination', 1, npb, pcn)
-            self._pid_cn = arange(ps.blocks[-1].start, ps.blocks[-1].stop)
-        elif model == 'physical_contamination':
-            pk2 = [PParameter('k2_app', 'apparent_area_ratio', 'A_s', GM(0.1), (0.01 ** 2, 0.55 ** 2))]
-            pcn = [GParameter('k2_true', 'true_area_ratio', 'As', GM(0.1), bounds=(1e-8, inf)),
-                   GParameter('teff_h', 'host_teff', 'K', U(2500, 12000), bounds=(2500, 12000)),
-                   GParameter('teff_c', 'contaminant_teff', 'K', U(2500, 12000), bounds=(2500, 12000))]
-            ps.add_passband_block('k2', 1, 1, pk2)
-            self._pid_k2 = repeat(ps.blocks[-1].start, npb)
-            self._start_k2 = ps.blocks[-1].start
-            self._sl_k2 = ps.blocks[-1].slice
-            ps.add_global_block('contamination', pcn)
-            self._pid_cn = arange(ps.blocks[-1].start, ps.blocks[-1].stop)
-            self.lnpriors.append(lambda pv: 0.0 if pv[4] < pv[5] else -inf)
-
-        # Limb darkening
-        # --------------
-        pld = concatenate([
-            [PParameter('q1_{:d}'.format(i), 'q1_coefficient', '', U(0, 1), bounds=(0, 1)),
-             PParameter('q2_{:d}'.format(i), 'q2_coefficient', '', U(0, 1), bounds=(0, 1))]
-            for i in range(npb)])
-        ps.add_passband_block('ldc', 2, npb, pld)
-        self._sl_ld = ps.blocks[-1].slice
-        self._start_ld = ps.blocks[-1].start
-        ps.freeze()
-
-        # Set the radius ratio and contamination model
-        # --------------------------------------------
-        if model in self.models[:2]:
-            self.transit_model = self.uncontaminated_transit_model
-        elif model == 'pb_dependent_contamination':
-            self.transit_model = self.contaminated_transit_model_free
-        elif model == 'physical_contamination':
-            self.transit_model = self.contaminated_transit_model_phys
+        # Initialise the additional lnprior list
+        # --------------------------------------
+        self.lnpriors = []
 
         # Initialise the temporary arrays
         # -------------------------------
         self._zpv = zeros(6)
-        self._tuv = zeros((self.npb, 2))
-        self._zeros = zeros(self.npb)
-        self._ones = ones(self.npb)
+        self._tuv = zeros((npb, 2))
+        self._zeros = zeros(npb)
+        self._ones = ones(npb)
 
         if times is not None:
             self._bad_fluxes = [ones_like(t) for t in self.times]
@@ -199,26 +148,98 @@ class BaseLPF:
             self._bad_fluxes = None
 
 
+    def _init_data(self, times, fluxes, pbids):
+        self.nlc = len(times)
+        self.times = asarray(times)
+        self.fluxes = asarray(fluxes)
+        self.pbids = asarray(pbids)
+        self.wn = [diff(f).std() / sqrt(2) for f in fluxes]
+        self.timea = concatenate(self.times)
+        self.ofluxa = concatenate(self.fluxes)
+        self.mfluxa = zeros_like(self.ofluxa)
+        self.pbida = concatenate([full(t.size, pbid) for t, pbid in zip(self.times, self.pbids)])
+        self.lcida = concatenate([full(t.size, i) for i, t in enumerate(self.times)])
+
+        self.lcslices = []
+        sstart = 0
+        for i in range(self.nlc):
+            s = self.times[i].size
+            self.lcslices.append(s_[sstart:sstart + s])
+            sstart += s
+
+
+    def _init_parameters(self):
+        self.ps = ParameterSet()
+        self._init_p_orbit()
+        self._init_p_planet()
+        self._init_p_limb_darkening()
+        self._init_p_baseline()
+        self.ps.freeze()
+
+    def _init_p_orbit(self):
+        """Orbit parameter initialisation.
+        """
+        porbit = [
+            GParameter('tc',  'zero_epoch',       'd',      N(0.0,  1.0), (-inf, inf)),
+            GParameter('pr',  'period',           'd',      N(1.0, 1e-5), (0,    inf)),
+            GParameter('rho', 'stellar_density',  'g/cm^3', U(0.1, 25.0), (0,    inf)),
+            GParameter('b',   'impact_parameter', 'R_s',    U(0.0,  1.0), (0,      1))]
+        self.ps.add_global_block('orbit', porbit)
+
+    def _init_p_planet(self):
+        """Planet parameter initialisation.
+        """
+        pk2 = [PParameter('k2', 'area_ratio', 'A_s', GM(0.1), (0.01**2, 0.55**2))]
+        self.ps.add_passband_block('k2', 1, 1, pk2)
+        self._pid_k2 = repeat(self.ps.blocks[-1].start, self.npb)
+        self._start_k2 = self.ps.blocks[-1].start
+        self._sl_k2 = self.ps.blocks[-1].slice
+
+    def _init_p_limb_darkening(self):
+        """Limb darkening parameter initialisation.
+        """
+        pld = concatenate([
+            [PParameter('q1_{:d}'.format(i), 'q1_coefficient', '', U(0, 1), bounds=(0, 1)),
+             PParameter('q2_{:d}'.format(i), 'q2_coefficient', '', U(0, 1), bounds=(0, 1))]
+            for i in range(self.npb)])
+        self.ps.add_passband_block('ldc', 2, self.npb, pld)
+        self._sl_ld = self.ps.blocks[-1].slice
+        self._start_ld = self.ps.blocks[-1].start
+
+    def _init_p_baseline(self):
+        """Baseline parameter initialisation.
+        """
+        pass
+
 
     def create_pv_population(self, npop=50):
         pvp = self.ps.sample_from_prior(npop)
         for sl in self.ps.blocks[1].slices:
             pvp[:,sl] = uniform(0.01**2, 0.25**2, size=(npop, 1))
+
+        # With LDTk
+        # ---------
+        #
+        # Use LDTk to create the sample if LDTk has been initialised.
+        #
         if self.ldps:
             istart = self._start_ld
             cms, ces = self.ldps.coeffs_tq()
             for i, (cm, ce) in enumerate(zip(cms.flat, ces.flat)):
                 pvp[:, i + istart] = normal(cm, ce, size=pvp.shape[0])
+
+        # No LDTk
+        # -------
+        #
+        # Ensure that the total limb darkening decreases towards
+        # red passbands.
+        #
         else:
             ldsl = self._sl_ld
             for i in range(pvp.shape[0]):
                 pid = argsort(pvp[i, ldsl][::2])[::-1]
                 pvp[i, ldsl][::2] = pvp[i, ldsl][::2][pid]
                 pvp[i, ldsl][1::2] = pvp[i, ldsl][1::2][pid]
-        if self.model == 'pb_dependent_contamination':
-            pvp[:,5] = pvp[:,4]
-            cref = uniform(0, 0.99, size=npop)
-            pvp[:,5] = pvp[:,4] / (1. - cref)
         return pvp
 
     def baseline(self, pv):
@@ -229,47 +250,27 @@ class BaseLPF:
         """Systematic trends (additive)"""
         return zeros(self.nlc)
 
-    def uncontaminated_transit_model(self, pv):
+    def _compute_z(self, pv):
         zpv = unpack_orbit(pv, self._zpv)
         if isnan(zpv[2]):
-            fluxes = self._bad_fluxes
+            return None
         else:
-            _k = sqrt(pv[self._pid_k2])
-            uv = qq_to_uv(pv[self._sl_ld], self._tuv)
-            z = z_circular(self.timea, zpv)
-            fluxes = eval_quad_ip_mp(z, self.pbida, _k, uv, self._zeros, self.tm.ed, self.tm.ld, self.tm.le, self.tm.kt,
+            return z_circular(self.timea, zpv)
+
+    def _compute_transit(self, pv, z):
+        _k = sqrt(pv[self._pid_k2])
+        uv = qq_to_uv(pv[self._sl_ld], self._tuv)
+        fluxes = eval_quad_ip_mp(z, self.pbida, _k, uv, self._zeros, self.tm.ed, self.tm.ld, self.tm.le, self.tm.kt,
                                      self.tm.zt)
-            fluxes = [fluxes[sl] for sl in self.lcslices]
+        fluxes = [fluxes[sl] for sl in self.lcslices]
         return fluxes
 
-    def contaminated_transit_model_free(self, pv):
-        cnt = pv[self._pid_cn]
-        zpv = unpack_orbit(pv, self._zpv)
-        if isnan(zpv[2]):
-            fluxes = self._bad_fluxes
+    def transit_model(self, pv):
+        z = self._compute_z(pv)
+        if z is not None:
+            return self._compute_transit(pv, z)
         else:
-            _k = full(self.npb, sqrt(pv[4]))
-            uv = qq_to_uv(pv[self._sl_ld], self._tuv)
-            z = z_circular(self.timea, zpv)
-            fluxes = eval_quad_ip_mp(z, self.pbida, _k, uv, cnt, self.tm.ed, self.tm.ld, self.tm.le, self.tm.kt,
-                                     self.tm.zt)
-            fluxes = [fluxes[sl] for sl in self.lcslices]
-        return fluxes
-
-    def contaminated_transit_model_phys(self, pv):
-        cnref = 1. - pv[4] / pv[5]
-        cnt = self.cm.contamination(cnref, pv[6], pv[7])
-        zpv = unpack_orbit(pv, self._zpv)
-        if isnan(zpv[2]):
-            fluxes = self._bad_fluxes
-        else:
-            _k = full(self.npb, sqrt(pv[5]))
-            uv = qq_to_uv(pv[self._sl_ld], self._tuv)
-            z = z_circular(self.timea, zpv)
-            fluxes = eval_quad_ip_mp(z, self.pbida, _k, uv, cnt, self.tm.ed, self.tm.ld, self.tm.le, self.tm.kt,
-                                     self.tm.zt)
-            fluxes = [fluxes[sl] for sl in self.lcslices]
-        return fluxes
+            return self._bad_fluxes
 
     def flux_model(self, pv):
         bls = self.baseline(pv)
@@ -294,8 +295,6 @@ class BaseLPF:
         self.lnpriors.append(as_prior)
 
     def add_ldtk_prior(self, teff, logg, z, uncertainty_multiplier=3, pbs=('g', 'r', 'i', 'z')):
-        from ldtk import LDPSetCreator
-        from ldtk.filters import sdss_g, sdss_r, sdss_i, sdss_z
         fs = {n: f for n, f in zip('g r i z'.split(), (sdss_g, sdss_r, sdss_i, sdss_z))}
         filters = [fs[k] for k in pbs]
         self.ldsc = LDPSetCreator(teff, logg, z, filters)
@@ -355,3 +354,10 @@ class BaseLPF:
             self.sampler.reset()
         for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter, desc=label):
             pass
+
+
+    def __repr__(self):
+        s  = f"""Target: {self.target}
+  LPF: {self._lpf_name}
+  Passbands: {self.passbands}"""
+        return s
