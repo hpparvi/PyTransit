@@ -1,3 +1,19 @@
+#  PyTransit: fast and easy exoplanet transit modelling in Python.
+#  Copyright (C) 2010-2019  Hannu Parviainen
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, linspace, array, atleast_2d, floor, full
 from numba import jit, njit, prange
 
@@ -77,30 +93,6 @@ def ellk(k):
     ek1 = a0 + m1 * (a1 + m1 * (a2 + m1 * (a3 + m1 * a4)))
     ek2 = (b0 + m1 * (b1 + m1 * (b2 + m1 * (b3 + m1 * b4)))) * log(m1)
     return ek1 - ek2
-
-@njit(["f4[:](f4[:],f4,f4)", "f8[:](f8[:],f8,f8)"], cache=False)
-def eval_uniform(zs, k, c):
-    flux = zeros_like(zs)
-
-    if abs(k - 0.5) < 1e-3:
-        k = 0.5
-
-    for i in range(len(zs)):
-        z = zs[i]
-        if z < 0.0 or z > 1.0 + k:
-            flux[i] = 1.0
-        elif k > 1.0 and z < k - 1.0:
-            flux[i] = 0.0
-        elif (z > abs(1.0 - k) and z < 1.0 + k):
-            kap1 = arccos(min((1.0 - k * k + z * z) / 2.0 / z, 1.0))
-            kap0 = arccos(min((k * k + z * z - 1.0) / 2.0 / k / z, 1.0))
-            lambdae = k * k * kap0 + kap1
-            lambdae = (lambdae - 0.5 * sqrt(max(4.0 * z * z - (1.0 + z * z - k * k) ** 2, 0.0))) / pi
-            flux[i] = 1.0 - lambdae
-        elif (z < 1.0 - k):
-            flux[i] = 1.0 - k * k
-        flux[i] = c + (1.0 - c) * flux[i]
-    return flux
 
 
 @njit("Tuple((f8[:,:], f8[:], f8[:], f8[:]))(f8[:], f8, f8[:,:], f8[:])", cache=False, parallel=False)

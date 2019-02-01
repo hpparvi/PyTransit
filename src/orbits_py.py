@@ -1,13 +1,22 @@
-from numpy import pi, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like, zeros, linspace, floor, arcsin
+from numpy import pi, arccos, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like, zeros, linspace, floor, arcsin
 from numba import jit, njit, prange
 
 HALF_PI = 0.5 * pi
 TWO_PI = 2.0 * pi
+INV_PI = 1.0 / pi
+
+D_H = 24.
+D_M = 60 * D_H
+D_S = 60 * D_M
+
+au,   au_e             = 1.496e11, 0.0
+msun, msun_e           = 1.9891e30, 0.0
+rsun, rsun_e           = 0.5*1.392684e9, 0.0
 
 # Utilities
 # =========
 
-cache = False
+cache = True
 
 @njit("f8(f8, f8)", cache=cache)
 def mean_anomaly_offset(e, w):
@@ -156,7 +165,7 @@ def ta_ps5(t, t0, p, e, w):
     return Ta
 
 @njit
-def ta_from_ma(Ma, e):
+def ta_from_ma(Ma, e, cache=cache):
     Ta = zeros_like(Ma)
     for j in range(len(Ma)):
         ec = e*sin(Ma[j])/(1.0 - e*cos(Ma[j]))
@@ -172,7 +181,7 @@ def ta_from_ma(Ma, e):
     return Ta
 
 @njit
-def ta_ip_calculate_table(ne=256, nm=512):
+def ta_ip_calculate_table(ne=256, nm=512, cache=cache):
     es = linspace(0, 0.95, ne)
     ms = linspace(0,   pi, nm)
     tae = zeros((ne, nm))
@@ -356,16 +365,152 @@ def z_ps5(t, pv):
     t0, p, a, i, e, w = pv
     return z_from_ta_v(ta_ps5(t, t0, p, e, w), a, i, e, w)
 
-@njit
+# Utility functions
+# -----------------
+
+@njit(cache=cache)
 def impact_parameter(a, i):
     return a * cos(i)
 
-@njit
+@njit(cache=cache)
 def impact_parameter_ec(a, i, e, w, tr_sign):
     return a * cos(i) * ((1.-e**2) / (1.+tr_sign*e*sin(w)))
 
-@njit
+@njit(cache=cache)
 def duration_eccentric(p, k, a, i, e, w, tr_sign):
     b  = impact_parameter_ec(a, i, e, w, tr_sign)
     ae = sqrt(1.-e**2)/(1.+tr_sign*e*sin(w))
     return p/pi  * arcsin(sqrt((1.+k)**2-b**2)/(a*sin(i))) * ae
+
+@njit(cache=cache)
+def eclipse_phase(p, i, e, w):
+    """ Phase for the secondary eclipse center.
+
+    Exact secondary eclipse center phase, good for all eccentricities.
+    """
+    etr = arctan2(sqrt(1. - e**2) * sin(HALF_PI - w), e + cos(HALF_PI - w))
+    eec = arctan2(sqrt(1. - e**2) * sin(HALF_PI + pi - w), e + cos(HALF_PI + pi - w))
+    mtr = etr - e * sin(etr)
+    mec = eec - e * sin(eec)
+    phase = (mec - mtr) * p / TWO_PI
+    return phase if phase > 0. else p + phase
+
+@njit(cache=cache)
+def eclipse_phase_ap(p, i, e, w):
+    """Approximate phase for the secondary eclipse center.
+
+    Approximate phase for the center of the secondary eclipse (ok for e < 0.5)
+    (Kallrath, J., "Eclipsing Binary Stars: Modeling and Analysis", p. 85)
+    """
+    return 0.5 * p + (p * INV_PI * e * cos(w) * (1. + 1. / sin(i)**2))
+
+
+@njit(cache=cache)
+def p_from_am(a=1., ms=1.):
+    """Orbital period from the semi-major axis and stellar mass.
+
+    Parameters
+    ----------
+
+      a    : semi-major axis [AU]
+      ms   : stellar mass    [M_Sun]
+
+    Returns
+    -------
+
+      p    : Orbital period  [d]
+    """
+    return sqrt((4*pi**2*(a*au)**3)/(G*ms*msun)) / D_S
+
+@njit(cache=cache)
+def a_from_mp(ms, period):
+    """Semi-major axis from the stellar mass and planet's orbital period.
+
+    Parameters
+    ----------
+
+      ms     : stellar mass    [M_Sun]
+      period : orbital period  [d]
+
+    Returns
+    -------
+
+      a : semi-major axis [AU]
+    """
+    return ((G * (ms*msun) * (period * D_S)**2) / (4 * pi**2))**(1 / 3) / au
+
+@njit(cache=cache)
+def as_from_rhop(rho, period):
+    """Scaled semi-major axis from the stellar density and planet's orbital period.
+
+    Parameters
+    ----------
+
+      rho    : stellar density [g/cm^3]
+      period : orbital period  [d]
+
+    Returns
+    -------
+
+      as : scaled semi-major axis [R_star]
+    """
+    return (G/(3*pi))**(1/3) * ((period * D_S)**2 * 1e3 * rho)**(1 / 3)
+
+@njit(cache=cache)
+def a_from_rhoprs(rho, period, rstar):
+    """Semi-major axis from the stellar density, stellar radius, and planet's orbital period.
+
+    Parameters
+    ----------
+
+      rho    : stellar density [g/cm^3]
+      period : orbital period  [d]
+      rstar  : stellar radius  [R_Sun]
+
+    Returns
+    -------
+
+      a : semi-major axis [AU]
+    """
+    return as_from_rhop(rho,period)*rstar*rsun/au
+
+@njit(cache=cache)
+def af_transit(e,w):
+    """Calculates the -- factor during the transit"""
+    return (1.0-e**2)/(1.0 + e*sin(w))
+
+@njit(cache=cache)
+def i_from_baew(b,a,e,w):
+    """Orbital inclination from the impact parameter, scaled semi-major axis, eccentricity and argument of periastron
+
+    Parameters
+    ----------
+
+      b  : impact parameter       [-]
+      a  : scaled semi-major axis [R_Star]
+      e  : eccentricity           [-]
+      w  : argument of periastron [rad]
+
+    Returns
+    -------
+
+      i  : inclination            [rad]
+    """
+    return arccos(b / (a*af_transit(e, w)))
+
+@njit(cache=cache)
+def i_from_ba(b,a):
+    """Orbital inclination from the impact parameter and scaled semi-major axis.
+
+    Parameters
+    ----------
+
+      b  : impact parameter       [-]
+      a  : scaled semi-major axis [R_Star]
+
+    Returns
+    -------
+
+      i  : inclination            [rad]
+    """
+    return arccos(b/a)

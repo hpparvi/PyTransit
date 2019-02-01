@@ -14,7 +14,7 @@ u1 = [0.5,0.4]
 
 t = np.linspace(-0.2, 0.2, 500)
 pl.plot(t, mafd.evaluate(t, 0.1, u, 0.0, 5, 5, 0.47*np.pi), ls='-', c='0.5', lw=1,  alpha=0.5) #, drawstyle='steps-mid')
-pl.plot(t, macl.evaluate(t, 0.1, u, 0.0, 5, 5, 0.47*np.pi), 'b-',  alpha=0.5) #, drawstyle='steps-mid')
+pl.plot(t, macl.evaluate_t(t, 0.1, u, 0.0, 5, 5, 0.47 * np.pi), 'b-', alpha=0.5) #, drawstyle='steps-mid')
 pl.plot(t, mgfd.evaluate(t, 0.1, u, 0.0, 5, 5, 0.47*np.pi)+1e-4, 'b-',  alpha=0.5) #, drawstyle='steps-mid')
 pl.plot(t, mgfl.evaluate(t, 0.1, u, 0.0, 5, 5, 0.47*np.pi)+2e-4, 'b-',  alpha=0.5) #, drawstyle='steps-mid')
 
