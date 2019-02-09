@@ -58,16 +58,16 @@ class MandelAgol(SuperSampledTransitModel):
         self.interpolate = interpolate
 
         if model == 'chromosphere':
-            self._eval = self._eval_chromosphere
+            self.evaluate_z = self._eval_chromosphere
         elif model == 'uniform':
-            self._eval = self._eval_uniform
+            self.evaluate_z = self._eval_uniform
         else:
             if model == 'interpolated_quadratic' or self.interpolate:
                 self.ed, self.le, self.ld, self.kt, self.zt = maq.calculate_interpolation_tables(klims[0], klims[1], nk, nz)
                 self.klims = klims
                 self.nk = nk
                 self.nz = nz
-            self._eval = self._eval_quadratic
+            self.evaluate_z = self._eval_quadratic
 
 
     def _eval_uniform(self, z, k, u=None, c=0.0):
@@ -118,38 +118,22 @@ class MandelAgol(SuperSampledTransitModel):
             return maq.eval_quad(z, k, u, c)[0]
 
 
-    def __call__(self, z, k, u, c=0.0):
-        """Evaluates the model for the given z, k, and u. 
-        
-        Evaluates the transit model given an array of normalised distances, a radius ratio, and
-        a set of limb darkening coefficients.
-        
-        Args:
-            z: Array of normalised projected distances.
-            k: Planet to star radius ratio.
-            u: Array of limb darkening coefficients.
-            c: Contamination factor (fraction of third light), optional.
-           
-        Returns:
-            An array of model flux values for each z.
-        """
-        flux = self._eval(z, k, u, c)
-        return flux.ravel() if flux.shape[0] == 1 else flux
-
-
     
 class MAChromosphere(MandelAgol):
-    def __init__(self, nthr=0, supersampling=1, exptime=0.020433598):
-        super().__init__(model='chromosphere', nthr=nthr, supersampling=supersampling, exptime=exptime)
-
-    def __call__(self, z, k, c=0.0, **kwargs):
-        return self._eval(z, k, None, c)
+    def __init__(self, npb: int = 1, eccentric: bool = False, constant_k: bool = True, contamination: bool = False,
+                 orbit: Orbit = None, optimize: bool = False, eclipse: bool = False,
+                 sampler: SuperSampler = None, supersampling: int = 1, exptime: float = 0.020433598):
+        super().__init__(npb, eccentric, constant_k, contamination, orbit, optimize, eclipse, sampler,
+                         model='chromosphere', supersampling=supersampling, exptime=exptime)
 
     def evaluate_t(self, t, k, t0, p, a, i, e=0., w=0., c=0.):
         return super().evaluate_t(t, k, [], t0, p, a, i, e, w, c)
 
 
-    
+
 class MAUniform(MandelAgol):
-    def __init__(self, nthr=0, supersampling=1, exptime=0.020433598, eclipse=False):
-        super().__init__(model='uniform', nldc=0, nthr=nthr, supersampling=supersampling, exptime=exptime, eclipse=eclipse)
+    def __init__(self, npb: int = 1, eccentric: bool = False, constant_k: bool = True, contamination: bool = False,
+                 orbit: Orbit = None, optimize: bool = False, eclipse: bool = False,
+                 sampler: SuperSampler = None, supersampling: int = 1, exptime: float = 0.020433598):
+        super().__init__(npb, eccentric, constant_k, contamination, orbit, optimize, eclipse, sampler,
+                         model='uniform', supersampling=supersampling, exptime=exptime)

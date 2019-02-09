@@ -27,7 +27,15 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from numpy import asarray, arange, newaxis
+from numpy import asarray, arange, newaxis, zeros
+from numba import njit
+
+@njit
+def average_samples_1d(a, npt, nsamples):
+    t = zeros(npt)
+    for i in range(npt):
+        t[i] = a[i*nsamples:(i+1)*nsamples].mean()
+    return t
 
 class SuperSampler(object):
     def __init__(self, nsamples, exptime):
@@ -62,6 +70,6 @@ class SuperSampler(object):
     def average(self, values):
         values = asarray(values)
         if values.ndim == 1:
-            return uf.average_samples_1(values, self._npt_original, self.nsamples, self.nthr)
+            return average_samples_1d(values, self._npt_original, self.nsamples)
         else:
             return values.reshape((self._npt_original, self.nsamples, -1)).mean(1)

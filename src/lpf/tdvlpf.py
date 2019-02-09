@@ -18,11 +18,12 @@ from numpy import pi, sign, cos, sqrt, sin, array, arccos, inf, round, int, s_, 
     arange
 
 from numba import njit, prange
-from pytransit.lpf.lpf import BaseLPF
+from pytransit.lpf.ttvlpf import TTVLPF
 from pytransit.transitmodel import TransitModel
 from pytransit.param.parameter import ParameterSet, PParameter, GParameter
 from pytransit.param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
 from pytransit.utils.orbits import as_from_rhop
+from pytransit.orbits_py import duration_eccentric
 
 try:
     import seaborn as sb
@@ -30,17 +31,17 @@ try:
 except ImportError:
     with_seaborn = False
 
-@njit("f8[:](f8[:], f8, f8, f8, f8[:], i8[:])", cache=False, parallel=False)
+@njit("f8[:](f8[:], f8[:], f8, f8, f8[:], i8[:])", cache=False, parallel=False)
 def z_circular_ttv(t, p, a, i, tc, tcid):
-    cosph = cos(2*pi * (t - tc[tcid]) / p)
+    cosph = cos(2*pi * (t - tc[tcid]) / p[tcid])
     z = sign(cosph) * a * sqrt(1.0 - cosph * cosph * sin(i) ** 2)
     return z
 
 
-class TTVLPF(BaseLPF):
-    """Log posterior function for TTV estimation.
+class TDVLPF(TTVLPF):
+    """Log posterior function for TDV estimation.
 
-    A log posterior function for TTV estimation. Each light curve represents a single transit, and
+    A log posterior function for TDV estimation. Each light curve represents a single transit, and
     is given a separate free transit centre parameter. The average orbital period and (one) transit
     zero epoch are assumed as known.
 
@@ -53,7 +54,7 @@ class TTVLPF(BaseLPF):
         self.zero_epoch = zero_epoch
         self.period = period
         self.tc_sigma = tc_sigma
-        super().__init__(target, passbands, times, fluxes, pbids, tm, nsamples, exptime)
+        super().__init__(target, zero_epoch, period, tc_sigma, passbands, times, fluxes, pbids, tm, nsamples, exptime)
 
     def _init_p_orbit(self):
         """Orbit parameter initialisation for a TTV model.
@@ -66,9 +67,14 @@ class TTVLPF(BaseLPF):
         tcs = self.period * self.tnumber + self.zero_epoch
         for tc, tn in zip(tcs, self.tnumber):
             porbit.append(GParameter(f'tc_{tn:d}', f'transit_centre_{tn:d}', 'd', N(tc, s), (-inf, inf)))
+        for tc, tn in zip(tcs, self.tnumber):
+            porbit.append(GParameter(f'p_{tn:d}', f'period_{tn:d}', 'd', N(self.period, 5e-1), (0, inf)))
         self.ps.add_global_block('orbit', porbit)
         self._start_tc = 2
         self._sl_tc = s_[self._start_tc:self._start_tc + self.nlc]
+        self._start_p = 2 + self.nlc
+        self._sl_p = s_[self._start_p:self._start_p + self.nlc]
+
 
     def _compute_z(self, pv):
         a = as_from_rhop(pv[0], self.period)
@@ -77,35 +83,25 @@ class TTVLPF(BaseLPF):
         else:
             i = arccos(pv[1] / a)
             tc = pv[self._sl_tc]
-            return z_circular_ttv(self.timea, self.period, a, i, tc, self.lcida)
+            p = pv[self._sl_p]
+            return z_circular_ttv(self.timea, p, a, i, tc, self.lcida)
 
-    def plot_light_curve(self, ax=None, figsize=None, time=False):
-        fig, ax = (None, ax) if ax is not None else subplots(figsize=figsize)
-        time = self.timea_orig if time else arange(self.timea_orig.size)
-        ax.plot(time, concatenate(self.fluxes))
-        ax.plot(time, concatenate(self.transit_model(self.de.minimum_location)))
-        fig.tight_layout()
-        return ax
-
-    def posterior_period(self, burn: int = 0, thin: int = 1) -> float:
-        df = self.posterior_samples(burn, thin, False)
-        tccols = [c for c in df.columns if 'tc' in c]
-        tcs = median(df[tccols], 0)
-        return mean((tcs[1:] - tcs[0]) / (self.tnumber[1:] - self.tnumber[0]))
-
-    def plot_ttvs(self, burn=0, thin=1, ax=None, figsize=None):
+    def plot_tdvs(self, burn=0, thin=1, ax=None, figsize=None):
         fig, ax = (None, ax) if ax is not None else subplots(figsize=figsize)
         bwidth = 0.8
         df = self.posterior_samples(burn, thin)
-        tccols = [c for c in df.columns if 'tc' in c]
-        tcs = median(df[tccols], 0)
-        period = mean((tcs[1:] - tcs[0]) / (self.tnumber[1:] - self.tnumber[0]))
-        tc_linear = self.zero_epoch + self.tnumber * period
-        p = 24*60*percentile(df[tccols] - tc_linear, [50, 16, 84, 0.5, 99.5], 0)
-        ax.bar(self.tnumber, p[4,:]-p[3,:], bwidth, p[3,:], alpha=0.25, fc='b')
-        ax.bar(self.tnumber, p[2,:]-p[1,:], bwidth, p[1,:], alpha=0.25, fc='b')
-        [ax.plot((xx-0.47*bwidth, xx+0.47*bwidth), (pp[[0,0]]), 'k') for xx, pp in zip(self.tnumber,p.T)]
-        setp(ax, ylabel='Transit center - linear prediction [min]', xlabel='Transit number')
+        pcols = [c for c in df.columns if 'p_' in c]
+        t14 = []
+        for p in pcols:
+            a = as_from_rhop(df.rho.values, df[p].values)
+            t14.append(duration_eccentric(df[p].values,
+                                          sqrt(df.k2.values), a, arccos(df.b.values / a), 0, 0, 1))
+        t14 = array(t14).T
+        p = 24 * percentile(t14, [50, 16, 84, 0.5, 99.5], 0)
+        ax.bar(self.tnumber, p[4, :] - p[3, :], bwidth, p[3, :], alpha=0.25, fc='b')
+        ax.bar(self.tnumber, p[2, :] - p[1, :], bwidth, p[1, :], alpha=0.25, fc='b')
+        [ax.plot((xx - 0.47 * bwidth, xx + 0.47 * bwidth), (pp[[0, 0]]), 'k') for xx, pp in zip(self.tnumber, p.T)]
+        setp(ax, ylabel='Transit duration [h]', xlabel='Transit number')
         fig.tight_layout()
         if with_seaborn:
             sb.despine(ax=ax, offset=15)

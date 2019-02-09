@@ -16,12 +16,19 @@
 
 import math as mt
 
+from matplotlib.pyplot import subplots
 from numba import njit
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like,
                    clip, argsort, any, s_, zeros, arccos, nan, isnan, full, pi, sum, repeat, asarray, ndarray)
 from numpy.random import uniform, normal
 from scipy.stats import norm
-from tqdm import tqdm
+from tqdm.auto import tqdm
+
+try:
+    import pandas as pd
+    with_pandas = True
+except ImportError:
+    with_pandas = False
 
 try:
     from pyde import DiffEvol
@@ -48,6 +55,7 @@ try:
 except ImportError:
     with_ldtk = False
 
+from pytransit.supersampler import SuperSampler
 from pytransit.transitmodel import TransitModel
 from pytransit import MandelAgol as MA
 from pytransit.mandelagol_py import eval_quad_ip_mp
@@ -91,7 +99,7 @@ class BaseLPF:
     _lpf_name = 'base'
 
     def __init__(self, target: str, passbands: list, times: list=None, fluxes:list=None,
-                 pbids:list=None, tm:TransitModel=None):
+                 pbids:list=None, tm:TransitModel=None, nsamples: int=1, exptime: float = 0.020433598):
         self.tm = tm or MA(interpolate=True, klims=(0.01, 0.75), nk=512, nz=512)
 
         self.target = target            # Name of the planet
@@ -108,19 +116,25 @@ class BaseLPF:
         self.ldps = None        # Limb darkening profile set
         self.cntm = None        # Contamination model
 
+        self.ss = SuperSampler(nsamples=nsamples, exptime=exptime) if nsamples > 1 else None
+
         # Declare data arrays and variables
         # ---------------------------------
-        self.nlc: int = 0               # Number of light curves
-        self.times: list = None         # List of time arrays
-        self.fluxes: list = None        # List of flux arrays
-        self.covariates: list = None    # List of covariates
-        self.wn: ndarray = None         # Array of white noise estimates
-        self.timea: ndarray = None      # Array of concatenated times
-        self.ofluxa: ndarray = None     # Array of concatenated observed fluxes
-        self.mfluxa: ndarray = None     # Array of concatenated model fluxes
-        self.pbida: ndarray = None      # Array of passband indices for each datapoint
-        self.lcida: ndarray = None      # Array of light curve indices for each datapoint
-        self.lcslices: list = None      # List of light curve slices
+        self.nlc: int = 0                # Number of light curves
+        self.times: list = None          # List of time arrays
+        self.fluxes: list = None         # List of flux arrays
+        self.covariates: list = None     # List of covariates
+        self.wn: ndarray = None          # Array of white noise estimates
+        self.timea: ndarray = None       # Array of concatenated (and possibly supersampled) times
+        self.ofluxa: ndarray = None      # Array of concatenated observed fluxes
+        self.mfluxa: ndarray = None      # Array of concatenated model fluxes
+        self.pbida: ndarray = None       # Array of passband indices for each datapoint
+        self.lcida: ndarray = None       # Array of light curve indices for each datapoint
+        self.lcslices: list = None       # List of light curve slices
+
+        self.timea_orig: ndarray = None  # Array of concatenated times
+        self.lcida_orig: ndarray = None  # Array of concatenated light curve indices
+        self.pbida_orig: ndarray = None  # Array of concatenated passband indices
 
         # Set up the observation data
         # ---------------------------
@@ -159,6 +173,14 @@ class BaseLPF:
         self.mfluxa = zeros_like(self.ofluxa)
         self.pbida = concatenate([full(t.size, pbid) for t, pbid in zip(self.times, self.pbids)])
         self.lcida = concatenate([full(t.size, i) for i, t in enumerate(self.times)])
+
+        self.timea_orig = self.timea
+        self.lcida_orig = self.lcida
+        self.pbida_orig = self.pbida
+        if self.ss:
+            self.timea = self.ss.sample(self.timea)
+            self.lcida = repeat(self.lcida, self.ss.nsamples)
+            self.pbida = repeat(self.pbida, self.ss.nsamples)
 
         self.lcslices = []
         sstart = 0
@@ -262,6 +284,7 @@ class BaseLPF:
         uv = qq_to_uv(pv[self._sl_ld], self._tuv)
         fluxes = eval_quad_ip_mp(z, self.pbida, _k, uv, self._zeros, self.tm.ed, self.tm.ld, self.tm.le, self.tm.kt,
                                      self.tm.zt)
+        fluxes = self.ss.average(fluxes) if self.ss else fluxes
         fluxes = [fluxes[sl] for sl in self.lcslices]
         return fluxes
 
@@ -354,6 +377,19 @@ class BaseLPF:
             self.sampler.reset()
         for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter, desc=label):
             pass
+
+    def posterior_samples(self, burn: int=0, thin: int=1, include_ldc: bool=False):
+        ldstart = self._sl_ld.start
+        fc = self.sampler.chain[:, burn::thin, :].reshape([-1, self.de.n_par])
+        d = fc if include_ldc else fc[:, :ldstart]
+        n = self.ps.names if include_ldc else self.ps.names[:ldstart]
+        return pd.DataFrame(d, columns=n) if with_pandas else d
+
+    def plot_mcmc_chains(self, pid: int=0, alpha: float=0.1, thin: int=1, ax=None):
+        fig, ax = (None, ax) if ax is not None else subplots()
+        ax.plot(self.sampler.chain[:, ::thin, pid].T, 'k', alpha=alpha)
+        fig.tight_layout()
+        return fig
 
 
     def __repr__(self):

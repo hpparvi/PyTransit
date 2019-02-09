@@ -17,6 +17,9 @@
 from numpy import pi, arccos, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like, zeros, linspace, floor, arcsin
 from numba import jit, njit, prange
 
+from scipy.constants import G
+
+
 HALF_PI = 0.5 * pi
 TWO_PI = 2.0 * pi
 INV_PI = 1.0 / pi
