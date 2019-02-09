@@ -59,12 +59,10 @@ from pytransit.supersampler import SuperSampler
 from pytransit.transitmodel import TransitModel
 from pytransit import MandelAgol as MA
 from pytransit.ma_quadratic_nb import eval_quad_ip_mp
-from pytransit.orbits_py import z_circular, duration_eccentric
+from pytransit.orbits_py import z_circular, duration_eccentric, as_from_rhop
 from pytransit.param.parameter import ParameterSet, PParameter, GParameter
 from pytransit.param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
 from pytransit.contamination.filter import sdss_g, sdss_r, sdss_i, sdss_z
-from pytransit.utils.orbits import as_from_rhop
-
 
 @njit(cache=False)
 def lnlike_normal(o, m, e):
