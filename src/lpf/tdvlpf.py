@@ -22,8 +22,7 @@ from pytransit.lpf.ttvlpf import TTVLPF
 from pytransit.transitmodel import TransitModel
 from pytransit.param.parameter import ParameterSet, PParameter, GParameter
 from pytransit.param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
-from pytransit.utils.orbits import as_from_rhop
-from pytransit.orbits_py import duration_eccentric
+from pytransit.orbits_py import duration_eccentric, as_from_rhop
 
 try:
     import seaborn as sb
