@@ -475,6 +475,14 @@ def as_from_rhop(rho, period):
     """
     return (G/(3*pi))**(1/3) * ((period * D_S)**2 * 1e3 * rho)**(1 / 3)
 
+
+@njit(cache=cache)
+def rho_from_asp(a, period):
+    """Stellar density from the scaled semi-major axis and orbital period.
+    """
+    return (3*pi*a**3)/(G * (period * D_S)**2) * 1e-3
+
+
 @njit(cache=cache)
 def a_from_rhoprs(rho, period, rstar):
     """Semi-major axis from the stellar density, stellar radius, and planet's orbital period.
@@ -493,10 +501,12 @@ def a_from_rhoprs(rho, period, rstar):
     """
     return as_from_rhop(rho,period)*rstar*rsun/au
 
+
 @njit(cache=cache)
 def af_transit(e,w):
     """Calculates the -- factor during the transit"""
     return (1.0-e**2)/(1.0 + e*sin(w))
+
 
 @njit(cache=cache)
 def i_from_baew(b,a,e,w):
@@ -516,6 +526,7 @@ def i_from_baew(b,a,e,w):
       i  : inclination            [rad]
     """
     return arccos(b / (a*af_transit(e, w)))
+
 
 @njit(cache=cache)
 def i_from_ba(b,a):
