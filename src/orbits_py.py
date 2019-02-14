@@ -35,7 +35,7 @@ rsun, rsun_e           = 0.5*1.392684e9, 0.0
 # Utilities
 # =========
 
-cache = True
+cache = False
 
 @njit("f8(f8, f8)", cache=cache)
 def mean_anomaly_offset(e, w):
