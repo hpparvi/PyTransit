@@ -62,6 +62,7 @@ float z_newton(const float t, const float t0, const float p, const float a,
     }
 }
 
+
 float z_circular(const float t, const float t0, const float p, const float a, const float i, const float eclipse){
     // eclipse should be -1.f for eclipse and 1.0 for transit
     float cosph = cos(TWO_PI*(t-t0)/p);
@@ -163,6 +164,7 @@ __kernel void ma_eccentric(__global const float *times, __global const float *pv
       flux[gid] /= (float) nss;
 }
 
+
 __kernel void ma_eccentric_pop(__global const float *times, __global const float *pv_pop, __global const float *u,
 		 __global const float *edt, __global const float *let, __global const float *ldt,
 		 const int nss, const float exptime, const float k0, const float k1,
@@ -183,8 +185,8 @@ __kernel void ma_eccentric_pop(__global const float *times, __global const float
       flux[gid] = 0.0f;
       for(int i=1; i<nss+1; i++){
         toffset = exptime * (((float) i - 0.5f)/ (float) nss - 0.5f);
-        //z = z_iter(times[i_tm]+toffset, pv[1], pv[2], pv[3], pv[4], pv[5], pv[6], ma_offset, 1.0f);
-        z = z_circular(times[gid]+toffset, pv[1], pv[2], pv[3], pv[4], 1.0f);
+        z = z_iter(times[i_tm]+toffset, pv[1], pv[2], pv[3], pv[4], pv[5], pv[6], ma_offset, 1.0f);
+        //z = z_circular(times[gid]+toffset, pv[1], pv[2], pv[3], pv[4], 1.0f);
         flux[gid] += eval_ma_ip(z, u, edt, let, ldt, pv[0], k0, k1, nk, nz, dk, dz);
       }
       flux[gid] /= (float) nss;

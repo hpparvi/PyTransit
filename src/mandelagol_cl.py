@@ -25,8 +25,10 @@ import numpy as np
 import pyopencl as cl
 from os.path import dirname, join
 
+from numpy import array, uint32, float32, int32
+
 import pytransit.mandelagol_py as ma
-from pytransit.tm import TransitModel
+from pytransit.transitmodel import TransitModel
 
 class MandelAgolCL(TransitModel):
     """
@@ -51,28 +53,28 @@ class MandelAgolCL(TransitModel):
       I = m(z,k,u)       # Evaluate the model for projected distance z, radius ratio k, and limb darkening coefficients u
       
     """
-    def __init__(self, supersampling=1, exptime=0.020433598, eclipse=False, klims=(0.05,0.25), nk=256, nz=256, **kwargs):
-        super(MandelAgolCL, self).__init__(nldc=2, nthr=0, interpolate=True, supersampling=1, exptime=1,
-                                           eclipse=eclipse, klims=klims, nk=nk, nz=nz)
 
-        super().__init__(nldc=2, nthr=0, interpolate=True, supersampling=1, exptime=1,
-                         eclipse=eclipse, klims=klims, nk=nk, nz=nz)
+    def __init__(self, npb: int = 1, eccentric: bool = False, constant_k: bool = True,
+                 contamination: bool = False, optimize: bool = False, eclipse: bool = False, supersampling: int = 1,
+                 exptime: float = 0.020433598, klims: tuple = (0.05, 0.25), nk: int = 256, nz: int = 256,
+                 cl_ctx=None, cl_queue=None):
+        super().__init__(npb, eccentric, constant_k, contamination=contamination, optimize=optimize, eclipse=eclipse)
 
-        self.ctx = kwargs.get('cl_ctx', cl.create_some_context())
-        self.queue = kwargs.get('cl_queue', cl.CommandQueue(self.ctx))
+        self.ctx = cl_ctx or cl.create_some_context()
+        self.queue = cl_queue or cl.CommandQueue(self.ctx)
 
-        self.ed,self.le,self.ld,self.kt,self.zt = map(lambda a: np.array(a,dtype=np.float32,order='C'),
+        self.ed,self.le,self.ld,self.kt,self.zt = map(lambda a: np.array(a,dtype=float32,order='C'),
                                                       ma.calculate_interpolation_tables(klims[0],klims[1],nk,nz))
         self.klims = klims
-        self.nk    = np.int32(nk)
-        self.nz    = np.int32(nz)
+        self.nk    = int32(nk)
+        self.nz    = int32(nz)
         self.nptb  = 0
         self.npb   = 0
         self.u     = np.array([])
         self.f     = None
-        self.k0, self.k1 = map(np.float32, self.kt[[0,-1]])
-        self.dk = np.float32(self.kt[1]-self.kt[0])
-        self.dz = np.float32(self.zt[1]-self.zt[0])
+        self.k0, self.k1 = map(float32, self.kt[[0,-1]])
+        self.dk = float32(self.kt[1]-self.kt[0])
+        self.dz = float32(self.zt[1]-self.zt[0])
         self.nss = int32(supersampling)
         self.etime = float32(exptime)
 
@@ -100,8 +102,8 @@ class MandelAgolCL(TransitModel):
         #self.prg = cl.Program(self.ctx, open('../src/ma_lerp.cl','r').read()).build()
 
 
-    def _eval(self, t, k, u, t0, p, a, i, e=0., w=0., c=0.):
-        u = np.array(u, np.float32, order='C').T
+    def evaluate_t(self, t, k, u, t0, p, a, i, e=0., w=0., c=0.):
+        u = np.array(u, float32, order='C').T
 
         # Release and reinitialise the GPU buffers if the sizes of the time or
         # limb darkening coefficient arrays change.
@@ -115,9 +117,9 @@ class MandelAgolCL(TransitModel):
             self.npb = 1 if u.ndim == 1 else u.shape[1]
             self.nptb = t.size
 
-            self.u = np.zeros((2,self.npb), np.float32)
-            self.f = np.zeros((t.size, self.npb), np.float32)
-            self.pv = np.zeros(7, np.float32)
+            self.u = np.zeros((2,self.npb), float32)
+            self.f = np.zeros((t.size, self.npb), float32)
+            self.pv = np.zeros(7, float32)
 
             mf = cl.mem_flags
             self._b_t = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=t)
@@ -134,7 +136,7 @@ class MandelAgolCL(TransitModel):
         cl.enqueue_copy(self.queue, self._b_u, u)
 
         # Copy the parameter vector to the GPU
-        self.pv[:] = array([k, t0, p, a, i, e, w], dtype=float32)
+        self.pv[:] = np.array([k, t0, p, a, i, e, w], dtype=float32)
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
         self.prg.ma_eccentric(self.queue, t.shape, None, self._b_t, self._b_p, self._b_u,
@@ -144,8 +146,8 @@ class MandelAgolCL(TransitModel):
         return self.f
 
 
-    def _eval_pop(self, t, pvp, u):
-        u = np.array(u, np.float32, order='C').T
+    def evaluate_t_pv2d(self, t, pvp, u):
+        u = np.array(u, float32, order='C').T
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
 
@@ -161,9 +163,9 @@ class MandelAgolCL(TransitModel):
             self.npb = 1 if u.ndim == 1 else u.shape[1]
             self.nptb = t.size
 
-            self.u = np.zeros((2, self.npb), np.float32)
-            self.f = np.zeros((t.size, self.npv), np.float32)
-            self.pv = np.zeros(pvp.shape, np.float32)
+            self.u = np.zeros((2, self.npb), float32)
+            self.f = np.zeros((t.size, self.npv), float32)
+            self.pv = np.zeros(pvp.shape, float32)
 
             mf = cl.mem_flags
             self._b_t = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=t)
@@ -188,69 +190,3 @@ class MandelAgolCL(TransitModel):
                                   self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self.spv, self._b_f)
         cl.enqueue_copy(self.queue, self.f, self._b_f)
         return self.f
-
-
-    def __call__(self, z, k, u, c=0., b=1e-8, update=True, **kwargs):
-        """Evaluate the model
-
-        :param z:
-            Array of normalised projected distances
-        
-        :param k:
-            Planet to star radius ratio
-        
-        :param u:
-            Array of limb darkening coefficients
-        
-        :param c:
-            Contamination factor (fraction of third light)
-            
-        """
-
-        #u = np.reshape(u, [-1, self.nldc]).T
-        #c = np.ones(u.shape[1])*c
-        flux = self._eval(z, k, u, c, update, **kwargs)
-        return flux if np.asarray(u).ndim > 1 else flux.ravel()
-
-    def evaluate(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., update=True, lerp_z=False):
-        """Evaluates the transit model for the given parameters.
-
-        :param t:
-            Array of time values
-
-        :param k:
-            Radius ratio
-
-        :param u:
-            Quadratic limb darkening coefficients [u1,u2]
-
-        :param t0:
-            Zero epoch
-
-        :param p:
-            Orbital period
-
-        :param a:
-            Scaled semi-major axis
-
-        :param i:
-            Inclination
-
-        :param e: (optional, default=0)
-            Eccentricity
-
-        :param w: (optional, default=0)
-            Argument of periastron
-
-        :param c: (optional, default=0)
-            Contamination factor ``c``
-        """
-            
-        z = self._calculate_z(t, t0, p, a, i, e, w, lerp_z)
-
-        flux = self.__call__(z, k, u, c, update)
-
-        if self.ss:
-            flux = flux.reshape((self.npt, self.nss)).mean(1)
-
-        return flux

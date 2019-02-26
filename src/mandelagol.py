@@ -14,7 +14,7 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from numpy import atleast_2d, atleast_1d
+from numpy import atleast_2d, atleast_1d, zeros, ndarray
 
 import pytransit.ma_quadratic_nb as maq
 import pytransit.ma_uniform_nb as mau
@@ -117,8 +117,13 @@ class MandelAgol(SuperSampledTransitModel):
         else:
             return maq.eval_quad(z, k, u, c)[0]
 
+    def evaluate_t_pv2d(self, t: ndarray, pvp: ndarray, ldc: ndarray):
+        flux = zeros((t.size, pvp.shape[0]))
+        for i, pv in enumerate(pvp):
+            flux[:, i] = self.evaluate_t(t, pv[0], ldc, pv[1], pv[2], pv[3], pv[4], pv[5], pv[6])[:, 0]
+        return flux
 
-    
+
 class MAChromosphere(MandelAgol):
     def __init__(self, npb: int = 1, eccentric: bool = False, constant_k: bool = True, contamination: bool = False,
                  orbit: Orbit = None, optimize: bool = False, eclipse: bool = False,

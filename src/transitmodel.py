@@ -109,7 +109,7 @@ class SuperSampledTransitModel(TransitModel):
             self.sampler = SuperSampler(supersampling, exptime)
 
 
-    def evaluate_t(self, k: float, t: ndarray, ldc: ndarray, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0., c: float = 0.) -> ndarray:
+    def evaluate_t(self, t: ndarray, k: float, ldc: ndarray, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0., c: float = 0.) -> ndarray:
         """Evaluates the transit model given a time array and necessary parameters.
 
         Args:
