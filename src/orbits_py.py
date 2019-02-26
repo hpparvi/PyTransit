@@ -335,17 +335,20 @@ def z_newton_mp(ts, pvs):
 # Z: Iteration
 # ------------
 
+
 @njit(cache=cache)
 def z_iter_s(t, pv):
     t0, p, a, i, e, w = pv
     Ta = ta_iter_s(t, t0, p, e, w)
     return z_from_ta_s(Ta, a, i, e, w)
 
+
 @njit("f8[:](f8[:], f8[:])", cache=cache)
 def z_iter_v(ts, pv):
     t0, p, a, i, e, w = pv
     Ta = ta_iter_v(ts, t0, p, e, w)
     return z_from_ta_v(Ta, a, i, e, w)
+
 
 @njit("f8[:](f8[:], f8[:])", parallel=True, fastmath=True)
 def z_iter_p(ts, pv):
@@ -374,10 +377,12 @@ def z_iter_p(ts, pv):
 # Z: Series expansion
 # -------------------
 
+
 @njit("f8[:](f8[:], f8[:])", cache=cache)
 def z_ps3(t, pv):
     t0, p, a, i, e, w = pv
     return z_from_ta_v(ta_ps3(t, t0, p, e, w), a, i, e, w)
+
 
 @njit("f8[:](f8[:], f8[:])", cache=cache)
 def z_ps5(t, pv):
@@ -387,19 +392,23 @@ def z_ps5(t, pv):
 # Utility functions
 # -----------------
 
+
 @njit(cache=cache)
 def impact_parameter(a, i):
     return a * cos(i)
 
+
 @njit(cache=cache)
 def impact_parameter_ec(a, i, e, w, tr_sign):
     return a * cos(i) * ((1.-e**2) / (1.+tr_sign*e*sin(w)))
+
 
 @njit(cache=cache)
 def duration_eccentric(p, k, a, i, e, w, tr_sign):
     b  = impact_parameter_ec(a, i, e, w, tr_sign)
     ae = sqrt(1.-e**2)/(1.+tr_sign*e*sin(w))
     return p/pi  * arcsin(sqrt((1.+k)**2-b**2)/(a*sin(i))) * ae
+
 
 @njit(cache=cache)
 def eclipse_phase(p, i, e, w):
@@ -413,6 +422,7 @@ def eclipse_phase(p, i, e, w):
     mec = eec - e * sin(eec)
     phase = (mec - mtr) * p / TWO_PI
     return phase if phase > 0. else p + phase
+
 
 @njit(cache=cache)
 def eclipse_phase_ap(p, i, e, w):
@@ -441,6 +451,7 @@ def p_from_am(a=1., ms=1.):
     """
     return sqrt((4*pi**2*(a*au)**3)/(G*ms*msun)) / D_S
 
+
 @njit(cache=cache)
 def a_from_mp(ms, period):
     """Semi-major axis from the stellar mass and planet's orbital period.
@@ -457,6 +468,7 @@ def a_from_mp(ms, period):
       a : semi-major axis [AU]
     """
     return ((G * (ms*msun) * (period * D_S)**2) / (4 * pi**2))**(1 / 3) / au
+
 
 @njit(cache=cache)
 def as_from_rhop(rho, period):
@@ -499,17 +511,17 @@ def a_from_rhoprs(rho, period, rstar):
 
       a : semi-major axis [AU]
     """
-    return as_from_rhop(rho,period)*rstar*rsun/au
+    return as_from_rhop(rho, period)*rstar*rsun/au
 
 
 @njit(cache=cache)
-def af_transit(e,w):
+def af_transit(e, w):
     """Calculates the -- factor during the transit"""
     return (1.0-e**2)/(1.0 + e*sin(w))
 
 
 @njit(cache=cache)
-def i_from_baew(b,a,e,w):
+def i_from_baew(b, a, e, w):
     """Orbital inclination from the impact parameter, scaled semi-major axis, eccentricity and argument of periastron
 
     Parameters
@@ -529,7 +541,7 @@ def i_from_baew(b,a,e,w):
 
 
 @njit(cache=cache)
-def i_from_ba(b,a):
+def i_from_ba(b, a):
     """Orbital inclination from the impact parameter and scaled semi-major axis.
 
     Parameters
@@ -544,3 +556,60 @@ def i_from_ba(b,a):
       i  : inclination            [rad]
     """
     return arccos(b/a)
+
+
+@njit(cache=cache)
+def d_from_pkaiews(p, k, a, i, e, w, tr_sign):
+    """Transit duration (T14) from p, k, a, i, e, w, and the transit sign.
+
+    Calculates the transit duration (T14) from the orbital period, planet-star radius ratio, scaled semi-major axis,
+    orbital inclination, eccentricity, argument of periastron, and the sign of the transit (transit:1, eclipse: -1).
+
+     Parameters
+     ----------
+
+       p  : orbital period         [d]
+       k  : radius ratio           [R_Star]
+       a  : scaled semi-major axis [R_star]
+       i  : orbital inclination    [rad]
+       e  : eccentricity           [-]
+       w  : argument of periastron [rad]
+       tr_sign : transit sign, 1 for a transit, -1 for an eclipse
+
+     Returns
+     -------
+
+       d  : transit duration T14  [d]
+     """
+    b  = impact_parameter_ec(a, i, e, w, tr_sign)
+    ae = sqrt(1.-e**2)/(1.+tr_sign*e*sin(w))
+    return p/pi  * arcsin(sqrt((1.+k)**2-b**2)/(a*sin(i))) * ae
+
+
+@njit(cache=cache)
+def p_from_dkaiews(d, k, a, i, e, w, tr_sign):
+    """Orbital period from d, k, a, i, e, w, and the transit sign.
+
+    Calculates the orbital period from the transit duration (T14), planet-star radius ratio, scaled semi-major axis,
+    orbital inclination, eccentricity, argument of periastron, and the sign of the transit (transit:1, eclipse: -1).
+
+     Parameters
+     ----------
+
+       d  : transit duration T14   [d]
+       k  : radius ratio           [R_Star]
+       a  : scaled semi-major axis [R_star]
+       i  : orbital inclination    [rad]
+       e  : eccentricity           [-]
+       w  : argument of periastron [rad]
+       tr_sign : transit sign, 1 for a transit, -1 for an eclipse
+
+
+    Returns
+    -------
+
+      p  : orbital period         [d]
+    """
+    b  = impact_parameter_ec(a, i, e, w, tr_sign)
+    ae = sqrt(1.-e**2)/(1.+tr_sign*e*sin(w))
+    return (d*pi) / (arcsin(sqrt((1.+k)**2-b**2)/(a*sin(i))) * ae)
