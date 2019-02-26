@@ -83,7 +83,7 @@ class TTVLPF(BaseLPF):
         fig, ax = (None, ax) if ax is not None else subplots(figsize=figsize)
         time = self.timea_orig if time else arange(self.timea_orig.size)
         ax.plot(time, concatenate(self.fluxes))
-        ax.plot(time, concatenate(self.transit_model(self.de.minimum_location)))
+        ax.plot(time, concatenate(self.flux_model(self.de.minimum_location)))
         fig.tight_layout()
         return ax
 

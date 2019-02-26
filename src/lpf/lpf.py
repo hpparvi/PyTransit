@@ -350,7 +350,7 @@ class BaseLPF:
     def __call__(self, pv):
         return self.lnposterior(pv)
 
-    def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation'):
+    def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation', leave=False):
         if not with_pyde:
             raise ImportError("PyDE not installed.")
 
@@ -360,10 +360,10 @@ class BaseLPF:
                 self.de._population[:, :] = self.create_pv_population(npop)
             else:
                 self.de._population[:,:] = population
-        for _ in tqdm(self.de(niter), total=niter, desc=label):
+        for _ in tqdm(self.de(niter), total=niter, desc=label, leave=leave):
             pass
 
-    def sample_mcmc(self, niter=500, thin=5, label='MCMC sampling', reset=False):
+    def sample_mcmc(self, niter=500, thin=5, label='MCMC sampling', reset=False, leave=True):
         if not with_emcee:
             raise ImportError('Emcee not installed.')
         if self.sampler is None:
@@ -373,7 +373,7 @@ class BaseLPF:
             pop0 = self.sampler.chain[:,-1,:].copy()
         if reset:
             self.sampler.reset()
-        for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter, desc=label):
+        for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter, desc=label, leave=False):
             pass
 
     def posterior_samples(self, burn: int=0, thin: int=1, include_ldc: bool=False):

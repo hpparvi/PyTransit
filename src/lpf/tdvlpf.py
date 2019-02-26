@@ -22,7 +22,7 @@ from pytransit.lpf.ttvlpf import TTVLPF
 from pytransit.transitmodel import TransitModel
 from pytransit.param.parameter import ParameterSet, PParameter, GParameter
 from pytransit.param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
-from pytransit.orbits_py import duration_eccentric, as_from_rhop
+from pytransit.orbits_py import duration_eccentric, as_from_rhop, p_from_dkaiews
 
 try:
     import seaborn as sb
@@ -47,33 +47,42 @@ class TDVLPF(TTVLPF):
     Notes: The number of parameters can grow large with Kepler short-period planets.
 
     """
-    def __init__(self, target: str, zero_epoch: float, period: float, tc_sigma: float, passbands: list,
-                 times: list = None, fluxes: list = None, pbids: list = None, tm: TransitModel = None,
+    def __init__(self, target: str, zero_epoch: float, period: float, tc_sigma: float, duration_prior: tuple,
+                 passbands: list, times: list = None, fluxes: list = None, pbids: list = None, tm: TransitModel = None,
                  nsamples: int = 1, exptime: float = 0.020433598):
         self.zero_epoch = zero_epoch
         self.period = period
         self.tc_sigma = tc_sigma
+        self.t14_prior = duration_prior
         super().__init__(target, zero_epoch, period, tc_sigma, passbands, times, fluxes, pbids, tm, nsamples, exptime)
 
     def _init_p_orbit(self):
         """Orbit parameter initialisation for a TTV model.
         """
+
+        # Basic orbital parameters
+        # ------------------------
         porbit = [GParameter('rho', 'stellar_density', 'g/cm^3', U(0.1, 25.0), (0, inf)),
                   GParameter('b', 'impact_parameter', 'R_s', U(0.0, 1.0), (0, 1))]
 
+        # Transit centers
+        # ---------------
         s = self.tc_sigma
         self.tnumber = round((array([t.mean() for t in self.times]) - self.zero_epoch) / self.period).astype(int)
         tcs = self.period * self.tnumber + self.zero_epoch
         for tc, tn in zip(tcs, self.tnumber):
             porbit.append(GParameter(f'tc_{tn:d}', f'transit_centre_{tn:d}', 'd', N(tc, s), (-inf, inf)))
+
+        # Transit durations
+        # -----------------
         for tc, tn in zip(tcs, self.tnumber):
-            porbit.append(GParameter(f'p_{tn:d}', f'period_{tn:d}', 'd', N(self.period, 5e-1), (0, inf)))
+            porbit.append(GParameter(f't14_{tn:d}', f'duration_{tn:d}', 'd', N(*self.t14_prior), (0, inf)))
+
         self.ps.add_global_block('orbit', porbit)
         self._start_tc = 2
         self._sl_tc = s_[self._start_tc:self._start_tc + self.nlc]
-        self._start_p = 2 + self.nlc
-        self._sl_p = s_[self._start_p:self._start_p + self.nlc]
-
+        self._start_d = 2 + self.nlc
+        self._sl_d = s_[self._start_d:self._start_d + self.nlc]
 
     def _compute_z(self, pv):
         a = as_from_rhop(pv[0], self.period)
@@ -82,21 +91,14 @@ class TDVLPF(TTVLPF):
         else:
             i = arccos(pv[1] / a)
             tc = pv[self._sl_tc]
-            p = pv[self._sl_p]
+            p = p_from_dkaiews(pv[self._sl_d], sqrt(pv[self._pid_k2]), a, i, 0., 0., 1)
             return z_circular_ttv(self.timea, p, a, i, tc, self.lcida)
 
-    def plot_tdvs(self, burn=0, thin=1, ax=None, figsize=None):
+    def plot_tdvs(self, burn=0, thin=1, ax=None, figsize=None, bwidth=0.8):
         fig, ax = (None, ax) if ax is not None else subplots(figsize=figsize)
-        bwidth = 0.8
         df = self.posterior_samples(burn, thin)
-        pcols = [c for c in df.columns if 'p_' in c]
-        t14 = []
-        for p in pcols:
-            a = as_from_rhop(df.rho.values, df[p].values)
-            t14.append(duration_eccentric(df[p].values,
-                                          sqrt(df.k2.values), a, arccos(df.b.values / a), 0, 0, 1))
-        t14 = array(t14).T
-        p = 24 * percentile(t14, [50, 16, 84, 0.5, 99.5], 0)
+        dcols = [c for c in df.columns if 't14_' in c]
+        p = 24 * df[dcols].quantile([0.50, 0.16, 0.84, 0.005, 0.995]).values
         ax.bar(self.tnumber, p[4, :] - p[3, :], bwidth, p[3, :], alpha=0.25, fc='b')
         ax.bar(self.tnumber, p[2, :] - p[1, :], bwidth, p[1, :], alpha=0.25, fc='b')
         [ax.plot((xx - 0.47 * bwidth, xx + 0.47 * bwidth), (pp[[0, 0]]), 'k') for xx, pp in zip(self.tnumber, p.T)]
