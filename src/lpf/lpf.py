@@ -16,10 +16,11 @@
 
 import math as mt
 
+from astropy.stats import sigma_clip
 from matplotlib.pyplot import subplots
 from numba import njit
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like,
-                   clip, argsort, any, s_, zeros, arccos, nan, isnan, full, pi, sum, repeat, asarray, ndarray)
+                   clip, argsort, any, s_, zeros, arccos, nan, isnan, full, pi, sum, repeat, asarray, ndarray, log10)
 from numpy.random import uniform, normal
 from scipy.stats import norm
 from tqdm.auto import tqdm
@@ -60,7 +61,7 @@ from pytransit.transitmodel import TransitModel
 from pytransit import MandelAgol as MA
 from pytransit.ma_quadratic_nb import eval_quad_ip_mp
 from pytransit.orbits_py import z_circular, duration_eccentric, as_from_rhop
-from pytransit.param.parameter import ParameterSet, PParameter, GParameter
+from pytransit.param.parameter import ParameterSet, PParameter, GParameter, LParameter
 from pytransit.param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
 from pytransit.contamination.filter import sdss_g, sdss_r, sdss_i, sdss_z
 
@@ -194,6 +195,7 @@ class BaseLPF:
         self._init_p_planet()
         self._init_p_limb_darkening()
         self._init_p_baseline()
+        self._init_p_noise()
         self.ps.freeze()
 
     def _init_p_orbit(self):
@@ -231,6 +233,13 @@ class BaseLPF:
         """
         pass
 
+    def _init_p_noise(self):
+        """Noise parameter initialisation.
+        """
+        pns = [LParameter('lne_{:d}'.format(i), 'log_error_{:d}'.format(i), '', U(-8, -0), bounds=(-8, -0)) for i in range(self.nlc)]
+        self.ps.add_lightcurve_block('log_err', 1, self.nlc, pns)
+        self._sl_err = self.ps.blocks[-1].slice
+        self._start_err = self.ps.blocks[-1].start
 
     def create_pv_population(self, npop=50):
         pvp = self.ps.sample_from_prior(npop)
@@ -260,6 +269,12 @@ class BaseLPF:
                 pid = argsort(pvp[i, ldsl][::2])[::-1]
                 pvp[i, ldsl][::2] = pvp[i, ldsl][::2][pid]
                 pvp[i, ldsl][1::2] = pvp[i, ldsl][1::2][pid]
+
+        # Estimate white noise from the data
+        # ----------------------------------
+        for i in range(self.nlc):
+            wn = diff(self.ofluxa).std() / sqrt(2)
+            pvp[:, self._start_err] = log10(uniform(0.5*wn, 2*wn, size=npop))
         return pvp
 
     def baseline(self, pv):
@@ -302,20 +317,61 @@ class BaseLPF:
     def residuals(self, pv):
         return [fo - fm for fo, fm in zip(self.fluxes, self.flux_model(pv))]
 
-    def add_t14_prior(self, m, s):
+    def set_prior(self, pid: int, prior) -> None:
+            self.ps[pid].prior = prior
+
+    def add_t14_prior(self, mean: float, std: float) -> None:
+        """Add a normal prior on the transit duration.
+
+        Parameters
+        ----------
+        mean
+        std
+
+        Returns
+        -------
+
+        """
         def T14(pv):
             a = as_from_rhop(pv[2], pv[1])
             t14 = duration_eccentric(pv[1], sqrt(pv[4]), a, mt.acos(pv[3] / a), 0, 0, 1)
-            return norm.logpdf(t14, m, s)
+            return norm.logpdf(t14, mean, std)
         self.lnpriors.append(T14)
 
-    def add_as_prior(self, m, s):
+    def add_as_prior(self, mean: float, std: float) -> None:
+        """Add a prior on the scaled semi-major axis
+
+        Parameters
+        ----------
+        mean
+        std
+
+        Returns
+        -------
+
+        """
         def as_prior(pv):
             a = as_from_rhop(pv[2], pv[1])
-            return norm.logpdf(a, m, s)
+            return norm.logpdf(a, mean, std)
         self.lnpriors.append(as_prior)
 
-    def add_ldtk_prior(self, teff, logg, z, uncertainty_multiplier=3, pbs=('g', 'r', 'i', 'z')):
+    def add_ldtk_prior(self, teff: tuple, logg: tuple, z: tuple,
+                       uncertainty_multiplier: float = 3,
+                       pbs: tuple = ('g', 'r', 'i', 'z')) -> None:
+        """Add a LDTk-based prior on the limb darkening.
+
+        Parameters
+        ----------
+        teff
+        logg
+        z
+        uncertainty_multiplier
+        pbs
+
+        Returns
+        -------
+
+        """
         fs = {n: f for n, f in zip('g r i z'.split(), (sdss_g, sdss_r, sdss_i, sdss_z))}
         filters = [fs[k] for k in pbs]
         self.ldsc = LDPSetCreator(teff, logg, z, filters)
@@ -326,6 +382,21 @@ class BaseLPF:
             return self.ldps.lnlike_tq(pv[self._sl_ld])
         self.lnpriors.append(ldprior)
 
+    def remove_outliers(self, sigma=5):
+        fmodel = self.flux_model(self.de.minimum_location)
+        times, fluxes, pbids = [], [], []
+        for i in range(len(self.times)):
+            res = self.fluxes[i] - fmodel[i]
+            mask = ~sigma_clip(res, sigma=sigma).mask
+            times.append(self.times[i][mask])
+            fluxes.append(self.fluxes[i][mask])
+        self._init_data(times, fluxes, self.pbids)
+
+    def remove_transits(self, tids):
+        m = ones(len(self.times), bool)
+        m[tids] = False
+        self._init_data(self.times.compress(m), self.fluxes.compress(m), self.pbids.compress(m))
+        self._init_parameters()
 
     def lnprior(self, pv):
         return self.ps.lnprior(pv)
