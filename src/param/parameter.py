@@ -1,6 +1,6 @@
 import math as m
 from itertools import product
-from numpy import inf, array, zeros, unique, pi, log, sqrt
+from numpy import inf, array, zeros, unique, pi, log, sqrt, where
 from numpy.random import normal, uniform
 from scipy.stats import gamma as gm
 
@@ -45,7 +45,7 @@ class UniformPrior(Prior):
         self.lnc = m.log(b-a)
 
     def logpdf(self, v):
-        return self.lnc if (self.a < v < self.b) else -inf
+        return where((self.a < v) & (v < self.b), self.lnc, -inf)
 
     def rvs(self, size=1):
         return uniform(self.a, self.b, size)

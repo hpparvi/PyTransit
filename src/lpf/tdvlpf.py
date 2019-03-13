@@ -13,9 +13,12 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 from matplotlib.pyplot import subplots, setp
 from numpy import pi, sign, cos, sqrt, sin, array, arccos, inf, round, int, s_, percentile, concatenate, median, mean, \
     arange
+
+import scipy.ndimage as ndi
 
 from numba import njit, prange
 from pytransit.lpf.ttvlpf import TTVLPF
@@ -58,7 +61,7 @@ class TDVLPF(TTVLPF):
 
     def _init_p_orbit(self):
         """Orbit parameter initialisation for a TTV model.
-        """
+           """
 
         # Basic orbital parameters
         # ------------------------
@@ -67,15 +70,20 @@ class TDVLPF(TTVLPF):
 
         # Transit centers
         # ---------------
-        s = self.tc_sigma
+
+        def create_tc_prior(t, f, p=5):
+            m = f > percentile(f, p)
+            m = ~ndi.binary_erosion(m, iterations=6, border_value=1)
+            return N(t[m].mean(), 0.25 * t[m].ptp())
+
         self.tnumber = round((array([t.mean() for t in self.times]) - self.zero_epoch) / self.period).astype(int)
-        tcs = self.period * self.tnumber + self.zero_epoch
-        for tc, tn in zip(tcs, self.tnumber):
-            porbit.append(GParameter(f'tc_{tn:d}', f'transit_centre_{tn:d}', 'd', N(tc, s), (-inf, inf)))
+        for t, f, tn in zip(self.times, self.fluxes, self.tnumber):
+            prior = create_tc_prior(t, f)
+            porbit.append(GParameter(f'tc_{tn:d}', f'transit_centre_{tn:d}', 'd', prior, (-inf, inf)))
 
         # Transit durations
         # -----------------
-        for tc, tn in zip(tcs, self.tnumber):
+        for tn in self.tnumber:
             porbit.append(GParameter(f't14_{tn:d}', f'duration_{tn:d}', 'd', N(*self.t14_prior), (0, inf)))
 
         self.ps.add_global_block('orbit', porbit)
@@ -83,6 +91,7 @@ class TDVLPF(TTVLPF):
         self._sl_tc = s_[self._start_tc:self._start_tc + self.nlc]
         self._start_d = 2 + self.nlc
         self._sl_d = s_[self._start_d:self._start_d + self.nlc]
+
 
     def _compute_z(self, pv):
         a = as_from_rhop(pv[0], self.period)
