@@ -27,7 +27,7 @@ from os.path import dirname, join
 
 from numpy import array, uint32, float32, int32, asarray
 
-import pytransit.mandelagol_py as ma
+import pytransit.ma_quadratic_nb as ma
 from pytransit.transitmodel import TransitModel
 
 class MandelAgolCL(TransitModel):
