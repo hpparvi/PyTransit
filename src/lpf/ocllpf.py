@@ -41,7 +41,7 @@ except ImportError:
     with_pyde = False
 
 try:
-    from pytransit.utils.pensemblesampler import PEnsembleSampler
+    from emcee import EnsembleSampler
     with_emcee = True
 except ImportError:
     with_emcee = False
@@ -162,7 +162,7 @@ class OCLBaseLPF(BaseLPF):
         if not with_emcee:
             raise ImportError('Emcee not installed.')
         if self.sampler is None:
-            self.sampler = PEnsembleSampler(self.de.n_pop, self.de.n_par, self.lnposterior, parallel_lnpostfn=True)
+            self.sampler = EnsembleSampler(self.de.n_pop, self.de.n_par, self.lnposterior, vectorize=True)
             pop0 = self.de.population
         else:
             pop0 = self.sampler.chain[:, -1, :].copy()
