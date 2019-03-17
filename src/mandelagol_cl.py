@@ -25,7 +25,7 @@ import numpy as np
 import pyopencl as cl
 from os.path import dirname, join
 
-from numpy import array, uint32, float32, int32, asarray
+from numpy import array, uint32, float32, int32, asarray, zeros
 
 import pytransit.ma_quadratic_nb as ma
 from pytransit.transitmodel import TransitModel
@@ -153,11 +153,10 @@ class MandelAgolCL(TransitModel):
 
 
     def evaluate_t_pv2d(self, t, pvp, u, copy=True):
-        u = np.array(u, float32, order='C').T
+        mf = cl.mem_flags
+        u = asarray(u, float32)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
-
-        mf = cl.mem_flags
 
         # Release and reinitialise the GPU buffers if the sizes of the time or
         # limb darkening coefficient arrays change.
@@ -169,12 +168,12 @@ class MandelAgolCL(TransitModel):
                 self._b_u.release()
                 self._b_p.release()
 
-            self.npb = 1 if u.ndim == 1 else u.shape[1]
+            self.npb = 1 if u.ndim == 1 else u.shape[0]
             self.nptb = t.size
 
-            self.pv = np.zeros(pvp.shape, float32)
-            self.u = np.zeros((2, self.npb), float32)
-            self.f = np.zeros((t.size, self.npv), float32)
+            self.pv = zeros(pvp.shape, float32)
+            self.u  = zeros((self.npb, 2), float32)
+            self.f  = zeros((self.npv, t.size), float32)
 
             self._b_t = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=t)
             self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, t.nbytes * self.npv)
@@ -194,7 +193,7 @@ class MandelAgolCL(TransitModel):
         self.pv[:] = pvp
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
-        self.prg.ma_eccentric_pop(self.queue, (t.size, self.npv), None, self._b_t, self._b_p, self._b_u,
+        self.prg.ma_eccentric_pop(self.queue, (self.npv, t.size), None, self._b_t, self._b_p, self._b_u,
                                   self._b_ed, self._b_le, self._b_ld, self.nss, self.etime,
                                   self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self.spv, self._b_f)
 

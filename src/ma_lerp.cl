@@ -169,12 +169,11 @@ __kernel void ma_eccentric_pop(__global const float *times, __global const float
 		 const int nss, const float exptime, const float k0, const float k1,
 		 const uint nk, const uint nz, const float dk, const float dz, const uint pv_length, __global float *flux){
 
-      uint i_tm = get_global_id(0);    // time vector index
-      uint n_tm = get_global_size(0);  // time vector size
-      uint i_pv = get_global_id(1);    // parameter vector index
-      uint n_pv = get_global_size(1);  // parameter vector population size
-
-      uint gid = i_tm*n_pv + i_pv;     // global linear index
+      uint i_tm = get_global_id(1);    // time vector index
+      uint n_tm = get_global_size(1);  // time vector size
+      uint i_pv = get_global_id(0);    // parameter vector index
+      uint n_pv = get_global_size(0);  // parameter vector population size
+      uint gid  = i_pv*n_tm + i_tm;    // global linear index
 
       __global float *pv  = &pv_pop[i_pv*pv_length];
       __global float *ldc = &ldc_pop[2*i_pv];
@@ -197,12 +196,11 @@ __kernel void ma_eccentric_pop_ttv(__global const float *times, __global const f
 		 const int nss, const float exptime, const float k0, const float k1,
 		 const uint nk, const uint nz, const float dk, const float dz, const uint pv_length, __global float *flux){
 
-      uint i_tm = get_global_id(0);    // time vector index
-      uint n_tm = get_global_size(0);  // time vector size
-      uint i_pv = get_global_id(1);    // parameter vector index
-      uint n_pv = get_global_size(1);  // parameter vector population size
-
-      uint gid = i_tm*n_pv + i_pv;     // global linear index
+      uint i_tm = get_global_id(1);    // time vector index
+      uint n_tm = get_global_size(1);  // time vector size
+      uint i_pv = get_global_id(0);    // parameter vector index
+      uint n_pv = get_global_size(0);  // parameter vector population size
+      uint gid  = i_pv*n_tm + i_tm;    // global linear index
 
       __global float *pv  = &pv_pop[i_pv*pv_length];
       __global float *ldc = &ldc_pop[2*i_pv];
@@ -228,12 +226,11 @@ __kernel void ma_eccentric_pop_tdv(__global const float *times, __global const f
 		 const int nss, const float exptime, const float k0, const float k1,
 		 const uint nk, const uint nz, const float dk, const float dz, const uint pv_length, __global float *flux){
 
-      uint i_tm = get_global_id(0);    // time vector index
-      uint n_tm = get_global_size(0);  // time vector size
-      uint i_pv = get_global_id(1);    // parameter vector index
-      uint n_pv = get_global_size(1);  // parameter vector population size
-
-      uint gid = i_tm*n_pv + i_pv;     // global linear index
+      uint i_tm = get_global_id(1);    // time vector index
+      uint n_tm = get_global_size(1);  // time vector size
+      uint i_pv = get_global_id(0);    // parameter vector index
+      uint n_pv = get_global_size(0);  // parameter vector population size
+      uint gid  = i_pv*n_tm + i_tm;    // global linear index
 
       __global const float *pv  = &pv_pop[i_pv*pv_length];
       __global const float *ldc = &ldc_pop[2*i_pv];

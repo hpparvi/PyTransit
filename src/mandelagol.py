@@ -118,9 +118,9 @@ class MandelAgol(SuperSampledTransitModel):
             return maq.eval_quad(z, k, u, c)[0]
 
     def evaluate_t_pv2d(self, t: ndarray, pvp: ndarray, ldc: ndarray):
-        flux = zeros((t.size, pvp.shape[0]))
+        flux = zeros((pvp.shape[0], t.size))
         for i, pv in enumerate(pvp):
-            flux[:, i] = self.evaluate_t(t, pv[0], ldc, pv[1], pv[2], pv[3], pv[4], pv[5], pv[6])[:, 0]
+            flux[i, :] = self.evaluate_t(t, pv[0], ldc, pv[1], pv[2], pv[3], pv[4], pv[5], pv[6])[:, 0]
         return flux
 
 
