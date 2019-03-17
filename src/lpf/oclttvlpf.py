@@ -42,15 +42,38 @@ class OCLTTVLPF(OCLBaseLPF):
         super().__init__(target, passbands, times, fluxes, pbids, nsamples, exptime, cl_ctx, cl_queue)
 
         src = """
-           __kernel void lnl2d(const int nlc, __global const float *obs, __global const float *mod, __global const float *err, __global const int *lcids, __global float *lnl2d){
-                  uint i_tm = get_global_id(0);    // time vector index
-                  uint n_tm = get_global_size(0);  // time vector size
-                  uint i_pv = get_global_id(1);    // parameter vector index
-                  uint n_pv = get_global_size(1);  // parameter vector population size
-                  uint gid = i_tm*n_pv + i_pv;     // global linear index
-                  float e = err[i_pv];
-                  lnl2d[gid] = -log(e) - 0.5f*log(2*M_PI_F) - 0.5f*pown((obs[i_tm]-mod[gid]) / e, 2);
-            }
+            __kernel void lnl2d(const int nlc, __global const float *obs, __global const float *mod, __global const float *err, __global const int *lcids, __global float *lnl2d){
+                   uint i_tm = get_global_id(1);    // time vector index
+                   uint n_tm = get_global_size(1);  // time vector size
+                   uint i_pv = get_global_id(0);    // parameter vector index
+                   uint n_pv = get_global_size(0);  // parameter vector population size
+                   uint gid = i_pv*n_tm + i_tm;     // global linear index
+                   float e = err[i_pv];
+                   lnl2d[gid] = -log(e) - 0.5f*log(2*M_PI_F) - 0.5f*pown((obs[i_tm]-mod[gid]) / e, 2);
+             }
+
+             __kernel void lnl1d(const uint npt, __global float *lnl2d, __global float *lnl1d){
+                   uint i_pv = get_global_id(0);    // parameter vector index
+                   uint n_pv = get_global_size(0);  // parameter vector population size
+
+                 int i;
+                 bool is_even;
+                 uint midpoint = npt;
+                 __global float *lnl = &lnl2d[i_pv*npt];
+
+                 while(midpoint > 1){
+                     is_even = midpoint % 2 == 0;   
+                     if (is_even == 0){
+                         lnl[0] += lnl[midpoint-1];
+                     }
+                     midpoint /= 2;
+
+                     for(i=0; i<midpoint; i++){
+                         lnl[i] = lnl[i] + lnl[midpoint+i];
+                     }
+                 }
+                 lnl1d[i_pv] = lnl[0];
+             }
         """
         self.prg_lnl = cl.Program(self.cl_ctx, src).build()
 
@@ -96,6 +119,16 @@ class OCLTTVLPF(OCLBaseLPF):
         self.ps.add_lightcurve_block('log_err', 1, 1, pns)
         self._sl_err = self.ps.blocks[-1].slice
         self._start_err = self.ps.blocks[-1].start
+
+    def optimize_times(self, window):
+        times, fluxes, pbids = [], [], []
+        tcp = self.ps[self._sl_tc]
+        for i in range(self.nlc):
+            tc = tcp[i].prior.mean
+            mask = abs(self.times[i] - tc) < 0.5*window/24.
+            times.append(self.times[i][mask])
+            fluxes.append(self.fluxes[i][mask])
+        self._init_data(times, fluxes, self.pbids)
 
     def lnlikelihood(self, pv):
         if self.lnl2d.shape[1] != pv.shape[0]:

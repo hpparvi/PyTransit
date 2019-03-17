@@ -18,10 +18,10 @@
 import pyopencl as cl
 from astropy.stats import sigma_clip
 
-from numba import njit
+from numba import njit, float64
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like, float32 as f32,
                    clip, argsort, any, s_, zeros, arccos, nan, isnan, full, pi, sum, repeat, asarray, ndarray,
-                   full_like, isfinite, where, atleast_2d, int32)
+                   full_like, isfinite, where, atleast_2d, int32, uint32)
 from tqdm.auto import tqdm
 
 from pytransit.mandelagol_cl import MandelAgolCL
@@ -46,6 +46,21 @@ try:
 except ImportError:
     with_emcee = False
 
+@njit(parallel=False)
+def psum2d(a):
+    s = a.copy()
+    ns = a.shape[0]
+    for j in range(ns):
+        midpoint = a.shape[1]
+        while midpoint > 1:
+            is_even = midpoint % 2 == 0
+            if not is_even:
+                s[j,0] += s[j,midpoint-1]
+            midpoint = midpoint // 2
+            for i in range(midpoint):
+                s[j,i] = s[j,i] + s[j,midpoint+i]
+    return s[:,0].astype(float64)
+
 
 class OCLBaseLPF(BaseLPF):
     def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None,
@@ -58,19 +73,41 @@ class OCLBaseLPF(BaseLPF):
         self.tm = MandelAgolCL(self.npb, supersampling=nsamples, exptime=exptime, klims=(0.01, 0.75), nk=512, nz=512,
                                cl_ctx=cl_ctx, cl_queue=cl_queue)
 
-
         src = """
            __kernel void lnl2d(const int nlc, __global const float *obs, __global const float *mod, __global const float *err, __global const int *lcids, __global float *lnl2d){
-                  uint i_tm = get_global_id(0);    // time vector index
-                  uint n_tm = get_global_size(0);  // time vector size
-                  uint i_pv = get_global_id(1);    // parameter vector index
-                  uint n_pv = get_global_size(1);  // parameter vector population size
-                  uint gid = i_tm*n_pv + i_pv;     // global linear index
+                  uint i_tm = get_global_id(1);    // time vector index
+                  uint n_tm = get_global_size(1);  // time vector size
+                  uint i_pv = get_global_id(0);    // parameter vector index
+                  uint n_pv = get_global_size(0);  // parameter vector population size
+                  uint gid = i_pv*n_tm + i_tm;     // global linear index
                   float e = err[i_pv*nlc + lcids[i_tm]];
                   lnl2d[gid] = -log(e) - 0.5f*log(2*M_PI_F) - 0.5f*pown((obs[i_tm]-mod[gid]) / e, 2);
             }
 
-            __kernel void lnl1d(const uint npt, __global const float *lnl2d, __global float *lnl1d){
+            __kernel void lnl1d(const uint npt, __global float *lnl2d, __global float *lnl1d){
+                  uint i_pv = get_global_id(0);    // parameter vector index
+                  uint n_pv = get_global_size(0);  // parameter vector population size
+            
+                int i;
+                bool is_even;
+                uint midpoint = npt;
+                __global float *lnl = &lnl2d[i_pv*npt];
+                
+                while(midpoint > 1){
+                    is_even = midpoint % 2 == 0;   
+                    if (is_even == 0){
+                        lnl[0] += lnl[midpoint-1];
+                    }
+                    midpoint /= 2;
+                    
+                    for(i=0; i<midpoint; i++){
+                        lnl[i] = lnl[i] + lnl[midpoint+i];
+                    }
+                }
+                lnl1d[i_pv] = lnl[0];
+            }
+
+            __kernel void lnl1d_back(const uint npt, __global const float *lnl2d, __global float *lnl1d){
                   uint i_pv = get_global_id(0);    // parameter vector index
                   uint n_pv = get_global_size(0);  // parameter vector population size
 
@@ -81,6 +118,7 @@ class OCLBaseLPF(BaseLPF):
             }
         """
         self.prg_lnl = cl.Program(self.cl_ctx, src).build()
+        self.lnlikelihood = self.lnlikelihood_ocl
 
 
     def _init_data(self, times, fluxes, pbids):
@@ -90,7 +128,8 @@ class OCLBaseLPF(BaseLPF):
         # ----------------------------
         self.timea = self.timea.astype('f')
         self.ofluxa = self.ofluxa.astype('f')
-        self.lnl2d = zeros([self.ofluxa.size, 50], 'f')
+        self.lnl2d = zeros([50, self.ofluxa.size], 'f')
+        self.lnl1d = zeros(self.lnl2d.shape[0], 'f')
         self.ferr = zeros([50, self.nlc])
         self.lcida = self.lcida.astype('int32')
 
@@ -100,6 +139,7 @@ class OCLBaseLPF(BaseLPF):
         self._b_flux = cl.Buffer(self.cl_ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ofluxa)
         self._b_err = cl.Buffer(self.cl_ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ferr)
         self._b_lnl2d = cl.Buffer(self.cl_ctx, mf.WRITE_ONLY, self.lnl2d.nbytes)
+        self._b_lnl1d = cl.Buffer(self.cl_ctx, mf.WRITE_ONLY, self.lnl1d.nbytes)
         self._b_lcids = cl.Buffer(self.cl_ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lcida)
 
 
@@ -115,25 +155,47 @@ class OCLBaseLPF(BaseLPF):
         uv[:, 0] = a * b
         uv[:, 1] = a * (1. - b)
         flux = self.tm.evaluate_t_pv2d(self.timea, pvp_t, uv, copy=copy)
-        return flux.T if copy else None
+        return flux if copy else None
 
     def flux_model(self, pvp):
         return self.transit_model(pvp, copy=True).astype('d')
 
-    def lnlikelihood(self, pv):
-        if self.lnl2d.shape[1] != pv.shape[0]:
+    def _lnl2d(self, pv):
+        if self.lnl2d.shape[0] != pv.shape[0] or self.lnl1d.size != pv.shape[0]:
             self.err = zeros([pv.shape[0], self.nlc], 'f')
             self._b_err.release()
             self._b_err = cl.Buffer(self.cl_ctx, cl.mem_flags.WRITE_ONLY, self.err.nbytes)
-            self.lnl2d = zeros([self.ofluxa.size, pv.shape[0]], 'f')
+            self.lnl2d = zeros([pv.shape[0], self.ofluxa.size], 'f')
             self._b_lnl2d.release()
             self._b_lnl2d = cl.Buffer(self.cl_ctx, cl.mem_flags.WRITE_ONLY, self.lnl2d.nbytes)
+            self.lnl1d = zeros(pv.shape[0], 'f')
+            if self._b_lnl1d:
+                self._b_lnl1d.release()
+            self._b_lnl1d = cl.Buffer(self.cl_ctx, cl.mem_flags.WRITE_ONLY, self.lnl1d.nbytes)
+
         self.transit_model(pv)
         cl.enqueue_copy(self.cl_queue, self._b_err, (10 ** pv[:, self._sl_err]).astype('f'))
         self.prg_lnl.lnl2d(self.cl_queue, self.tm.f.shape, None, self.nlc, self._b_flux, self.tm._b_f,
                            self._b_err, self._b_lcids, self._b_lnl2d)
+
+    def lnlikelihood_numba(self, pv):
+        self._lnl2d(pv)
         cl.enqueue_copy(self.cl_queue, self.lnl2d, self._b_lnl2d)
-        lnl = self.lnl2d.astype('d').sum(0)
+        lnl = psum2d(self.lnl2d)
+        return where(isfinite(lnl), lnl, -inf)
+
+    def lnlikelihood_ocl(self, pv):
+        self._lnl2d(pv)
+        self.prg_lnl.lnl1d(self.cl_queue, [self.lnl2d.shape[0]], None, uint32(self.lnl2d.shape[1]), self._b_lnl2d,
+                           self._b_lnl1d)
+        cl.enqueue_copy(self.cl_queue, self.lnl1d, self._b_lnl1d)
+        lnl = self.lnl1d.astype('d')
+        return where(isfinite(lnl), lnl, -inf)
+
+    def lnlikelihood_numpy(self, pv):
+        self._lnl2d(pv)
+        cl.enqueue_copy(self.cl_queue, self.lnl2d, self._b_lnl2d)
+        lnl = self.lnl2d.astype('d').sum(1)
         return where(isfinite(lnl), lnl, -inf)
 
     def lnprior(self, pv):

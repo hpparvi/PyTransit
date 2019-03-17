@@ -70,6 +70,16 @@ class TTVLPF(BaseLPF):
         self._start_tc = 2
         self._sl_tc = s_[self._start_tc:self._start_tc + self.nlc]
 
+    def optimize_times(self, window):
+        times, fluxes, pbids = [], [], []
+        tcp = self.ps[self._sl_tc]
+        for i in range(self.nlc):
+            tc = tcp[i].prior.mean
+            mask = abs(self.times[i] - tc) < 0.5*window/24.
+            times.append(self.times[i][mask])
+            fluxes.append(self.fluxes[i][mask])
+        self._init_data(times, fluxes, self.pbids)
+
     def _compute_z(self, pv):
         a = as_from_rhop(pv[0], self.period)
         if a < 1.:

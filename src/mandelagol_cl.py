@@ -101,7 +101,6 @@ class MandelAgolCL(TransitModel):
         self._time_id = None   # Time array ID
 
         self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'ma_lerp.cl'),'r').read()).build()
-        #self.prg = cl.Program(self.ctx, open('../src/ma_lerp.cl','r').read()).build()
 
 
     def evaluate_t(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., copy=True):
@@ -205,7 +204,7 @@ class MandelAgolCL(TransitModel):
 
 
     def evaluate_t_pv2d_ttv(self, t, pvp, u, tids, ntr, copy=True, tdv=False):
-        u = np.array(u, float32, order='C').T
+        u = asarray(u, float32)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
         tids = asarray(tids, 'int32')
@@ -221,12 +220,12 @@ class MandelAgolCL(TransitModel):
                 self._b_u.release()
                 self._b_p.release()
 
-            self.npb = 1 if u.ndim == 1 else u.shape[1]
+            self.npb = 1 if u.ndim == 1 else u.shape[0]
             self.nptb = t.size
 
-            self.pv = np.zeros(pvp.shape, float32)
-            self.u = np.zeros((2, self.npb), float32)
-            self.f = np.zeros((t.size, self.npv), float32)
+            self.pv = zeros(pvp.shape, float32)
+            self.u  = zeros((self.npb, 2), float32)
+            self.f  = zeros((self.npv, t.size), float32)
 
             mf = cl.mem_flags
             self._b_t   = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=t)
@@ -249,11 +248,11 @@ class MandelAgolCL(TransitModel):
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
         if tdv:
-            self.prg.ma_eccentric_pop_tdv(self.queue, (t.size, self.npv), None, self._b_t, self._b_p, self._b_u,
+            self.prg.ma_eccentric_pop_tdv(self.queue, (self.npv, t.size), None, self._b_t, self._b_p, self._b_u,
                                           self._b_tid, ntr, self._b_ed, self._b_le, self._b_ld, self.nss, self.etime,
                                           self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self.spv, self._b_f)
         else:
-            self.prg.ma_eccentric_pop_ttv(self.queue, (t.size, self.npv), None, self._b_t, self._b_p, self._b_u,
+            self.prg.ma_eccentric_pop_ttv(self.queue, (self.npv, t.size), None, self._b_t, self._b_p, self._b_u,
                                           self._b_tid, ntr, self._b_ed, self._b_le, self._b_ld, self.nss, self.etime,
                                           self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self.spv, self._b_f)
 
