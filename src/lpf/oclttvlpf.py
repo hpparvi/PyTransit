@@ -32,6 +32,12 @@ from pytransit.lpf.ocllpf import OCLBaseLPF
 from pytransit.orbits_py import as_from_rhop, i_from_ba
 
 
+def plot_estimates(x, p, ax, bwidth=0.8):
+    ax.bar(x, p[4, :] - p[3, :], bwidth, p[3, :], alpha=0.25, fc='b')
+    ax.bar(x, p[2, :] - p[1, :], bwidth, p[1, :], alpha=0.25, fc='b')
+    [ax.plot((xx - 0.47 * bwidth, xx + 0.47 * bwidth), (pp[[0, 0]]), 'k') for xx, pp in zip(x, p.T)]
+
+
 class OCLTTVLPF(OCLBaseLPF):
     def __init__(self, target: str, zero_epoch: float, period: float, passbands: list,
                  times: list = None, fluxes: list = None, pbids: list = None,
@@ -39,6 +45,8 @@ class OCLTTVLPF(OCLBaseLPF):
 
         self.zero_epoch = zero_epoch
         self.period = period
+        self._tc_prior_percentile = 1.
+
         super().__init__(target, passbands, times, fluxes, pbids, nsamples, exptime, cl_ctx, cl_queue)
 
         src = """
@@ -99,7 +107,7 @@ class OCLTTVLPF(OCLBaseLPF):
 
         self.tnumber = round((array([t.mean() for t in self.times]) - self.zero_epoch) / self.period).astype(int)
         for t, f, tn in zip(self.times, self.fluxes, self.tnumber):
-            prior = create_tc_prior(t, f)
+            prior = create_tc_prior(t, f, self._tc_prior_percentile)
             porbit.append(GParameter(f'tc_{tn:d}', f'transit_centre_{tn:d}', 'd', prior, (-inf, inf)))
 
         self.ps.add_global_block('orbit', porbit)
@@ -168,23 +176,34 @@ class OCLTTVLPF(OCLBaseLPF):
         tcs = median(df[tccols], 0)
         return mean((tcs[1:] - tcs[0]) / (self.tnumber[1:] - self.tnumber[0]))
 
-    def plot_ttvs(self, burn=0, thin=1, ax=None, figsize=None):
-        fig, ax = (None, ax) if ax is not None else subplots(figsize=figsize)
-        bwidth = 0.8
+    def plot_ttvs(self, burn=0, thin=1, axs=None, figsize=None, bwidth=0.8, fmt='h', windows=None):
+        assert fmt in ('d', 'h', 'min')
+        multiplier = {'d': 1, 'h': 24, 'min': 1440}
+        ncol = 1 if windows is None else len(windows)
+        fig, axs = (None, axs) if axs is not None else subplots(1, ncol, figsize=figsize, sharey=True)
         df = self.posterior_samples(burn, thin)
         tccols = [c for c in df.columns if 'tc' in c]
         tcs = median(df[tccols], 0)
         period = mean((tcs[1:] - tcs[0]) / (self.tnumber[1:] - self.tnumber[0]))
         tc_linear = self.zero_epoch + self.tnumber * period
-        p = 24 * 60 * percentile(df[tccols] - tc_linear, [50, 16, 84, 0.5, 99.5], 0)
-        ax.bar(self.tnumber, p[4, :] - p[3, :], bwidth, p[3, :], alpha=0.25, fc='b')
-        ax.bar(self.tnumber, p[2, :] - p[1, :], bwidth, p[1, :], alpha=0.25, fc='b')
-        [ax.plot((xx - 0.47 * bwidth, xx + 0.47 * bwidth), (pp[[0, 0]]), 'k') for xx, pp in zip(self.tnumber, p.T)]
-        setp(ax, ylabel='Transit center - linear prediction [min]', xlabel='Transit number')
-        fig.tight_layout()
-        if with_seaborn:
-            sb.despine(ax=ax, offset=15)
-        return ax
+        p = multiplier[fmt] * percentile(df[tccols] - tc_linear, [50, 16, 84, 0.5, 99.5], 0)
+        setp(axs, ylabel='Transit center - linear prediction [min]', xlabel='Transit number')
+        if windows is None:
+            plot_estimates(self.tnumber, p, axs, bwidth)
+            if with_seaborn:
+                sb.despine(ax=axs, offset=15)
+        else:
+            setp(axs[1:], ylabel='')
+            for ax, w in zip(axs, windows):
+                m = (self.tnumber > w[0]) & (self.tnumber < w[1])
+                plot_estimates(self.tnumber[m], p[:, m], ax, bwidth)
+                setp(ax, xlim=w)
+                if with_seaborn:
+                    sb.despine(ax=ax, offset=15)
+        if fig:
+            fig.tight_layout()
+        return axs
+
 
     def plot_transits(self, ncols=4, figsize=(13, 11), remove=(), ylim=None):
         nt = len(self.times)
@@ -193,7 +212,7 @@ class OCLTTVLPF(OCLBaseLPF):
 
         if self.de is not None:
             pv = self.de.minimum_location
-            fmodel = self.flux_model(pv)
+            fmodel = self.flux_model(pv).ravel()
         else:
             pv = None
             fmodel = None
@@ -210,8 +229,8 @@ class OCLTTVLPF(OCLBaseLPF):
             # ------------------------------
             if fmodel is not None:
                 m = self.lcida == i
-                ax.plot(self.times[i], fmodel[0, m], 'w', lw=4)
-                ax.plot(self.times[i], fmodel[0, m], 'k', lw=1)
+                ax.plot(self.times[i], fmodel[m], 'w', lw=4)
+                ax.plot(self.times[i], fmodel[m], 'k', lw=1)
 
             # Transit centre prior
             # --------------------

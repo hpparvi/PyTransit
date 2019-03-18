@@ -29,7 +29,7 @@ except ImportError:
 
 from pytransit.param.parameter import GParameter, LParameter
 from pytransit.param.parameter import UniformPrior as UP, NormalPrior as NP
-from pytransit.lpf.oclttvlpf import OCLTTVLPF
+from pytransit.lpf.oclttvlpf import OCLTTVLPF, plot_estimates
 from pytransit.orbits_py import as_from_rhop, i_from_ba, p_from_dkaiews
 
 
@@ -60,7 +60,7 @@ class OCLTDVLPF(OCLTTVLPF):
 
         self.tnumber = round((array([t.mean() for t in self.times]) - self.zero_epoch) / self.period).astype(int)
         for t, f, tn in zip(self.times, self.fluxes, self.tnumber):
-            prior = create_tc_prior(t, f)
+            prior = create_tc_prior(t, f, self._tc_prior_percentile)
             porbit.append(GParameter(f'tc_{tn:d}', f'transit_centre_{tn:d}', 'd', prior, (-inf, inf)))
 
         # Transit durations
@@ -93,18 +93,28 @@ class OCLTDVLPF(OCLTTVLPF):
         return flux.T if copy else None
 
 
-    def plot_tdvs(self, burn=0, thin=1, ax=None, figsize=None, bwidth=0.8, fmt='h'):
+    def plot_tdvs(self, burn=0, thin=1, axs=None, figsize=None, bwidth=0.8, fmt='h', windows=None):
         assert fmt in ('d', 'h', 'min')
         multiplier = {'d': 1, 'h': 24, 'min': 1440}
-        fig, ax = (None, ax) if ax is not None else subplots(figsize=figsize)
+        ncol = 1 if windows is None else len(windows)
+        fig, axs = (None, axs) if axs is not None else subplots(1, ncol, figsize=figsize, sharey=True)
         df = self.posterior_samples(burn, thin)
         dcols = [c for c in df.columns if 't14_' in c]
         p = multiplier[fmt] * df[dcols].quantile([0.50, 0.16, 0.84, 0.005, 0.995]).values
-        ax.bar(self.tnumber, p[4, :] - p[3, :], bwidth, p[3, :], alpha=0.25, fc='b')
-        ax.bar(self.tnumber, p[2, :] - p[1, :], bwidth, p[1, :], alpha=0.25, fc='b')
-        [ax.plot((xx - 0.47 * bwidth, xx + 0.47 * bwidth), (pp[[0, 0]]), 'k') for xx, pp in zip(self.tnumber, p.T)]
-        setp(ax, ylabel='Transit duration [h]', xlabel='Transit number')
-        fig.tight_layout()
-        if with_seaborn:
-            sb.despine(ax=ax, offset=15)
-        return ax
+        setp(axs, ylabel='Transit duration [h]', xlabel='Transit number')
+
+        if windows is None:
+            plot_estimates(self.tnumber, p, axs)
+        else:
+            setp(axs[1:], ylabel='')
+            for ax, w in zip(axs, windows):
+                m = (self.tnumber > w[0]) & (self.tnumber < w[1])
+                plot_estimates(self.tnumber[m], p[:, m], ax)
+                setp(ax, xlim=w)
+                if with_seaborn:
+                    sb.despine(ax=ax, offset=15)
+
+        if fig:
+            fig.tight_layout()
+
+        return axs
