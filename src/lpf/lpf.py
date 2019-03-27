@@ -407,9 +407,10 @@ class BaseLPF:
 
     def lnlikelihood(self, pv):
         flux_m = self.flux_model(pv)
+        wn = 10**pv[self._sl_err]
         lnlike = 0.0
         for i in range(self.nlc):
-            lnlike += lnlike_normal_s(self.fluxes[i], flux_m[i], self.wn[i])
+            lnlike += lnlike_normal_s(self.fluxes[i], flux_m[i], wn[i])
         return lnlike
 
     def lnposterior(self, pv):
