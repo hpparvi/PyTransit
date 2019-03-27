@@ -82,6 +82,36 @@ class OCLTTVLPF(OCLBaseLPF):
                  }
                  lnl1d[i_pv] = lnl[0];
              }
+
+            __kernel void lnl1d_chunked(const uint npt, __global float *lnl2d, __global float *lnl1d){
+                uint ipv = get_global_id(0);    // parameter vector index
+                uint npv = get_global_size(0);  // parameter vector population size
+                uint ibl = get_global_id(1);    // block index
+                uint nbl = get_global_size(1);  // number of blocks
+                uint lnp = npt / nbl;
+                  
+                __global float *lnl = &lnl2d[ipv*npt + ibl*lnp];
+              
+                if(ibl == nbl-1){
+                    lnp = npt - (ibl*lnp);
+                }
+            
+                prefetch(lnl, lnp);
+                bool is_even;
+                uint midpoint = lnp;
+                while(midpoint > 1){
+                    is_even = midpoint % 2 == 0;   
+                    if (is_even == 0){
+                        lnl[0] += lnl[midpoint-1];
+                    }
+                    midpoint /= 2;
+            
+                    for(int i=0; i<midpoint; i++){
+                        lnl[i] = lnl[i] + lnl[midpoint+i];
+                    }
+                }
+                lnl1d[ipv*nbl + ibl] = lnl[0];
+            }
         """
         self.prg_lnl = cl.Program(self.cl_ctx, src).build()
 

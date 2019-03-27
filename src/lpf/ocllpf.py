@@ -64,10 +64,12 @@ def psum2d(a):
 
 class OCLBaseLPF(BaseLPF):
     def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None,
-                 pbids: list = None, nsamples: int = 1, exptime: float = 0.020433598, cl_ctx=None, cl_queue=None):
+                 pbids: list = None, nsamples: int = 1, exptime: float = 0.020433598, cl_ctx=None, cl_queue=None,
+                 **kwargs):
 
         self.cl_ctx = cl_ctx or self.tm.ctx
         self.cl_queue = cl_queue or self.tm.queue
+        self.cl_lnl_chunks = kwargs.get('cl_lnl_chunks', 1)
         super().__init__(target, passbands, times, fluxes, pbids, None, 1, exptime)
 
         self.tm = MandelAgolCL(self.npb, supersampling=nsamples, exptime=exptime, klims=(0.01, 0.75), nk=512, nz=512,
@@ -106,15 +108,35 @@ class OCLBaseLPF(BaseLPF):
                 }
                 lnl1d[i_pv] = lnl[0];
             }
-
-            __kernel void lnl1d_back(const uint npt, __global const float *lnl2d, __global float *lnl1d){
-                  uint i_pv = get_global_id(0);    // parameter vector index
-                  uint n_pv = get_global_size(0);  // parameter vector population size
-
-                  lnl1d[i_pv] = 0.f;
-                  for(uint i_tm=0; i_tm<npt; i_tm++){
-                    lnl1d[i_pv] += lnl2d[i_pv + i_tm*n_pv];
-                  }
+            
+            __kernel void lnl1d_chunked(const uint npt, __global float *lnl2d, __global float *lnl1d){
+                uint ipv = get_global_id(0);    // parameter vector index
+                uint npv = get_global_size(0);  // parameter vector population size
+                uint ibl = get_global_id(1);    // block index
+                uint nbl = get_global_size(1);  // number of blocks
+                uint lnp = npt / nbl;
+                  
+                __global float *lnl = &lnl2d[ipv*npt + ibl*lnp];
+              
+                if(ibl == nbl-1){
+                    lnp = npt - (ibl*lnp);
+                }
+            
+                prefetch(lnl, lnp);
+                bool is_even;
+                uint midpoint = lnp;
+                while(midpoint > 1){
+                    is_even = midpoint % 2 == 0;   
+                    if (is_even == 0){
+                        lnl[0] += lnl[midpoint-1];
+                    }
+                    midpoint /= 2;
+            
+                    for(int i=0; i<midpoint; i++){
+                        lnl[i] = lnl[i] + lnl[midpoint+i];
+                    }
+                }
+                lnl1d[ipv*nbl + ibl] = lnl[0];
             }
         """
         self.prg_lnl = cl.Program(self.cl_ctx, src).build()
@@ -129,7 +151,7 @@ class OCLBaseLPF(BaseLPF):
         self.timea = self.timea.astype('f')
         self.ofluxa = self.ofluxa.astype('f')
         self.lnl2d = zeros([50, self.ofluxa.size], 'f')
-        self.lnl1d = zeros(self.lnl2d.shape[0], 'f')
+        self.lnl1d = zeros([self.lnl2d.shape[0], self.cl_lnl_chunks], 'f')
         self.ferr = zeros([50, self.nlc])
         self.lcida = self.lcida.astype('int32')
 
@@ -168,15 +190,15 @@ class OCLBaseLPF(BaseLPF):
             self.lnl2d = zeros([pv.shape[0], self.ofluxa.size], 'f')
             self._b_lnl2d.release()
             self._b_lnl2d = cl.Buffer(self.cl_ctx, cl.mem_flags.WRITE_ONLY, self.lnl2d.nbytes)
-            self.lnl1d = zeros(pv.shape[0], 'f')
+            self.lnl1d = zeros([pv.shape[0], self.cl_lnl_chunks], 'f')
             if self._b_lnl1d:
                 self._b_lnl1d.release()
             self._b_lnl1d = cl.Buffer(self.cl_ctx, cl.mem_flags.WRITE_ONLY, self.lnl1d.nbytes)
-
         self.transit_model(pv)
         cl.enqueue_copy(self.cl_queue, self._b_err, (10 ** pv[:, self._sl_err]).astype('f'))
         self.prg_lnl.lnl2d(self.cl_queue, self.tm.f.shape, None, self.nlc, self._b_flux, self.tm._b_f,
                            self._b_err, self._b_lcids, self._b_lnl2d)
+
 
     def lnlikelihood_numba(self, pv):
         self._lnl2d(pv)
@@ -184,13 +206,14 @@ class OCLBaseLPF(BaseLPF):
         lnl = psum2d(self.lnl2d)
         return where(isfinite(lnl), lnl, -inf)
 
+
     def lnlikelihood_ocl(self, pv):
         self._lnl2d(pv)
-        self.prg_lnl.lnl1d(self.cl_queue, [self.lnl2d.shape[0]], None, uint32(self.lnl2d.shape[1]), self._b_lnl2d,
-                           self._b_lnl1d)
+        self.prg_lnl.lnl1d_chunked(self.cl_queue, [self.lnl2d.shape[0], self.cl_lnl_chunks], None,
+                                   uint32(self.lnl2d.shape[1]), self._b_lnl2d, self._b_lnl1d)
         cl.enqueue_copy(self.cl_queue, self.lnl1d, self._b_lnl1d)
-        lnl = self.lnl1d.astype('d')
-        return where(isfinite(lnl), lnl, -inf)
+        lnl = self.lnl1d.astype('d').sum(1)
+        return lnl
 
     def lnlikelihood_numpy(self, pv):
         self._lnl2d(pv)
@@ -205,7 +228,8 @@ class OCLBaseLPF(BaseLPF):
         return lnpriors
 
     def lnposterior(self, pv):
-        return self.lnlikelihood(pv) + self.lnprior(pv)
+        lnp = self.lnlikelihood(pv) + self.lnprior(pv) + self.lnprior_hooks(pv)
+        return where(isfinite(lnp), lnp, -inf)
 
     def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation', leave=False):
         if not with_pyde:
