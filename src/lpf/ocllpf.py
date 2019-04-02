@@ -236,7 +236,7 @@ class OCLBaseLPF(BaseLPF):
             raise ImportError("PyDE not installed.")
 
         if self.de is None:
-            self.de = DiffEvol(self.lnposterior, clip(self.ps.bounds, -1, 1), npop, maximize=True, vfun=True)
+            self.de = DiffEvol(self.lnposterior, clip(self.ps.bounds, -1, 1), npop, maximize=True, vectorize=True)
             if population is None:
                 self.de._population[:, :] = self.create_pv_population(npop)
             else:
