@@ -418,9 +418,6 @@ class BaseLPF:
         return self.lnposterior(pv)
 
     def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation', leave=False):
-        if not with_pyde:
-            raise ImportError("PyDE not installed.")
-
         if self.de is None:
             self.de = DiffEvol(self.lnposterior, clip(self.ps.bounds, -1, 1), npop, maximize=True)
             if population is None:
