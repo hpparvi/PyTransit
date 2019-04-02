@@ -32,12 +32,6 @@ except ImportError:
     with_pandas = False
 
 try:
-    from pyde import DiffEvol
-    with_pyde = True
-except ImportError:
-    with_pyde = False
-
-try:
     from emcee import EnsembleSampler
     with_emcee = True
 except ImportError:
@@ -64,6 +58,7 @@ from pytransit.orbits_py import z_circular, duration_eccentric, as_from_rhop
 from pytransit.param.parameter import ParameterSet, PParameter, GParameter, LParameter
 from pytransit.param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
 from pytransit.contamination.filter import sdss_g, sdss_r, sdss_i, sdss_z
+from pytransit.utils.de import DiffEvol
 
 @njit(cache=False)
 def lnlike_normal(o, m, e):

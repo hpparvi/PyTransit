@@ -27,18 +27,13 @@ from tqdm.auto import tqdm
 from pytransit.mandelagol_cl import MandelAgolCL
 from pytransit.orbits_py import as_from_rhop, i_from_ba
 from pytransit.lpf.lpf import BaseLPF
+from pytransit.utils.de import DiffEvol
 
 try:
     import pandas as pd
     with_pandas = True
 except ImportError:
     with_pandas = False
-
-try:
-    from pyde import DiffEvol
-    with_pyde = True
-except ImportError:
-    with_pyde = False
 
 try:
     from emcee import EnsembleSampler
