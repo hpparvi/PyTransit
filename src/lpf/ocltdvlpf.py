@@ -101,7 +101,7 @@ class OCLTDVLPF(OCLTTVLPF):
         df = self.posterior_samples(burn, thin)
         dcols = [c for c in df.columns if 't14_' in c]
         p = multiplier[fmt] * df[dcols].quantile([0.50, 0.16, 0.84, 0.005, 0.995]).values
-        setp(axs, ylabel='Transit duration [h]', xlabel='Transit number')
+        setp(axs, ylabel='Transit duration [{}]'.format(fmt), xlabel='Transit number')
 
         if windows is None:
             plot_estimates(self.tnumber, p, axs)

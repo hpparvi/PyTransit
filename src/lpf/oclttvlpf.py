@@ -217,7 +217,7 @@ class OCLTTVLPF(OCLBaseLPF):
         period = mean((tcs[1:] - tcs[0]) / (self.tnumber[1:] - self.tnumber[0]))
         tc_linear = self.zero_epoch + self.tnumber * period
         p = multiplier[fmt] * percentile(df[tccols] - tc_linear, [50, 16, 84, 0.5, 99.5], 0)
-        setp(axs, ylabel='Transit center - linear prediction [min]', xlabel='Transit number')
+        setp(axs, ylabel='Transit center - linear prediction [{}]'.format(fmt), xlabel='Transit number')
         if windows is None:
             plot_estimates(self.tnumber, p, axs, bwidth)
             if with_seaborn:
