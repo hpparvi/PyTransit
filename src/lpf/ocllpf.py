@@ -59,16 +59,18 @@ def psum2d(a):
 
 class OCLBaseLPF(BaseLPF):
     def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None,
-                 pbids: list = None, nsamples: int = 1, exptime: float = 0.020433598, cl_ctx=None, cl_queue=None,
-                 **kwargs):
+                 pbids: list = None, covariates: list = None, nsamples: list = None, exptimes: list = None,
+                 cl_ctx=None, cl_queue=None, **kwargs):
 
-        self.cl_ctx = cl_ctx or self.tm.ctx
-        self.cl_queue = cl_queue or self.tm.queue
+        self.cl_ctx = cl_ctx
+        self.cl_queue = cl_queue
         self.cl_lnl_chunks = kwargs.get('cl_lnl_chunks', 1)
-        super().__init__(target, passbands, times, fluxes, pbids, None, 1, exptime)
+        super().__init__(target, passbands, times, fluxes, pbids, covariates)
 
-        self.tm = MandelAgolCL(self.npb, supersampling=nsamples, exptime=exptime, klims=(0.01, 0.75), nk=512, nz=512,
-                               cl_ctx=cl_ctx, cl_queue=cl_queue)
+        self.tm = MandelAgolCL(self.npb, klims=(0.01, 0.75), nk=512, nz=512, cl_ctx=cl_ctx, cl_queue=cl_queue)
+        self.nsamples = nsamples
+        self.exptimes = exptimes
+        self.tm.set_data(self.timea, self.lcida, self.pbida, self.nsamples, self.exptimes)
 
         src = """
            __kernel void lnl2d(const int nlc, __global const float *obs, __global const float *mod, __global const float *err, __global const int *lcids, __global float *lnl2d){
@@ -138,9 +140,10 @@ class OCLBaseLPF(BaseLPF):
         self.lnlikelihood = self.lnlikelihood_ocl
 
 
-    def _init_data(self, times, fluxes, pbids):
-        super()._init_data(times, fluxes, pbids)
+    def _init_data(self, times, fluxes, pbids, covariates=None):
+        super()._init_data(times, fluxes, pbids, covariates)
         self.nlc = int32(self.nlc)
+
         # Initialise the Python arrays
         # ----------------------------
         self.timea = self.timea.astype('f')
@@ -149,6 +152,9 @@ class OCLBaseLPF(BaseLPF):
         self.lnl1d = zeros([self.lnl2d.shape[0], self.cl_lnl_chunks], 'f')
         self.ferr = zeros([50, self.nlc])
         self.lcida = self.lcida.astype('int32')
+        self.pbida = self.pbida.astype('int32')
+        if covariates is not None:
+            self.cova = self.cova.astype('f')
 
         # Initialise OpenCL buffers
         # -------------------------
@@ -158,7 +164,8 @@ class OCLBaseLPF(BaseLPF):
         self._b_lnl2d = cl.Buffer(self.cl_ctx, mf.WRITE_ONLY, self.lnl2d.nbytes)
         self._b_lnl1d = cl.Buffer(self.cl_ctx, mf.WRITE_ONLY, self.lnl1d.nbytes)
         self._b_lcids = cl.Buffer(self.cl_ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lcida)
-
+        if covariates is not None:
+            self._b_covariates = cl.Buffer(self.cl_ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.cova)
 
     def transit_model(self, pvp, copy=False):
         pvp = atleast_2d(pvp)
@@ -171,7 +178,7 @@ class OCLBaseLPF(BaseLPF):
         a, b = sqrt(pvp[:, self._sl_ld][:, 0]), 2. * pvp[:, self._sl_ld][:, 1]
         uv[:, 0] = a * b
         uv[:, 1] = a * (1. - b)
-        flux = self.tm.evaluate_t_pv2d(self.timea, pvp_t, uv, copy=copy)
+        flux = self.tm.evaluate_t_pv2d(pvp_t, uv, copy=copy)
         return flux if copy else None
 
     def flux_model(self, pvp):

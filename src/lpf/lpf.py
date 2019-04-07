@@ -20,7 +20,8 @@ from astropy.stats import sigma_clip
 from matplotlib.pyplot import subplots
 from numba import njit
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like,
-                   clip, argsort, any, s_, zeros, arccos, nan, isnan, full, pi, sum, repeat, asarray, ndarray, log10)
+                   clip, argsort, any, s_, zeros, arccos, nan, isnan, full, pi, sum, repeat, asarray, ndarray, log10,
+                   array)
 from numpy.random import uniform, normal
 from scipy.stats import norm
 from tqdm.auto import tqdm
@@ -92,8 +93,9 @@ def qq_to_uv(pv, uv):
 class BaseLPF:
     _lpf_name = 'base'
 
-    def __init__(self, target: str, passbands: list, times: list=None, fluxes:list=None,
-                 pbids:list=None, tm:TransitModel=None, nsamples: int=1, exptime: float = 0.020433598):
+    def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None,
+                 pbids: list = None, covariates: list = None, tm: TransitModel = None,
+                 nsamples: int=1, exptime: float = 0.020433598):
         self.tm = tm or MA(interpolate=True, klims=(0.01, 0.75), nk=512, nz=512)
 
         self.target = target            # Name of the planet
@@ -133,7 +135,7 @@ class BaseLPF:
         # Set up the observation data
         # ---------------------------
         if times and fluxes and pbids:
-            self._init_data(times, fluxes, pbids)
+            self._init_data(times, fluxes, pbids, covariates)
 
         # Setup parametrisation
         # =====================
@@ -156,7 +158,7 @@ class BaseLPF:
             self._bad_fluxes = None
 
 
-    def _init_data(self, times, fluxes, pbids):
+    def _init_data(self, times, fluxes, pbids, covariates=None):
         self.nlc = len(times)
         self.times = asarray(times)
         self.fluxes = asarray(fluxes)
@@ -176,12 +178,26 @@ class BaseLPF:
             self.lcida = repeat(self.lcida, self.ss.nsamples)
             self.pbida = repeat(self.pbida, self.ss.nsamples)
 
+
+        # Initialise light curves slices
+        # ------------------------------
         self.lcslices = []
         sstart = 0
         for i in range(self.nlc):
             s = self.times[i].size
             self.lcslices.append(s_[sstart:sstart + s])
             sstart += s
+
+        # Initialise the covariate arrays, if given
+        # -----------------------------------------
+        if covariates is not None:
+            self.covariates = covariates
+            for cv in self.covariates:
+                cv[:, 1:] = (cv[:, 1:] - cv[:, 1:].mean(0)) / cv[:, 1:].ptp(0)
+            self.ncovs = self.covariates[0].shape[1]
+            self.covsize = array([c.size for c in self.covariates])
+            self.covstart = concatenate([[0], self.covsize.cumsum()[:-1]])
+            self.cova = concatenate(self.covariates)
 
 
     def _init_parameters(self):

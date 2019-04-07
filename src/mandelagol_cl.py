@@ -25,7 +25,7 @@ import numpy as np
 import pyopencl as cl
 from os.path import dirname, join
 
-from numpy import array, uint32, float32, int32, asarray, zeros
+from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique
 
 import pytransit.ma_quadratic_nb as ma
 from pytransit.transitmodel import TransitModel
@@ -89,12 +89,18 @@ class MandelAgolCL(TransitModel):
         self._b_kt = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.kt)
         self._b_zt = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.zt)
 
+        self.time  = None
+        self.lcids = None
+        self.pbids = None
+        self.nsamples = None
+        self.exptimes = None
+
         # Declare the buffers for the ld coefficients, time, and flux arrays. These will
         # be initialised when the model is first evaluated, and reinitialised if the
         # array sizes change.
         #
         self._b_u = None       # Limb darkening coefficient buffer
-        self._b_t = None       # Time buffer
+        self._b_time = None       # Time buffer
         self._b_f = None       # Flux buffer
         self._b_p = None       # Parameter vector buffer
 
@@ -103,14 +109,40 @@ class MandelAgolCL(TransitModel):
         self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'ma_lerp.cl'),'r').read()).build()
 
 
-    def evaluate_t(self, t, k, u, t0, p, a, i, e=0., w=0., c=0., copy=True):
+    def set_data(self, time, lcids=None, pbids=None, nsamples=None, exptimes=None):
+        mf = cl.mem_flags
+
+        if self._b_time is not None:
+            self._b_time.release()
+            self._b_lcids.release()
+            self._b_pbids.release()
+            self._b_nsamples.release()
+            self._b_etimes.release()
+
+        self.nlc = uint32(1 if lcids is None else unique(lcids).size)
+        self.npb = uint32(1 if pbids is None else unique(pbids).size)
+        self.nptb = time.size
+
+        self.time = asarray(time, dtype='float32')
+        self.lcids = zeros(t.size, 'uint32') if lcids is None else asarray(lcids, dtype='uint32')
+        self.pbids = zeros(self.nlc, 'uint32') if pbids is None else asarray(pbids, dtype='uint32')
+        self.nsamples = ones(self.nlc, 'uint32') if nsamples is None else asarray(nsamples, dtype='uint32')
+        self.exptimes = ones(self.nlc, 'float32') if exptimes is None else asarray(exptimes, dtype='float32')
+
+        self._b_time = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.time)
+        self._b_lcids = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lcids)
+        self._b_pbids = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pbids)
+        self._b_nsamples = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.nsamples)
+        self._b_etimes = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.exptimes)
+
+
+    def evaluate_t(self, k, u, t0, p, a, i, e=0., w=0., c=0., copy=True):
         u = np.array(u, float32, order='C').T
 
         # Release and reinitialise the GPU buffers if the sizes of the time or
         # limb darkening coefficient arrays change.
-        if (t.size != self.nptb) or (u.size != self.u.size):
-            if self._b_t is not None:
-                self._b_t.release()
+        if (u.size != self.u.size):
+            if self._b_u is not None:
                 self._b_f.release()
                 self._b_u.release()
                 self._b_p.release()
@@ -119,18 +151,18 @@ class MandelAgolCL(TransitModel):
             self.nptb = t.size
 
             self.u = np.zeros((2,self.npb), float32)
-            self.f = np.zeros((t.size, self.npb), float32)
+            self.f = np.zeros((self.nptb, self.npb), float32)
             self.pv = np.zeros(7, float32)
 
             mf = cl.mem_flags
-            self._b_t = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=t)
+            self._b_time = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=t)
             self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, t.nbytes)
             self._b_u = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.u)
             self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
 
         # Copy the time array to the GPU if it has been changed
         if id(t) != self._time_id:
-            cl.enqueue_copy(self.queue, self._b_t, t)
+            cl.enqueue_copy(self.queue, self._b_time, t)
             self._time_id = id(t)
 
         # Copy the limb darkening coefficient array to the GPU
@@ -140,9 +172,9 @@ class MandelAgolCL(TransitModel):
         self.pv[:] = np.array([k, t0, p, a, i, e, w], dtype=float32)
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
-        self.prg.ma_eccentric(self.queue, t.shape, None, self._b_t, self._b_p, self._b_u,
-                    self._b_ed, self._b_le, self._b_ld, self.nss, self.etime,
-                    self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self._b_f)
+        self.prg.ma_eccentric(self.queue, t.shape, None, self._b_time, self._b_p, self._b_u,
+                              self._b_ed, self._b_le, self._b_ld, self.nss, self.etime,
+                              self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self._b_f)
 
         if copy:
             cl.enqueue_copy(self.queue, self.f, self._b_f)
@@ -151,39 +183,29 @@ class MandelAgolCL(TransitModel):
             return None
 
 
-    def evaluate_t_pv2d(self, t, pvp, u, copy=True):
-        mf = cl.mem_flags
+    def evaluate_t_pv2d(self, pvp, u, copy=True):
         u = asarray(u, float32)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
 
         # Release and reinitialise the GPU buffers if the sizes of the time or
         # limb darkening coefficient arrays change.
-        if (t.size != self.nptb) or (u.size != self.u.size) or (pvp.size != self.pv.size):
+        if (u.size != self.u.size) or (pvp.size != self.pv.size):
+            assert self.npb == u.shape[1] // 2
 
-            if self._b_t is not None:
-                self._b_t.release()
+            if self._b_f is not None:
                 self._b_f.release()
                 self._b_u.release()
                 self._b_p.release()
 
-            self.npb = 1 if u.ndim == 1 else u.shape[0]
-            self.nptb = t.size
-
             self.pv = zeros(pvp.shape, float32)
-            self.u  = zeros((self.npb, 2), float32)
-            self.f  = zeros((self.npv, t.size), float32)
+            self.u = zeros((self.npv, 2 * self.npb), float32)
+            self.f = zeros((self.npv, self.nptb), float32)
 
-            self._b_t = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=t)
-            self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, t.nbytes * self.npv)
+            mf = cl.mem_flags
+            self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * self.npv)
             self._b_u = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.u)
             self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
-
-
-        # Copy the time array to the GPU if it has been changed
-        if id(t) != self._time_id:
-            cl.enqueue_copy(self.queue, self._b_t, t)
-            self._time_id = id(t)
 
         # Copy the limb darkening coefficient array to the GPU
         cl.enqueue_copy(self.queue, self._b_u, u)
@@ -192,15 +214,18 @@ class MandelAgolCL(TransitModel):
         self.pv[:] = pvp
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
-        self.prg.ma_eccentric_pop(self.queue, (self.npv, t.size), None, self._b_t, self._b_p, self._b_u,
-                                  self._b_ed, self._b_le, self._b_ld, self.nss, self.etime,
-                                  self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self.spv, self._b_f)
+        self.prg.ma_eccentric_pop(self.queue, (self.npv, self.nptb), None, self._b_time, self._b_lcids, self._b_pbids,
+                                  self._b_p, self._b_u,
+                                  self._b_ed, self._b_le, self._b_ld, self._b_nsamples, self._b_etimes,
+                                  self.k0, self.k1, self.nk, self.nz, self.dk, self.dz,
+                                  self.spv, self.nlc, self.npb, self._b_f)
 
         if copy:
             cl.enqueue_copy(self.queue, self.f, self._b_f)
             return self.f
         else:
             return None
+
 
 
     def evaluate_t_pv2d_ttv(self, t, pvp, u, tids, ntr, copy=True, tdv=False):
@@ -214,8 +239,8 @@ class MandelAgolCL(TransitModel):
         # limb darkening coefficient arrays change.
         if (t.size != self.nptb) or (u.size != self.u.size) or (pvp.size != self.pv.size):
 
-            if self._b_t is not None:
-                self._b_t.release()
+            if self._b_time is not None:
+                self._b_time.release()
                 self._b_f.release()
                 self._b_u.release()
                 self._b_p.release()
@@ -228,7 +253,7 @@ class MandelAgolCL(TransitModel):
             self.f  = zeros((self.npv, t.size), float32)
 
             mf = cl.mem_flags
-            self._b_t   = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=t)
+            self._b_time   = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=t)
             self._b_f   = cl.Buffer(self.ctx, mf.WRITE_ONLY, t.nbytes * self.npv)
             self._b_u   = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.u)
             self._b_p   = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
@@ -236,7 +261,7 @@ class MandelAgolCL(TransitModel):
 
         # Copy the time array to the GPU if it has been changed
         if id(t) != self._time_id:
-            cl.enqueue_copy(self.queue, self._b_t, t)
+            cl.enqueue_copy(self.queue, self._b_time, t)
             cl.enqueue_copy(self.queue, self._b_tid, tids)
             self._time_id = id(t)
 
@@ -248,11 +273,11 @@ class MandelAgolCL(TransitModel):
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
         if tdv:
-            self.prg.ma_eccentric_pop_tdv(self.queue, (self.npv, t.size), None, self._b_t, self._b_p, self._b_u,
+            self.prg.ma_eccentric_pop_tdv(self.queue, (self.npv, t.size), None, self._b_time, self._b_p, self._b_u,
                                           self._b_tid, ntr, self._b_ed, self._b_le, self._b_ld, self.nss, self.etime,
                                           self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self.spv, self._b_f)
         else:
-            self.prg.ma_eccentric_pop_ttv(self.queue, (self.npv, t.size), None, self._b_t, self._b_p, self._b_u,
+            self.prg.ma_eccentric_pop_ttv(self.queue, (self.npv, t.size), None, self._b_time, self._b_p, self._b_u,
                                           self._b_tid, ntr, self._b_ed, self._b_le, self._b_ld, self.nss, self.etime,
                                           self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self.spv, self._b_f)
 

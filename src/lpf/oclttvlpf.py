@@ -41,13 +41,13 @@ def plot_estimates(x, p, ax, bwidth=0.8):
 class OCLTTVLPF(OCLBaseLPF):
     def __init__(self, target: str, zero_epoch: float, period: float, passbands: list,
                  times: list = None, fluxes: list = None, pbids: list = None,
-                 nsamples: int = 1, exptime: float = 0.020433598, cl_ctx=None, cl_queue=None):
+                 nsamples: list = None, exptimes: list = None, cl_ctx=None, cl_queue=None):
 
         self.zero_epoch = zero_epoch
         self.period = period
         self._tc_prior_percentile = 1.
 
-        super().__init__(target, passbands, times, fluxes, pbids, nsamples, exptime, cl_ctx, cl_queue)
+        super().__init__(target, passbands, times, fluxes, pbids, nsamples=nsamples, exptimes=exptimes, cl_ctx=cl_ctx, cl_queue=cl_queue)
 
         src = """
             __kernel void lnl2d(const int nlc, __global const float *obs, __global const float *mod, __global const float *err, __global const int *lcids, __global float *lnl2d){

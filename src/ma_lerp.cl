@@ -126,22 +126,31 @@ float eval_ma_ip(const float z, __global const float *u,
   }
 }
 
-__kernel void ma_circular(__global const float *times, __global const float *pv, __global const float *u,
+__kernel void ma_circular(__global const float *times, __global const uint *lcids, __global const uint *pbids,
+        __global const float *pv, __global const float *u,
         __global const float *edt, __global const float *let, __global const float *ldt,
-        const int nss, const float exptime, const float k0, const float k1,
-        const uint nk, const uint nz, const float dk, const float dz, __global float *flux){
+        __global const int *nss, __global const float *exptimes,
+        const float k0, const float k1, const uint nk, const uint nz, const float dk, const float dz,
+        const uint nlc, const uint npb,
+        __global float *flux){
       int gid = get_global_id(0);
+      uint lcid = lcids[gid];         // light curve index
+      uint pbid = pbids[lcid];         // passband index
+
       float toffset = 0.0f;
       float ma_offset = mean_anomaly_offset(pv[5], pv[6]);
       float z = 0.0f;
 
+      uint ns = nss[lcid];
+      float exptime = exptimes[lcid];
+
       flux[gid] = 0.0f;
-      for(int i=1; i<nss+1; i++){
-        toffset = exptime * (((float) i - 0.5f)/ (float) nss - 0.5f);
+      for(int i=1; i<ns+1; i++){
+        toffset = exptime * (((float) i - 0.5f)/ (float) ns - 0.5f);
         z = z_circular(times[gid]+toffset, pv[1], pv[2], pv[3], pv[4], 1.0f);
         flux[gid] += eval_ma_ip(z, u, edt, let, ldt, pv[0], k0, k1, nk, nz, dk, dz);
       }
-      flux[gid] /= (float) nss;
+      flux[gid] /= (float) ns;
 }
 
 __kernel void ma_eccentric(__global const float *times, __global const float *pv, __global const float *u,
@@ -164,31 +173,39 @@ __kernel void ma_eccentric(__global const float *times, __global const float *pv
 }
 
 
-__kernel void ma_eccentric_pop(__global const float *times, __global const float *pv_pop, __global const float *ldc_pop,
+__kernel void ma_eccentric_pop(__global const float *times, __global const uint *lcids, __global const uint *pbids,
+         __global const float *pv_pop, __global const float *ldc_pop,
 		 __global const float *edt, __global const float *let, __global const float *ldt,
-		 const int nss, const float exptime, const float k0, const float k1,
-		 const uint nk, const uint nz, const float dk, const float dz, const uint pv_length, __global float *flux){
+		 __global const uint *nss, __global const float *exptimes,
+         const float k0, const float k1, const uint nk, const uint nz, const float dk, const float dz,
+         const uint pv_length, const uint nlc, const uint npb,
+         __global float *flux){
 
       uint i_tm = get_global_id(1);    // time vector index
       uint n_tm = get_global_size(1);  // time vector size
       uint i_pv = get_global_id(0);    // parameter vector index
       uint n_pv = get_global_size(0);  // parameter vector population size
       uint gid  = i_pv*n_tm + i_tm;    // global linear index
+      uint lcid = lcids[i_tm];         // light curve index
+      uint pbid = pbids[lcid];         // passband index
 
-      __global float *pv  = &pv_pop[i_pv*pv_length];
-      __global float *ldc = &ldc_pop[2*i_pv];
+      __global const float *pv  = &pv_pop[i_pv*pv_length];
+      __global const float *ldc = &ldc_pop[2*npb*i_pv + 2*pbid];
 
+      uint ns = nss[lcid];
+      float exptime = exptimes[lcid];
       float toffset, z;
       float ma_offset = mean_anomaly_offset(pv[5], pv[6]);
 
       flux[gid] = 0.0f;
-      for(int i=1; i<nss+1; i++){
-        toffset = exptime * (((float) i - 0.5f)/ (float) nss - 0.5f);
+      for(int i=1; i<ns+1; i++){
+        toffset = exptime * (((float) i - 0.5f)/ (float) ns - 0.5f);
         z = z_iter(times[i_tm]+toffset, pv[1], pv[2], pv[3], pv[4], pv[5], pv[6], ma_offset, 1.0f);
         flux[gid] += eval_ma_ip(z, ldc, edt, let, ldt, pv[0], k0, k1, nk, nz, dk, dz);
       }
-      flux[gid] /= (float) nss;
+      flux[gid] /= (float) ns;
 }
+
 
 __kernel void ma_eccentric_pop_ttv(__global const float *times, __global const float *pv_pop,
          __global const float *ldc_pop, __global const int *tid, const int ntr,
