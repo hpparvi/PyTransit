@@ -273,6 +273,7 @@ class OCLTTVLPF(OCLBaseLPF):
             # The transit index
             # -----------------
             ax.text(0.05, 0.95, self.tnumber[i], ha='left', va='top', transform=ax.transAxes)
+            ax.text(0.05, 0.05, "({})".format(i), ha='left', va='bottom', transform=ax.transAxes, size='small')
             ax.set_xlim(self.times[i][[0, -1]])
 
         if ylim is not None:
