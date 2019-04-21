@@ -145,7 +145,7 @@ class KeplerLC(object):
 
     @property
     def error_per_transit(self):
-        return [self.time[sl] for sl in self.tslices]
+        return [self.error[sl] for sl in self.tslices]
 
     @property
     def normalized_error(self):
