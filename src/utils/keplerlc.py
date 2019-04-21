@@ -16,7 +16,9 @@
 
 import numpy as np
 
-from numpy import inf, isfinite, abs, sum, unique, ones, compress, array, mean, round, int, where, float64
+from numpy import inf, isfinite, abs, sum, unique, ones, compress, array, mean, round, int, where, float64, full_like, \
+    nan
+
 
 def fold_orbit_and_phase(time, period, origo, shift):
     phase  = ((time - origo)/period + shift)
@@ -25,7 +27,7 @@ def fold_orbit_and_phase(time, period, origo, shift):
     return  orbit, phase
 
 class KeplerLC(object):
-    def __init__(self, time, flux, quarter, zero_epoch, period, d_transit, d_baseline, **kwargs):
+    def __init__(self, time, flux, quarter, zero_epoch, period, d_transit, d_baseline, error=None, **kwargs):
         """
         Kepler light curve.
 
@@ -60,6 +62,7 @@ class KeplerLC(object):
         self.qidarr = array(quarter)                                   # quarter indices
         self.tidarr, nt = orbit, orbit[-1]                             # transit indices
         self.msk_oot = msk_oot
+        self.error = error if error is not None else full_like(self.time, nan)
 
         # Remove orbits with too few datapoints
         # -------------------------------------
@@ -83,6 +86,7 @@ class KeplerLC(object):
     def _compress_data(self, mask):
         self.time    = compress(mask, self.time)
         self.flux    = compress(mask, self.flux)
+        self.error   = compress(mask, self.error)
         self.qidarr  = compress(mask, self.qidarr)
         self.tidarr  = compress(mask, self.tidarr)
         self.msk_oot = compress(mask, self.msk_oot)
@@ -138,6 +142,19 @@ class KeplerLC(object):
     @property
     def oot_time_per_transit(self):
         return [self.time[sl][self.oot_mask[sl]] for sl in self.tslices]
+
+    @property
+    def error_per_transit(self):
+        return [self.time[sl] for sl in self.tslices]
+
+    @property
+    def normalized_error(self):
+        return self.error / self.flux_baseline
+
+    @property
+    def normalized_error_per_transit(self):
+        nf = self.normalized_error
+        return [nf[sl] for sl in self.tslices]
 
     @property
     def quarter_per_transit(self):
