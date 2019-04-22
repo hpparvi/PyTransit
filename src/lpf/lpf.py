@@ -20,7 +20,8 @@ from astropy.stats import sigma_clip
 from matplotlib.pyplot import subplots
 from numba import njit
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like,
-                   clip, argsort, any, s_, zeros, arccos, nan, isnan, full, pi, sum, repeat, asarray, ndarray, log10)
+                   clip, argsort, any, s_, zeros, arccos, nan, isnan, full, pi, sum, repeat, asarray, ndarray, log10,
+                   full_like)
 from numpy.random import uniform, normal
 from scipy.stats import norm
 from tqdm.auto import tqdm
@@ -92,7 +93,7 @@ def qq_to_uv(pv, uv):
 class BaseLPF:
     _lpf_name = 'base'
 
-    def __init__(self, target: str, passbands: list, times: list=None, fluxes:list=None,
+    def __init__(self, target: str, passbands: list, times: list=None, fluxes:list=None, errors: list = None,
                  pbids:list=None, tm:TransitModel=None, nsamples: int=1, exptime: float = 0.020433598):
         self.tm = tm or MA(interpolate=True, klims=(0.01, 0.75), nk=512, nz=512)
 
@@ -117,6 +118,7 @@ class BaseLPF:
         self.nlc: int = 0                # Number of light curves
         self.times: list = None          # List of time arrays
         self.fluxes: list = None         # List of flux arrays
+        self.errors: list = None
         self.covariates: list = None     # List of covariates
         self.wn: ndarray = None          # Array of white noise estimates
         self.timea: ndarray = None       # Array of concatenated (and possibly supersampled) times
@@ -133,7 +135,7 @@ class BaseLPF:
         # Set up the observation data
         # ---------------------------
         if times and fluxes and pbids:
-            self._init_data(times, fluxes, pbids)
+            self._init_data(times, fluxes, pbids, errors)
 
         # Setup parametrisation
         # =====================
@@ -156,7 +158,7 @@ class BaseLPF:
             self._bad_fluxes = None
 
 
-    def _init_data(self, times, fluxes, pbids):
+    def _init_data(self, times, fluxes, pbids, errors=None):
         self.nlc = len(times)
         self.times = asarray(times)
         self.fluxes = asarray(fluxes)
@@ -167,6 +169,10 @@ class BaseLPF:
         self.mfluxa = zeros_like(self.ofluxa)
         self.pbida = concatenate([full(t.size, pbid) for t, pbid in zip(self.times, self.pbids)])
         self.lcida = concatenate([full(t.size, i) for i, t in enumerate(self.times)])
+
+        if errors is not None:
+            self.errors = asarray(errors)
+            self.errora = concatenate(self.errors)
 
         self.timea_orig = self.timea
         self.lcida_orig = self.lcida
@@ -379,18 +385,22 @@ class BaseLPF:
 
     def remove_outliers(self, sigma=5):
         fmodel = self.flux_model(self.de.minimum_location)
-        times, fluxes, pbids = [], [], []
+        times, fluxes, pbids, errors = [], [], [], []
         for i in range(len(self.times)):
             res = self.fluxes[i] - fmodel[i]
             mask = ~sigma_clip(res, sigma=sigma).mask
             times.append(self.times[i][mask])
             fluxes.append(self.fluxes[i][mask])
+            errors.append(self.errors[i][mask] if self.errors is not None else full_like(fluxes[-1], nan))
         self._init_data(times, fluxes, self.pbids)
 
     def remove_transits(self, tids):
         m = ones(len(self.times), bool)
         m[tids] = False
-        self._init_data(self.times.compress(m), self.fluxes.compress(m), self.pbids.compress(m))
+        if self.error is not None:
+            self._init_data(self.times.compress(m), self.fluxes.compress(m), self.pbids.compress(m), self.error.compress(m))
+        else:
+            self._init_data(self.times.compress(m), self.fluxes.compress(m), self.pbids.compress(m))
         self._init_parameters()
 
     def lnprior(self, pv):

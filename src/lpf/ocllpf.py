@@ -58,14 +58,14 @@ def psum2d(a):
 
 
 class OCLBaseLPF(BaseLPF):
-    def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None,
+    def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
                  pbids: list = None, nsamples: int = 1, exptime: float = 0.020433598, cl_ctx=None, cl_queue=None,
                  **kwargs):
 
         self.cl_ctx = cl_ctx or self.tm.ctx
         self.cl_queue = cl_queue or self.tm.queue
         self.cl_lnl_chunks = kwargs.get('cl_lnl_chunks', 1)
-        super().__init__(target, passbands, times, fluxes, pbids, None, 1, exptime)
+        super().__init__(target, passbands, times, fluxes, errors, pbids, None, 1, exptime)
 
         self.tm = MandelAgolCL(self.npb, supersampling=nsamples, exptime=exptime, klims=(0.01, 0.75), nk=512, nz=512,
                                cl_ctx=cl_ctx, cl_queue=cl_queue)
