@@ -58,14 +58,14 @@ def psum2d(a):
 
 
 class OCLBaseLPF(BaseLPF):
-    def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None,
-                 pbids: list = None, covariates: list = None, nsamples: list = None, exptimes: list = None,
-                 cl_ctx=None, cl_queue=None, **kwargs):
+    def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
+                 pbids: list = None, covariates: list = None, nsamples: int = 1, exptime: float = 0.020433598, cl_ctx=None, cl_queue=None,
+                 **kwargs):
 
-        self.cl_ctx = cl_ctx
-        self.cl_queue = cl_queue
+        self.cl_ctx = cl_ctx or self.tm.ctx
+        self.cl_queue = cl_queue or self.tm.queue
         self.cl_lnl_chunks = kwargs.get('cl_lnl_chunks', 1)
-        super().__init__(target, passbands, times, fluxes, pbids, covariates)
+        super().__init__(target, passbands, times, fluxes, errors, pbids, covariates, None, 1, exptime)
 
         self.tm = MandelAgolCL(self.npb, klims=(0.01, 0.75), nk=512, nz=512, cl_ctx=cl_ctx, cl_queue=cl_queue)
         self.nsamples = nsamples
@@ -140,8 +140,8 @@ class OCLBaseLPF(BaseLPF):
         self.lnlikelihood = self.lnlikelihood_ocl
 
 
-    def _init_data(self, times, fluxes, pbids, covariates=None):
-        super()._init_data(times, fluxes, pbids, covariates)
+    def _init_data(self, times, fluxes, pbids, errors=None, covariates=None):
+        super()._init_data(times, fluxes, pbids, errors, covariates)
         self.nlc = int32(self.nlc)
 
         # Initialise the Python arrays
@@ -259,10 +259,12 @@ class OCLBaseLPF(BaseLPF):
 
     def remove_outliers(self, sigma=5):
         fmodel = self.flux_model(self.de.minimum_location)[0]
-        times, fluxes, pbids = [], [], []
+        times, fluxes, pbids, errors = [], [], [], []
         for i in range(len(self.times)):
             res = self.fluxes[i] - fmodel[i]
             mask = ~sigma_clip(res, sigma=sigma).mask
             times.append(self.times[i][mask])
             fluxes.append(self.fluxes[i][mask])
-        self._init_data(times, fluxes, self.pbids)
+            if self.errors is not None:
+                errors.append(self.errors[i][mask])
+        self._init_data(times, fluxes, self.pbids, (errors if self.errors is not None else None))

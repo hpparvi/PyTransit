@@ -35,10 +35,10 @@ from pytransit.orbits_py import as_from_rhop, i_from_ba, p_from_dkaiews
 
 class OCLTDVLPF(OCLTTVLPF):
     def __init__(self, target: str, zero_epoch: float, period: float, duration_prior: tuple,
-                 passbands: list, times: list = None, fluxes: list = None, pbids: list = None,
+                 passbands: list, times: list = None, fluxes: list = None, errors: list = None, pbids: list = None,
                  nsamples: int = 1, exptime: float = 0.020433598, cl_ctx=None, cl_queue=None):
         self.t14_prior = duration_prior
-        super().__init__(target, zero_epoch, period, passbands, times, fluxes, pbids, nsamples, exptime, cl_ctx,
+        super().__init__(target, zero_epoch, period, passbands, times, fluxes, errors, pbids, nsamples, exptime, cl_ctx,
                          cl_queue)
 
     def _init_p_orbit(self):

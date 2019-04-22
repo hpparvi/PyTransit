@@ -40,14 +40,14 @@ def plot_estimates(x, p, ax, bwidth=0.8):
 
 class OCLTTVLPF(OCLBaseLPF):
     def __init__(self, target: str, zero_epoch: float, period: float, passbands: list,
-                 times: list = None, fluxes: list = None, pbids: list = None,
+                 times: list = None, fluxes: list = None, errors: list = None, pbids: list = None,
                  nsamples: list = None, exptimes: list = None, cl_ctx=None, cl_queue=None):
 
         self.zero_epoch = zero_epoch
         self.period = period
         self._tc_prior_percentile = 1.
 
-        super().__init__(target, passbands, times, fluxes, pbids, nsamples=nsamples, exptimes=exptimes, cl_ctx=cl_ctx, cl_queue=cl_queue)
+        super().__init__(target, passbands, times, fluxes, errors, pbids, nsamples=nsamples, exptimes=exptimes, cl_ctx=cl_ctx, cl_queue=cl_queue)
 
         src = """
             __kernel void lnl2d(const int nlc, __global const float *obs, __global const float *mod, __global const float *err, __global const int *lcids, __global float *lnl2d){
@@ -272,7 +272,8 @@ class OCLTTVLPF(OCLBaseLPF):
 
             # The transit index
             # -----------------
-            ax.text(0.05, 0.95, i, ha='left', va='top', transform=ax.transAxes)
+            ax.text(0.05, 0.95, self.tnumber[i], ha='left', va='top', transform=ax.transAxes)
+            ax.text(0.05, 0.05, "({})".format(i), ha='left', va='bottom', transform=ax.transAxes, size='small')
             ax.set_xlim(self.times[i][[0, -1]])
 
         if ylim is not None:
