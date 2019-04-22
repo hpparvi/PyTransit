@@ -138,9 +138,10 @@ class OCLBaseLPF(BaseLPF):
         self.lnlikelihood = self.lnlikelihood_ocl
 
 
-    def _init_data(self, times, fluxes, pbids):
-        super()._init_data(times, fluxes, pbids)
+    def _init_data(self, times, fluxes, pbids, errors=None):
+        super()._init_data(times, fluxes, pbids, errors)
         self.nlc = int32(self.nlc)
+
         # Initialise the Python arrays
         # ----------------------------
         self.timea = self.timea.astype('f')
@@ -252,10 +253,12 @@ class OCLBaseLPF(BaseLPF):
 
     def remove_outliers(self, sigma=5):
         fmodel = self.flux_model(self.de.minimum_location)[0]
-        times, fluxes, pbids = [], [], []
+        times, fluxes, pbids, errors = [], [], [], []
         for i in range(len(self.times)):
             res = self.fluxes[i] - fmodel[i]
             mask = ~sigma_clip(res, sigma=sigma).mask
             times.append(self.times[i][mask])
             fluxes.append(self.fluxes[i][mask])
-        self._init_data(times, fluxes, self.pbids)
+            if self.errors is not None:
+                errors.append(self.errors[i][mask])
+        self._init_data(times, fluxes, self.pbids, (errors if self.errors is not None else None))

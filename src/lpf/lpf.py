@@ -93,8 +93,8 @@ def qq_to_uv(pv, uv):
 class BaseLPF:
     _lpf_name = 'base'
 
-    def __init__(self, target: str, passbands: list, times: list=None, fluxes:list=None, errors: list = None,
-                 pbids:list=None, tm:TransitModel=None, nsamples: int=1, exptime: float = 0.020433598):
+    def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
+                 pbids: list = None, tm: TransitModel = None, nsamples: int=1, exptime: float = 0.020433598):
         self.tm = tm or MA(interpolate=True, klims=(0.01, 0.75), nk=512, nz=512)
 
         self.target = target            # Name of the planet
@@ -118,11 +118,12 @@ class BaseLPF:
         self.nlc: int = 0                # Number of light curves
         self.times: list = None          # List of time arrays
         self.fluxes: list = None         # List of flux arrays
-        self.errors: list = None
+        self.errors: list = None         # List of flux uncertainties
         self.covariates: list = None     # List of covariates
         self.wn: ndarray = None          # Array of white noise estimates
         self.timea: ndarray = None       # Array of concatenated (and possibly supersampled) times
         self.ofluxa: ndarray = None      # Array of concatenated observed fluxes
+        self.errora: ndarray = None      # Array of concatenated model fluxes
         self.mfluxa: ndarray = None      # Array of concatenated model fluxes
         self.pbida: ndarray = None       # Array of passband indices for each datapoint
         self.lcida: ndarray = None       # Array of light curve indices for each datapoint
@@ -391,8 +392,9 @@ class BaseLPF:
             mask = ~sigma_clip(res, sigma=sigma).mask
             times.append(self.times[i][mask])
             fluxes.append(self.fluxes[i][mask])
-            errors.append(self.errors[i][mask] if self.errors is not None else full_like(fluxes[-1], nan))
-        self._init_data(times, fluxes, self.pbids)
+            if self.errors is not None:
+                errors.append(self.errors[i][mask])
+        self._init_data(times, fluxes, self.pbids, (errors if self.errors is not None else None))
 
     def remove_transits(self, tids):
         m = ones(len(self.times), bool)
