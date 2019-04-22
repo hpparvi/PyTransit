@@ -399,8 +399,8 @@ class BaseLPF:
     def remove_transits(self, tids):
         m = ones(len(self.times), bool)
         m[tids] = False
-        if self.error is not None:
-            self._init_data(self.times.compress(m), self.fluxes.compress(m), self.pbids.compress(m), self.error.compress(m))
+        if self.errors is not None:
+            self._init_data(self.times.compress(m), self.fluxes.compress(m), self.pbids.compress(m), self.errors.compress(m))
         else:
             self._init_data(self.times.compress(m), self.fluxes.compress(m), self.pbids.compress(m))
         self._init_parameters()
