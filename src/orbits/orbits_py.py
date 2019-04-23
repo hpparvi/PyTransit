@@ -13,12 +13,23 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from numba import njit, prange
 from numpy import pi, arccos, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like, zeros, linspace, floor, arcsin
-from numba import jit, njit, prange
-
 from scipy.constants import G
-
 
 HALF_PI = 0.5 * pi
 TWO_PI = 2.0 * pi
@@ -264,6 +275,86 @@ def z_circular(t, pv):
     cosph = cos(TWO_PI*(t-t0)/p)
     z = sign(cosph) * a*sqrt(1.0 - cosph*cosph*sin(i)**2)
     return z
+
+
+@njit(fastmath=True)
+def z_ip_v(t, t0, p, a, i, e, w, es, ms, tae):
+    Ma = mean_anomaly(t, t0, p, e, w)
+    if e < 0.01:
+        Ta = Ma
+    else:
+        ne = es.size
+        nm = ms.size
+        de = es[1] - es[0]
+        dm = ms[1] - ms[0]
+
+        ie = iclip(floor(e / de), 0, ne - 1)
+        ae = rclip((e - de * (ie - 1)) / de, 0.0, 1.0)
+        tae2 = tae[ie:ie + 2, :]
+
+        Ta = zeros_like(Ma)
+
+        for j in range(len(t)):
+            if Ma[j] < pi:
+                im = iclip(floor(Ma[j] / dm), 0, nm - 1)
+                am = rclip((Ma[j] - dm * (im - 1)) / dm, 0.0, 1.0)
+                s = 1.0
+            else:
+                im = iclip(floor((TWO_PI - Ma[j]) / dm), 0, nm - 1)
+                am = rclip((TWO_PI - (Ma[j] - dm * (im - 1))) / dm, 0.0, 1.0)
+                s = -1.0
+
+            Ta[j] = (tae2[0, im] * (1.0 - ae) * (1.0 - am)
+                     + tae2[1, im] * ae * (1.0 - am)
+                     + tae2[0, im + 1] * (1.0 - ae) * am
+                     + tae2[1, im + 1] * ae * am)
+            Ta[j] = Ma[j] + s * Ta[j]
+
+            if (Ta[j] < 0.0):
+                Ta[j] = Ta[j] + TWO_PI
+
+    z = a * (1.0 - e ** 2) / (1.0 + e * cos(Ta)) * sqrt(1.0 - sin(w + Ta) ** 2 * sin(i) ** 2)
+    z *= copysign(1.0, sin(w + Ta))
+    return z
+
+
+@njit(fastmath=True)
+def z_ip_s(t, t0, p, a, i, e, w, es, ms, tae):
+    Ma = mean_anomaly(t, t0, p, e, w)
+    if e < 0.01:
+        Ta = Ma
+    else:
+        ne = es.size
+        nm = ms.size
+        de = es[1] - es[0]
+        dm = ms[1] - ms[0]
+
+        ie = iclip(floor(e / de), 0, ne - 1)
+        ae = rclip((e - de * (ie - 1)) / de, 0.0, 1.0)
+        tae2 = tae[ie:ie + 2, :]
+
+        if Ma < pi:
+            im = iclip(floor(Ma / dm), 0, nm - 1)
+            am = rclip((Ma - dm * (im - 1)) / dm, 0.0, 1.0)
+            s = 1.0
+        else:
+            im = iclip(floor((TWO_PI - Ma) / dm), 0, nm - 1)
+            am = rclip((TWO_PI - (Ma - dm * (im - 1))) / dm, 0.0, 1.0)
+            s = -1.0
+
+        Ta = (tae2[0, im] * (1.0 - ae) * (1.0 - am)
+              + tae2[1, im] * ae * (1.0 - am)
+              + tae2[0, im + 1] * (1.0 - ae) * am
+              + tae2[1, im + 1] * ae * am)
+        Ta = Ma + s * Ta
+
+        if (Ta < 0.0):
+            Ta = Ta + TWO_PI
+
+    z = a * (1.0 - e ** 2) / (1.0 + e * cos(Ta)) * sqrt(1.0 - sin(w + Ta) ** 2 * sin(i) ** 2)
+    z *= copysign(1.0, sin(w + Ta))
+    return z
+
 
 @njit(cache=cache)
 def z_newton_s(t, pv):

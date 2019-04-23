@@ -31,7 +31,7 @@ class Gimenez(TransitModel):
     light curves with thousands to millions of datapoints.
     """
 
-    def __init__(self, npol=100, nldc=2, nthr=0, interpolate=False, supersampling=1, exptime=0.020433598, eclipse=False, **kwargs):
+    def __init__(self, method='pars', is_secondary=False):
         """Initialise the model.
 
         Args:
@@ -41,10 +41,10 @@ class Gimenez(TransitModel):
             interpolate: If True, evaluates the model using interpolation (default = False).
             supersampling: Number of subsamples to calculate for each light curve point (default=0).
             exptime: Integration time for a single exposure, used in supersampling default=(0.02).
-            eclipse: If True, evaluates the model for eclipses. If false, eclipses are filtered out (default = False). 
+            is_secondary: If True, evaluates the model for eclipses. If false, eclipses are filtered out (default = False).
         """
 
-        super(Gimenez,self).__init__(nldc,nthr,interpolate,supersampling,exptime,eclipse, **kwargs)
+        super(Gimenez, self).__init__(is_secondary, exptime)
         self._eval = self._eval_interpolate if (interpolate  or kwargs.get('lerp', False)) else self._eval_nointerpolate
         self._coeff_arr = g.init_arrays(npol, nldc)
         self.npol = npol

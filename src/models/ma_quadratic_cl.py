@@ -13,6 +13,19 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
 """Mandel-Agol transit model
@@ -27,10 +40,11 @@ from os.path import dirname, join
 
 from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique
 
-import pytransit.ma_quadratic_nb as ma
-from pytransit.transitmodel import TransitModel
+from .numba.ma_quadratic_nb import calculate_interpolation_tables
+from .transitmodel import TransitModel
 
-class MandelAgolCL(TransitModel):
+
+class QuadraticModelCL(TransitModel):
     """
     Exoplanet transit light curve model by Mandel and Agol (2001).
 
@@ -64,7 +78,7 @@ class MandelAgolCL(TransitModel):
         self.queue = cl_queue or cl.CommandQueue(self.ctx)
 
         self.ed,self.le,self.ld,self.kt,self.zt = map(lambda a: np.array(a,dtype=float32,order='C'),
-                                                      ma.calculate_interpolation_tables(klims[0],klims[1],nk,nz))
+                                                      calculate_interpolation_tables(klims[0],klims[1],nk,nz))
         self.klims = klims
         self.nk    = int32(nk)
         self.nz    = int32(nz)
@@ -106,7 +120,7 @@ class MandelAgolCL(TransitModel):
 
         self._time_id = None   # Time array ID
 
-        self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'ma_lerp.cl'),'r').read()).build()
+        self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'opencl','ma_cuadratic.cl'),'r').read()).build()
 
 
     def set_data(self, time, lcids=None, pbids=None, nsamples=None, exptimes=None):
@@ -136,18 +150,18 @@ class MandelAgolCL(TransitModel):
         self._b_etimes = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.exptimes)
 
 
-    def evaluate_t(self, k, u, t0, p, a, i, e=0., w=0., c=0., copy=True):
-        u = np.array(u, float32, order='C').T
+    def evaluate_ps(self, k, ldc, t0, p, a, i, e=0., w=0., copy=True):
+        ldc = np.array(ldc, float32, order='C').T
 
         # Release and reinitialise the GPU buffers if the sizes of the time or
         # limb darkening coefficient arrays change.
-        if (u.size != self.u.size):
+        if (ldc.size != self.u.size):
             if self._b_u is not None:
                 self._b_f.release()
                 self._b_u.release()
                 self._b_p.release()
 
-            self.npb = 1 if u.ndim == 1 else u.shape[1]
+            self.npb = 1 if ldc.ndim == 1 else ldc.shape[1]
             self.nptb = t.size
 
             self.u = np.zeros((2,self.npb), float32)
@@ -166,7 +180,7 @@ class MandelAgolCL(TransitModel):
             self._time_id = id(t)
 
         # Copy the limb darkening coefficient array to the GPU
-        cl.enqueue_copy(self.queue, self._b_u, u)
+        cl.enqueue_copy(self.queue, self._b_u, ldc)
 
         # Copy the parameter vector to the GPU
         self.pv[:] = np.array([k, t0, p, a, i, e, w], dtype=float32)
@@ -183,15 +197,15 @@ class MandelAgolCL(TransitModel):
             return None
 
 
-    def evaluate_t_pv2d(self, pvp, u, copy=True):
-        u = asarray(u, float32)
+    def evaluate_pv(self, pvp, ldc, copy=True):
+        ldc = asarray(ldc, float32)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
 
         # Release and reinitialise the GPU buffers if the sizes of the time or
         # limb darkening coefficient arrays change.
-        if (u.size != self.u.size) or (pvp.size != self.pv.size):
-            assert self.npb == u.shape[1] // 2
+        if (ldc.size != self.u.size) or (pvp.size != self.pv.size):
+            assert self.npb == ldc.shape[1] // 2
 
             if self._b_f is not None:
                 self._b_f.release()
@@ -208,7 +222,7 @@ class MandelAgolCL(TransitModel):
             self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
 
         # Copy the limb darkening coefficient array to the GPU
-        cl.enqueue_copy(self.queue, self._b_u, u)
+        cl.enqueue_copy(self.queue, self._b_u, ldc)
 
         # Copy the parameter vector to the GPU
         self.pv[:] = pvp
@@ -227,9 +241,8 @@ class MandelAgolCL(TransitModel):
             return None
 
 
-
-    def evaluate_t_pv2d_ttv(self, t, pvp, u, tids, ntr, copy=True, tdv=False):
-        u = asarray(u, float32)
+    def evaluate_pv_ttv(self, t, pvp, ldc, tids, ntr, copy=True, tdv=False):
+        ldc = asarray(ldc, float32)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
         tids = asarray(tids, 'int32')
@@ -237,7 +250,7 @@ class MandelAgolCL(TransitModel):
 
         # Release and reinitialise the GPU buffers if the sizes of the time or
         # limb darkening coefficient arrays change.
-        if (t.size != self.nptb) or (u.size != self.u.size) or (pvp.size != self.pv.size):
+        if (t.size != self.nptb) or (ldc.size != self.u.size) or (pvp.size != self.pv.size):
 
             if self._b_time is not None:
                 self._b_time.release()
@@ -245,7 +258,7 @@ class MandelAgolCL(TransitModel):
                 self._b_u.release()
                 self._b_p.release()
 
-            self.npb = 1 if u.ndim == 1 else u.shape[0]
+            self.npb = 1 if ldc.ndim == 1 else ldc.shape[0]
             self.nptb = t.size
 
             self.pv = zeros(pvp.shape, float32)
@@ -266,7 +279,7 @@ class MandelAgolCL(TransitModel):
             self._time_id = id(t)
 
         # Copy the limb darkening coefficient array to the GPU
-        cl.enqueue_copy(self.queue, self._b_u, u)
+        cl.enqueue_copy(self.queue, self._b_u, ldc)
 
         # Copy the parameter vector to the GPU
         self.pv[:] = pvp

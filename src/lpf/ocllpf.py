@@ -59,17 +59,16 @@ def psum2d(a):
 
 class OCLBaseLPF(BaseLPF):
     def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
-                 pbids: list = None, covariates: list = None, nsamples: int = 1, exptime: float = 0.020433598, cl_ctx=None, cl_queue=None,
-                 **kwargs):
+                 pbids: list = None, covariates: list = None, nsamples: tuple = None, exptimes: tuple = None,
+                 cl_ctx=None, cl_queue=None, **kwargs):
 
         self.cl_ctx = cl_ctx or self.tm.ctx
         self.cl_queue = cl_queue or self.tm.queue
         self.cl_lnl_chunks = kwargs.get('cl_lnl_chunks', 1)
-        super().__init__(target, passbands, times, fluxes, errors, pbids, covariates, None, 1, exptime)
+        super().__init__(target, passbands, times, fluxes, errors, pbids, covariates, None, nsamples, exptimes)
 
         self.tm = MandelAgolCL(self.npb, klims=(0.01, 0.75), nk=512, nz=512, cl_ctx=cl_ctx, cl_queue=cl_queue)
-        self.nsamples = nsamples
-        self.exptimes = exptimes
+
         self.tm.set_data(self.timea, self.lcida, self.pbida, self.nsamples, self.exptimes)
 
         src = """

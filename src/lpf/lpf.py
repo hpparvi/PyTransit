@@ -94,12 +94,16 @@ class BaseLPF:
     _lpf_name = 'base'
 
     def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
-                 pbids: list = None, covariates: list = None, tm: TransitModel = None, nsamples: int=1, exptime: float = 0.020433598):
+                 pbids: list = None, covariates: list = None, tm: TransitModel = None,
+                 nsamples: tuple = None, exptimes: tuple = None):
         self.tm = tm or MA(interpolate=True, klims=(0.01, 0.75), nk=512, nz=512)
 
         self.target = target            # Name of the planet
         self.passbands = passbands      # Passbands, should be arranged from the bluest to reddest
         self.npb = npb = len(passbands) # Number of passbands
+
+        self.nsamples = nsamples
+        self.exptimes = exptimes
 
         # Declare high-level objects
         # --------------------------

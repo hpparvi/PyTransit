@@ -29,8 +29,13 @@ Date
 
 """
 
-from .gimenez import Gimenez
-from .mandelagol import MandelAgol, MAChromosphere
-from .orbits import *
+# Numba models
+# ------------
+from .models.qpower2 import QPower2Model
+from .models.ma_quadratic import QuadraticModel
+from .models.ma_uniform import UniformModel
+from .models.ma_chromosphere import ChromosphereModel
 
-__all__ = 'Gimenez MandelAgol MAChromosphere orbits z_circular z_eccentric_newton'.split()
+# OpenCL models
+# -------------
+from .models.ma_quadratic_cl import QuadraticModelCL
