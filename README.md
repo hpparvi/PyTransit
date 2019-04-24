@@ -192,14 +192,46 @@ Author
 
 Publications using the code
 ----------------------------
-  - Parviainen, H. et al. "The GTC exoplanet transit spectroscopy survey II: An overly-large Rayleigh-like feature for exoplanet TrES-3b." A&A 585, 1–12 (2016).
-  - Parviainen, H. et al. "Exoplanet Transmission Spectroscopy using KMOS." MNRAS 4, 3875–3885 (2015).
-  - Gandolfi, D. et al. "Kepler-423b: a half-Jupiter mass planet transiting a very old solar-like star." A&A 576, A11 (2015).
-  - Tingley, Brandon, H. Parviainen, et al. "Confirmation of an exoplanet using the transit color signature: Kepler-418b, a blended giant planet in a multiplanet system." A&A 567, (2014).
-  - Gandolfi, Davide, H. Parviainen, et al. "Kepler-423b: a half-Jupiter mass planet transiting a very old solar-like star." A&A 576, A11 (2015).
-  - Parviainen, H. et al. "Transiting exoplanets from the CoRoT space mission." A&A 562, A140 (2014).
-  - Gandolfi, Davide, H. Parviainen, et al. "Kepler-77b: a very low albedo, Saturn-mass transiting planet around a metal-rich solar-like star." A&A 557, A74 (2013).
-  - Parviainen, Hannu, H.J. Deeg, and J.A. Belmonte. "Secondary Eclipses in the CoRoT Light Curves: A Homogeneous Search Based in Bayesian Model Selection." A&A (2012)
-  - Rouan, D., H. Parviainen, C. Moutou, Magali Deleuil, M. Fridlund, A Ofir, M. Havel, et al. "Transiting Exoplanets from the CoRoT Space Mission." A&A 537 (January 9, 2012): A54.
-  - Murgas, F., E. Pallé, A. Cabrera-Lavers, K. D. Colón, E. L. Martín, and H. Parviainen. "Narrow Band H α Photometry of the super-Earth GJ 1214b with GTC/OSIRIS Tunable Filters." A&A 544 (July 24, 2012): A41.
-  - Tingley, Brandon, E. Palle, H. Parviainen, H. J. Deeg, M. R. Zapatero Osorio, A. Cabrera-Lavers, J. a. Belmonte, P. M. Rodriguez, F. Murgas, and I. Ribas. "Detection of Transit Timing Variations in Excess of One Hour in the Kepler Multi-planet Candidate System KOI 806 with the GTC." A&A 536 (December 12, 2011): L9.
+
+1. David, Trevor J. et al. “A Warm Jupiter-Sized Planet Transiting the Pre-Main Sequence Star V1298 Tau.” (2019)
+1. Feliz, Dax L. et al. “A Multi-Year Search For Transits Of Proxima Centauri. II: No Evidence For Transit Events With Periods Between 1-30 Days.” (2019)
+1. Lanza, A. F. et al. “Stellar Activity and Rotation of the Planet Host Kepler-17 from Long-Term Space-Borne Photometry.” (2019)
+1. Wibowo, R. W. et al. “Light Curve Analysis for The Transit of Exoplanet WASP-74b Observed at Bosscha Observatory.” Journal of Physics: Conference Series 1127.1 (2019)
+1. Aizawa, Masataka et al. “Systematic Search for Rings around Kepler Planet Candidates: Constraints on Ring Size and Occurrence Rate.” The Astronomical Journal 155.5 (2018)
+1. Bruno, Giovanni et al. “Starspot Occultations in Infrared Transit Spectroscopy: The Case of WASP-52b.” The Astronomical Journal 156.3 (2018)
+1. Bruno, Giovanni et al. “A Comparative Study of WASP-67 b and HAT-P-38 b from WFC3 Data.” The Astronomical Journal 155.2 (2018)
+1. Casasayas-Barris, N. et al. “Na I and H α Absorption Features in the Atmosphere of MASCARA-2b/KELT-20b.” Astronomy & Astrophysics 616 (2018)
+1. David, Trevor J. et al. “Three Small Planets Transiting the Bright Young Field Star K2-233.” The Astronomical Journal 155.5 (2018)
+1. David, Trevor J. et al. “Discovery of a Transiting Adolescent Sub-Neptune Exoplanet with K2.” The Astronomical Journal 156.6 (2018)
+1. Johnson, M. C. et al. “K2-260 b: A Hot Jupiter Transiting an F Star, and K2-261 b: A Warm Saturn around a Bright G Star.” Monthly Notices of the Royal Astronomical Society 481.1 (2018)
+1. Kawahara, Hajime et al. “Discovery of Three Self-Lensing Binaries from Kepler.” The Astronomical Journal 155.3 (2018)
+1. Narita, Norio et al. “MuSCAT2: Four-Color Simultaneous Camera for the 1.52-m Telescopio Carlos Sánchez.” Journal of Astronomical Telescopes, Instruments, and Systems 5.01 (2018)
+1. Parviainen, Hannu et al. “The GTC Exoplanet Transit Spectroscopy Survey.” Astronomy & Astrophysics 609 (2018)
+1. Sandquist, Eric L. et al. “The K2 M67 Study: A Curiously Young Star in an Eclipsing Binary in an Old Open Cluster.” The Astronomical Journal 155.4 (2018)
+1. Aigrain, S. et al. “Robust, Open-Source Removal of Systematics in Kepler Data.” Monthly Notices of the Royal Astronomical Society 471.1 (2017)
+1. Aizawa (逢澤正, Masataka et al. “Toward Detection of Exoplanetary Rings via Transit Photometry: Methodology and a Possible Candidate.” The Astronomical Journal 153.4 (2017)
+1. Casasayas-Barris, N. et al. “Detection of Sodium in the Atmosphere of WASP-69b.” Astronomy & Astrophysics 608 (2017)
+1. Gandolfi, Davide et al. “The Transiting Multi-Planet System HD 3167: A 5.7 M ⊕ Super-Earth and an 8.3 M ⊕ Mini-Neptune.” The Astronomical Journal 154.3 (2017)
+1. Malavolta, Luca et al. “The Kepler-19 System: A Thick-Envelope Super-Earth with Two Neptune-Mass Companions Characterized Using Radial Velocities and Transit Timing Variations.” The Astronomical Journal 153.5 (2017)
+1. Masuda, Kento. “Eccentric Companions to Kepler-448b and Kepler-693b: Clues to the Formation of Warm Jupiters.” The Astronomical Journal 154.2 (2017)
+1. Murgas, F. et al. “The GTC Exoplanet Transit Spectroscopy Survey.” Astronomy & Astrophysics 605 (2017)
+1. Pepper, Joshua et al. “A Low-Mass Exoplanet Candidate Detected by K2 Transiting the Praesepe M Dwarf JS 183.” The Astronomical Journal 153.4 (2017)
+1. Aigrain, Suzanne, Hannu Parviainen, and Benjamin Pope. “K2SC: Flexible Systematics Correction and Detrending of K2 Light Curves Using Gaussian Process Regression.” Monthly Notices of the Royal Astronomical Society 14.March (2016)
+1. Fukui, Akihiko et al. “GROUND-BASED TRANSIT OBSERVATION OF THE HABITABLE-ZONE SUPER-EARTH K2-3D.” The Astronomical Journal 152.6 (2016)
+1. Grziwa, Sascha et al. “K2-31B, A GRAZING TRANSITING HOT JUPITER ON A 1.26-DAY ORBIT AROUND A BRIGHT G7V STAR.” The Astronomical Journal 152.5 (2016)
+1. Libralato, M. et al. “A PSF-Based Approach to Kepler / K2 Data – II. Exoplanet Candidates in Praesepe (M 44).” Monthly Notices of the Royal Astronomical Society 463.2 (2016)
+1. Lillo-Box, J. et al. “Search for Light Curve Modulations among Kepler Candidates.” Astronomy & Astrophysics 592 (2016)
+1. Nardiello, D. et al. “A PSF-Based Approach to Kepler/K2 Data – III. Search for Exoplanets and Variable Stars within the Open Cluster M 67 (NGC 2682).” Monthly Notices of the Royal Astronomical Society 463.2 (2016)
+1. Parviainen, Hannu et al. “The GTC Exoplanet Transit Spectroscopy Survey.” Astronomy & Astrophysics 585.A114 (2016)
+1. Pope, Benjamin J S, Hannu Parviainen, and Suzanne Aigrain. “Transiting Exoplanet Candidates from K2 Campaigns 5 and 6.” MNRAS 461 (2016)
+1. Sarkar, Subhajit, Andreas Papageorgiou, and Enzo Pascale. “Exploring the Potential of the ExoSim Simulator for Transit Spectroscopy Noise Estimation.” Space Telescopes and Instrumentation 2016: Optical, Infrared, and Millimeter Wave. Ed. Howard A. MacEwen et al. Vol. 9904. N.p., 2016. 99043R.
+1. Uehara, Sho et al. “TRANSITING PLANET CANDIDATES BEYOND THE SNOW LINE DETECTED BY VISUAL INSPECTION OF 7557 KEPLER OBJECTS OF INTEREST.” The Astrophysical Journal 822.1 (2016)
+1. Cabrera, J et al. “Transiting Exoplanets from the CoRoT Space Mission.” Astronomy & Astrophysics 579 (2015)
+1. Csizmadia, Szilard et al. “Transiting Exoplanets from the CoRoT Space Mission XXVIII. CoRoT-33b, an Object in the Brown Dwarf Desert with 2:3 Commensurability with Its Host Star.” Astronomy & Astrophysics 579 (2015)
+1. Parviainen, Hannu et al. “Exoplanet Transmission Spectroscopy Using KMOS.” MNRAS 4.453 (2015)
+1. Parviainen, Hannu et al. “Transiting Exoplanets from the CoRoT Space Mission.” Astronomy & Astrophysics 562 (2014)
+1. Tingley, B. et al. “Confirmation of an Exoplanet Using the Transit Color Signature : Kepler-418b , a Blended Giant Planet in a Multiplanet System.” Astronomy & Astrophysics 567.A14 (2014)
+1. Gandolfi, Davide et al. “Kepler-77b: A Very Low Albedo, Saturn-Mass Transiting Planet around a Metal-Rich Solar-like Star.” Astronomy & Astrophysics 557 (2013)
+1. Murgas, Felipe et al. “Narrow Band H α Photometry of the Super-Earth GJ 1214b with GTC/OSIRIS Tunable Filters.” Astronomy & Astrophysics 544 (2012)
+1. Rouan, D. et al. “Transiting Exoplanets from the CoRoT Space Mission.” A&A 537 (2012)
+1. Tingley, Brandon et al. “Detection of Transit Timing Variations in Excess of One Hour in the Kepler Multi-Planet Candidate System KOI 806 with the GTC.” Astronomy & Astrophysics Letters 536 (2011)
