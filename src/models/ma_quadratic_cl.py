@@ -29,9 +29,6 @@
 
 
 """Mandel-Agol transit model
-
-
-.. moduleauthor:: Hannu Parviainen <hannu.parviainen@astro.ox.ac.uk>
 """
 
 import numpy as np
@@ -41,7 +38,7 @@ from os.path import dirname, join
 import warnings
 from pyopencl import CompilerWarning
 
-from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique
+from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze
 
 from .numba.ma_quadratic_nb import calculate_interpolation_tables
 from .transitmodel import TransitModel
@@ -135,7 +132,8 @@ class QuadraticModelCL(TransitModel):
         return self.evaluate_pv(pvp, ldc, copy)
 
     def evaluate_pv(self, pvp, ldc, copy=True):
-        ldc = asarray(ldc, float32)
+        pvp = atleast_2d(pvp)
+        ldc = atleast_2d(ldc).astype(float32)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
 
@@ -173,13 +171,13 @@ class QuadraticModelCL(TransitModel):
 
         if copy:
             cl.enqueue_copy(self.queue, self.f, self._b_f)
-            return self.f
+            return squeeze(self.f)
         else:
             return None
 
 
     def evaluate_pv_ttv(self, t, pvp, ldc, tids, ntr, copy=True, tdv=False):
-        ldc = asarray(ldc, float32)
+        ldc = atleast_2d(ldc).astype(float32)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
         tids = asarray(tids, 'int32')

@@ -1,31 +1,43 @@
-## PyTransit
-## Copyright (C) 2010--2015  Hannu Parviainen
-##
-## This program is free software; you can redistribute it and/or modify
-## it under the terms of the GNU General Public License as published by
-## the Free Software Foundation; either version 2 of the License, or
-## (at your option) any later version.
-##
-## This program is distributed in the hope that it will be useful,
-## but WITHOUT ANY WARRANTY; without even the implied warranty of
-## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-## GNU General Public License for more details.
-##
-## You should have received a copy of the GNU General Public License along
-## with this program; if not, write to the Free Software Foundation, Inc.,
-## 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#  PyTransit: fast and easy exoplanet transit modelling in Python.
+#  Copyright (C) 2010-2019  Hannu Parviainen
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Fast and easy exoplanet transit modelling in Python
 
-This package aims to offer a simple-to-use Python interfaces for the exoplanet
-transit models by Mandel & Agol (2002) and A. Gimenez (2006) implemented in
-Fortran. 
+"""PyTransit: fast and easy exoplanet transit modelling in Python
+
+This package offers Python interfaces for a set of exoplanet transit light curve
+models implemented in Python (with Numba acceleration) and OpenCL.
 
 Author
-  Hannu Parviainen  <hannu.parviainen@physics.ox.ac.uk>
+  Hannu Parviainen  <hannu@iac.es>
 
 Date
-  28.05.2015
+  24.04.2019
 
 """
 
@@ -39,3 +51,4 @@ from .models.ma_chromosphere import ChromosphereModel
 # OpenCL models
 # -------------
 from .models.ma_quadratic_cl import QuadraticModelCL
+from .models.ma_uniform_cl import UniformModelCL
