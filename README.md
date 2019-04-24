@@ -10,12 +10,6 @@ PyTransit
 
 Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. PyTransit offers optimised CPU and GPU implementations of popular exoplanet transit models with a unified interface. The Mandel & Agol and Gimenez models come with specialised optimisations for transmission spectroscopy that allow a transit model to be calculated in multiple passbands with only a minor additional computational cost to a single passband.
 
-```Python
-from pytransit import MandelAgol
-m = MandelAgol()
-f = m.evaluate(t, *pv)
-```
-
 ![](notebooks/model_example_1.png)
 
 The package has been used in research since 2010, and is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433), which also details the model-specific optimisations and model performance.
@@ -25,17 +19,25 @@ The package has been used in research since 2010, and is described in [Parviaine
 **Freedom from Fortran**
 - PyTransit v2.0 replaces all the old Fortran code with numba-accelerated Python versions!
 
-**Mature GPU implementations**
-- The GPU versions of the models are now mature, and can be used with minor hassle.
-- Simultaneous model computation for a set of parameter vectors accelerates population-based sampling and optimisation methods, such as *Affine Invariant Sampling (emcee)* and *Differential Evolution*.
+**Mature OpenCL implementations**
+- The OpenCL versions of the models are now mature, and can be swapped with the Numba-accelerated Python versions 
+  without modifications.
+- The OpenCL implementations evaluated in a GPU can offer 10-20 x acceleration compared to the Python versions. 
+- Simultaneous model computation for a set of parameter vectors accelerates population-based sampling and optimisation methods, 
+  such as *Affine Invariant Sampling (emcee)* and *Differential Evolution*.
 
 **Two new transit models**
 - Power-2 transit model by [Maxted & Gill](ArXiv:1812.01606)
 - Optically thin shell model by [Schlawin et al. (ApJL 722, 75--79, 2010)](http://adsabs.harvard.edu/abs/2010ApJ...722L..75S)
+  to model a transit over a chromosphere.
 
-**Contamination module**
-- Introduced a module that can be used to estimate third-light contamination (blending) based on multicolour transit light curves.
-- Detailed in Parviainen et al.  (a, in prep., 2019), and used in Parviainen et al. (b, in prep. 2019)
+**Flux contamination module**
+- Introduced a physics-based module to model flux contamination (blending).
+- Detailed in Parviainen et al.  (a, submitted, 2019), and used in Parviainen et al. (b, in prep. 2019)
+
+**Example notebooks**
+- All (well, most of, but this'll be improved) the functionality is now documented in Jupyter notebooks available in
+ [GitHub](https://github.com/hpparvi/PyTransit/tree/master/notebooks).
 
 **Utility modules and functions**
 - The `pytransit.modelling.lpf` (LogPosteriorFunction) module contains classes that can be used as a starting point for a transit analysis.
@@ -60,7 +62,6 @@ The package has been used in research since 2010, and is described in [Parviaine
 Installation
 ------------
 
-### PIP
 
 ### GitHub
 
@@ -103,112 +104,94 @@ Notes
 Examples
 --------
 ### Basics
-Basic usage is simple:
+Basic usage is simple, and the API is the same for all the models (with very minor model-specific exceptions). The transit model is first initialised and given the array containing the mid-exposure times
 
 ```Python
-from pytransit import MandelAgol
+from pytransit import QuadraticModel
 
-m = MandelAgol()
-f = m.evaluate(t, *pv)
+tm = QuadraticModel()
+tm.set_data(times)
 ```
-or
+
+after which it can be evaluated using either a set of scalar arguments (radius-ratio `k`, zero-epoch `t0`, orbital 
+period `p`, scaled semi-major axis `a`, orbital inclination `i`, eccentricity `e`, and argument of periastron `w`) and
+an array of limb darkening coefficients `ldc`
 
 ```Python
-from pytransit import MandelAgol
-
-m = MandelAgol(interpolate=True, klims=(0.10,0.13))
-f = m.evaluate(t, *pv)
+flux = tm.evaluate_ps(k, ldc, t0, p, a, i, e, w)
 ```
 
-or
+or using either a parameter array
+
 ```Python
-from pytransit import Gimenez
-
-m = Gimenez()
-f = m.evaluate(t, *pv)
+flux = tm.evaluate_pv(pv, ldc)
 ```
 
-Here we first initialize the model accepting the defaults (quadratic limb darkening law, no supersampling,
-and the use of all available cores), and then calculate the model for times in the time array `t`, `pv` being
-a list containing the system parameters.
+where pv is either a 1d array `[k, t0, p, a, i, e, w]` or a 2d array with a shape `(npv, 7)` where `npv` is the
+number of parameter vectors to evaluate simultaneously. Now, `flux` will be either a 1d array of model values evaluated
+for each mid-exposure time, or a 2d array with a shape `(npv, npt)` where `npv` is the number of parameter vectors and 
+`npt` the number of mid-exposure points. In the case of a 2d parameter array, also the limb darkening coefficients 
+should be given as a 2d array.
 
-For a slightly more useful example, we can do:
+### OpenCL
+The OpenCL versions of the models work identically to the Python version, except 
+that the OpenCL context and queue can be given as arguments in the initialiser, and the model evaluation method can be 
+told to not to copy the model from the GPU memory. If the context and queue are not given, the model creates a default 
+context using `cl.create_some_context()`.
+
 ```Python
-import numpy as np
-from pytransit import MandelAgol
+import pyopencl as cl
+from src import QuadraticModelCL
 
-t = np.linspace(0.8,1.2,500)
-k, t0, p, a, i, e, w = 0.1, 1.01, 4, 8, 0.48*np.pi, 0.2, 0.5*np.pi
-u = [0.25,0.10]
+ctx = cl.create_some_context()
+queue = cl.CommandQueue(ctx)
 
-m = MandelAgol()
-f = m.evaluate(t, k, u, t0, p, a, i, e, w)
+tm = QuadraticModelCL(cl_ctx=ctx, cl_queue=queue)
 ```
-where `k` is the planet-star radius ratio, `t0` the transit center, `p` the orbital period, `a` the scaled
-semi-major axis, `i` the orbital inclination, `e` the orbital eccentricity, `w` the argument of periastron,
-and `u` contains the quadratic limb darkening coefficients.
-
-### Multiple limb darkening coefficient sets
-
-The model can also be evaluated for several limb darkening coefficient (ldc) sets simultaneously (much faster than
-evaluating the model several times for different coefficient sets):
-
-    ...
-    u = [[0.25, 0.1],[0.35,0.2],[0.45,0.3],[0.55,0.4]]
-
-    m = MandelAgol()
-    f = m.evaluate(t, k, u, t0, p, a, i, e, w)
-
-In this case, the model returns several light curve models, each corresponding to a single ldc set.
 
 ### Supersampling
-The transit model offers built-in *supersampling* for transit fitting to transit photometry with poor time
-sampling (such as *Kepler*'s long cadence data):
+The transit models offer built-in *supersampling* for accurate modelling of long-cadence observations. The number of 
+samples and the exposure time can be given when setting up the model
 
-    m = MandelAgol(supersampling=8, exptime=0.02)
-    ...
+    tm.set_data(times, nsamples=10, exptimes=0.02)
 
-### Tweaking the Gimenéz model
-The Gimenéz model accuracy and the number of limb darkening coefficients can be set in the initialization.
-Finally, for fitting to large datasets, the model can be evaluated using interpolation.
+### Heterogeneous time series
 
-Basic transit model usage with linear limb darkening law, lower accuracy, and four cores:
+PyTransit allows for heterogeneous time series, that is, a single time series can contain several individual light curves 
+(with, e.g., different time cadences and required supersampling rates) observed (possibly) in different passbands.
 
-    m = Gimenez(npol=50, nldc=1, nthr=4)
-    ...
+If a time series contains several light curves, it also needs the light curve indices for each exposure. These are given 
+through `lcids` argument, which should be an array of integers. If the time series contains light curves observed in 
+different passbands, the passband indices need to be given through `pbids` argument as an integer array, one per light 
+curve. Supersampling can also be defined on per-light curve basis by giving the `nsamples`and `exptimes` as arrays with 
+one value per light curve. 
 
-Transit model using linear interpolation:
+For example, a set of three light curves, two observed in one passband and the third in another passband
 
-    m = Gimenez(interpolate=True)
-    ...
+    times_1 (lc = 0, pb = 0, sc) = [1, 2, 3, 4]
+    times_2 (lc = 1, pb = 0, lc) = [3, 4]
+    times_3 (lc = 2, pb = 1, sc) = [1, 5, 6]
+    
+Would be set up as
 
+    tm.set_data(time  = [1, 2, 3, 4, 3, 4, 1, 5, 6], 
+                lcids = [0, 0, 0, 0, 1, 1, 2, 2, 2], 
+                pbids = [0, 0, 1],
+                nsamples = [  1,  10,   1],
+                exptimes = [0.1, 1.0, 0.1])
+                
+Further, each passband requires two limb darkening coefficients, so the limb darkening coefficient array for a single parameter set should now be
 
-### Advanced
+    ldc = [u1, v1, u2, v2]
 
-Calculate projected distance for a circular or eccentric orbit given time t, transit center time t0, period p,
-scaled semi-major axis a, inclination i, eccentricity e, and argument of periastron w:
+where u and v are the passband-specific quadratic limb darkening model coefficients.
 
-    import numpy as np
-    from pytransit.orbits_f import orbits as of
-
-    t0, p, a, i, e, w = 1.01, 4, 8, 0.48*np.pi, 0.2, 0.5*np.pi
-
-    t   = np.linspace(0.8,1.2,500)
-    zc  = of.z_circular( t, t0, p, a, i, nthreads=0)                  
-    zen = of.z_eccentric_newton(t, t0, p, a, i, e, w, nthreads=0) # Calculated using Newton's method
-    ze3 = of.z_eccentric_s3(t, t0, p, a, i, e, w, nthreads=0)     # Calculated using series expansion (ok for e<0.15)
-    ze5 = of.z_eccentric_s(t, t0, p, a, i, e, w, nthreads=0)      # Calculated using series expansion (ok for e<0.25)
-    zel = of.z_eccentric_ip(t, t0, p, a, i, e, w, nthreads=0, update=False) # Faster for large LCs, uses linear interpolation
-
-Transit model using linear interpolation, two different sets of z:
-
-    m  = Gimenez(interpolate=True)      # Initialize the model
-    I1 = m(z1,k,u)               # Evaluate the model for z1, update the interpolation table
-    I2 = m(z2,k,u, update=False) # Evaluate the model for z2, don't update the interpolation table
+> Test
+> Test
 
 Author
 ------
-  - Hannu Parviainen <hpparvi@gmail.com>, University of Oxford
+  - [Hannu Parviainen](mailto:hpparvi@gmail.com), Instituto de Astrofísica de Canarias
 
 Publications using the code
 ----------------------------
