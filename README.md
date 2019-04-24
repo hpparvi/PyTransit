@@ -27,7 +27,7 @@ The package has been used in research since 2010, and is described in [Parviaine
   such as *Affine Invariant Sampling (emcee)* and *Differential Evolution*.
 
 **Two new transit models**
-- Power-2 transit model by [Maxted & Gill](ArXiv:1812.01606)
+- Power-2 transit model by [Maxted & Gill (A&A 622, A33 2019)](https://www.aanda.org/10.1051/0004-6361/201834563).
 - Optically thin shell model by [Schlawin et al. (ApJL 722, 75--79, 2010)](http://adsabs.harvard.edu/abs/2010ApJ...722L..75S)
   to model a transit over a chromosphere.
 
