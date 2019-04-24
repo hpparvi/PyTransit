@@ -186,9 +186,6 @@ Further, each passband requires two limb darkening coefficients, so the limb dar
 
 where u and v are the passband-specific quadratic limb darkening model coefficients.
 
-> Test
-> Test
-
 Author
 ------
   - [Hannu Parviainen](mailto:hpparvi@gmail.com), Instituto de Astrofísica de Canarias
