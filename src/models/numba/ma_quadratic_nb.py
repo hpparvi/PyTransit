@@ -41,7 +41,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, linspace, array, atleast_2d, floor, full, \
-    inf
+    inf, isnan
 from numba import njit, prange
 
 from ...orbits.orbits_py import z_ip_s
@@ -510,7 +510,7 @@ def eval_quad_ip_mp(zs, pbi, ks, u, c, edt, ldt, let, kt, zt):
     return flux
 
 
-@njit(cache=False, fastmath=True)
+@njit(cache=False, fastmath=False)
 def quadratic_interpolated_z_s(z, k, u, edt, ldt, let, kt, zt):
     dk = kt[1] - kt[0]
     dz = zt[1] - zt[0]
@@ -548,7 +548,7 @@ def quadratic_interpolated_z_s(z, k, u, edt, ldt, let, kt, zt):
     return flux
 
 
-@njit(parallel=True, fastmath=True)
+@njit(parallel=True, fastmath=False)
 def quadratic_model_interpolated(t, pvp, ldc, lcids, pbids, nsamples, exptimes,
                                  es, ms, tae, edt, ldt, let, kt, zt):
     pvp = atleast_2d(pvp)
@@ -558,7 +558,7 @@ def quadratic_model_interpolated(t, pvp, ldc, lcids, pbids, nsamples, exptimes,
     flux = zeros((npv, npt))
     for ipv in range(npv):
         k, t0, p, a, i, e, w = pvp[ipv,:]
-        if k < kt[0] or k > kt[-1]:
+        if k < kt[0] or k > kt[-1] or isnan(a) or isnan(i):
             flux[ipv, :] = inf
             continue
         for j in prange(npt):

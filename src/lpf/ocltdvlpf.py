@@ -30,7 +30,7 @@ except ImportError:
 from pytransit.param.parameter import GParameter, LParameter
 from pytransit.param.parameter import UniformPrior as UP, NormalPrior as NP
 from pytransit.lpf.oclttvlpf import OCLTTVLPF, plot_estimates
-from pytransit.orbits_py import as_from_rhop, i_from_ba, p_from_dkaiews
+from pytransit.orbits.orbits_py import as_from_rhop, i_from_ba, p_from_dkaiews
 
 
 class OCLTDVLPF(OCLTTVLPF):
@@ -89,7 +89,7 @@ class OCLTDVLPF(OCLTTVLPF):
         a, b = sqrt(pvp[:, self._sl_ld][:, 0]), 2. * pvp[:, self._sl_ld][:, 1]
         uv[:, 0] = a * b
         uv[:, 1] = a * (1. - b)
-        flux = self.tm.evaluate_t_pv2d_ttv(self.timea, pvp_cl, uv, self.lcida, self.nlc, copy=copy, tdv=True)
+        flux = self.tm.evaluate_t_pv2d_ttv(self.timea, pvp_cl, uv, self.lcids, self.nlc, copy=copy, tdv=True)
         return flux.T if copy else None
 
 

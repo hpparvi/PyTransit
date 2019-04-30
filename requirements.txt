@@ -4,3 +4,6 @@ numba
 pandas
 xarray
 tables
+astropy
+matplotlib
+tqdm

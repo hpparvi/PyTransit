@@ -29,7 +29,7 @@ except ImportError:
 from pytransit.param.parameter import GParameter, LParameter
 from pytransit.param.parameter import UniformPrior as UP, NormalPrior as NP
 from pytransit.lpf.ocllpf import OCLBaseLPF
-from pytransit.orbits_py import as_from_rhop, i_from_ba
+from pytransit.orbits.orbits_py import as_from_rhop, i_from_ba
 
 
 def plot_estimates(x, p, ax, bwidth=0.8):
@@ -190,14 +190,14 @@ class OCLTTVLPF(OCLBaseLPF):
         uv = zeros([pvp.shape[0], 2], "f")
         tc_end = 1 + self.nlc
         pvp_cl[:, 0:1] = sqrt(pvp[:, self._pid_k2])  # Radius ratio
-        pvp_cl[:, 1:tc_end] = pvp[:, self._sl_tc]  # Transit centre and orbital period
+        pvp_cl[:, 1:tc_end] = pvp[:, self._sl_tc]    # Transit centre and orbital period
         pvp_cl[:, tc_end + 0] = self.period
         pvp_cl[:, tc_end + 1] = a = as_from_rhop(pvp[:, 0], self.period)
         pvp_cl[:, tc_end + 2] = i_from_ba(pvp[:, 1], a)
         a, b = sqrt(pvp[:, self._sl_ld][:, 0]), 2. * pvp[:, self._sl_ld][:, 1]
         uv[:, 0] = a * b
         uv[:, 1] = a * (1. - b)
-        flux = self.tm.evaluate_t_pv2d_ttv(self.timea, pvp_cl, uv, self.lcida, self.nlc, copy=copy)
+        flux = self.tm.evaluate_pv_ttv(pvp_cl, uv, copy=copy)
         return flux.T if copy else None
 
     def posterior_period(self, burn: int = 0, thin: int = 1) -> float:
@@ -238,7 +238,7 @@ class OCLTTVLPF(OCLBaseLPF):
     def plot_transits(self, ncols=4, figsize=(13, 11), remove=(), ylim=None):
         nt = len(self.times)
         nrows = int(ceil(nt / ncols))
-        fig, axs = subplots(nrows, ncols, figsize=figsize, sharey=True, gridspec_kw=dict(hspace=0.01, wspace=0.01))
+        fig, axs = subplots(nrows, ncols, figsize=figsize, sharey='all', gridspec_kw=dict(hspace=0.01, wspace=0.01))
 
         if self.de is not None:
             pv = self.de.minimum_location
@@ -258,7 +258,7 @@ class OCLTTVLPF(OCLBaseLPF):
             # The fitted model, if available
             # ------------------------------
             if fmodel is not None:
-                m = self.lcida == i
+                m = self.lcids == i
                 ax.plot(self.times[i], fmodel[m], 'w', lw=4)
                 ax.plot(self.times[i], fmodel[m], 'k', lw=1)
 

@@ -16,34 +16,17 @@
 
 import math as mt
 
+import pandas as pd
 from astropy.stats import sigma_clip
 from matplotlib.pyplot import subplots
-from numba import njit
-from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like,
-                   clip, argsort, any, s_, zeros, arccos, nan, isnan, full, pi, sum, repeat, asarray, ndarray, log10,
-                   array, full_like)
+from numba import njit, prange
+from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like, all,
+                   clip, argsort, any, s_, zeros, arccos, nan, full, pi, sum, repeat, asarray, ndarray, log10,
+                   array, atleast_2d, isscalar, atleast_1d, where, isfinite)
 from numpy.random import uniform, normal
 from scipy.stats import norm
 from tqdm.auto import tqdm
-
-try:
-    import pandas as pd
-    with_pandas = True
-except ImportError:
-    with_pandas = False
-
-try:
-    from emcee import EnsembleSampler
-    with_emcee = True
-except ImportError:
-    with_emcee = False
-
-try:
-    from george import GP
-    from george.kernels import ExpKernel as EK, ExpSquaredKernel as ESK, ConstantKernel as CK, Matern32Kernel as M32
-    with_george = True
-except ImportError:
-    with_george = False
+from emcee import EnsembleSampler
 
 try:
     from ldtk import LDPSetCreator
@@ -51,15 +34,14 @@ try:
 except ImportError:
     with_ldtk = False
 
-from pytransit.supersampler import SuperSampler
-from pytransit.transitmodel import TransitModel
-from pytransit import MandelAgol as MA
-from pytransit.ma_quadratic_nb import eval_quad_ip_mp
-from pytransit.orbits_py import z_circular, duration_eccentric, as_from_rhop
-from pytransit.param.parameter import ParameterSet, PParameter, GParameter, LParameter
-from pytransit.param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
-from pytransit.contamination.filter import sdss_g, sdss_r, sdss_i, sdss_z
-from pytransit.utils.de import DiffEvol
+from ..models.transitmodel import TransitModel
+from .. import QuadraticModel
+from ..orbits.orbits_py import duration_eccentric, as_from_rhop, i_from_ba
+from ..param.parameter import ParameterSet, PParameter, GParameter, LParameter
+from ..param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
+from ..contamination.filter import sdss_g, sdss_r, sdss_i, sdss_z
+from ..utils.de import DiffEvol
+
 
 @njit(cache=False)
 def lnlike_normal(o, m, e):
@@ -70,6 +52,18 @@ def lnlike_normal(o, m, e):
 def lnlike_normal_s(o, m, e):
     return -o.size*log(e) -0.5*o.size*log(2.*pi) - 0.5*sum((o-m)**2)/e**2
 
+
+@njit(parallel=True, cache=False, fastmath=True)
+def lnlike_normal_v(o, m, e, lcids):
+    m = atleast_2d(m)
+    npv = m.shape[0]
+    npt = o.size
+    lnl = zeros(npv)
+    for i in prange(npv):
+        for j in range(npt):
+            k = lcids[j]
+            lnl[i] += -log(e[i,k]) - 0.5*log(2*pi) - 0.5*((o[j]-m[i,j])/e[i,k])**2
+    return lnl
 
 @njit("f8[:](f8[:], f8[:])", fastmath=False, cache=False)
 def unpack_orbit(pv, zpv):
@@ -82,28 +76,49 @@ def unpack_orbit(pv, zpv):
     return zpv
 
 
-@njit("f8[:,:](f8[:], f8[:,:])", fastmath=True, cache=False)
-def qq_to_uv(pv, uv):
-    a, b = sqrt(pv[::2]), 2.*pv[1::2]
-    uv[:,0] = a * b
-    uv[:,1] = a * (1. - b)
-    return uv
+@njit(fastmath=True)
+def map_pv(pv):
+    pv = atleast_2d(pv)
+    pvt = zeros((pv.shape[0], 7))
+    pvt[:,0]   = sqrt(pv[:,4])
+    pvt[:,1:3] = pv[:,0:2]
+    pvt[:,  3] = as_from_rhop(pv[:,2], pv[:,1])
+    pvt[:,  4] = i_from_ba(pv[:,3], pvt[:,3])
+    return pvt
 
+
+@njit(fastmath=True, cache=False)
+def map_ldc(ldc):
+    ldc = atleast_2d(ldc)
+    uv = zeros_like(ldc)
+    a, b = sqrt(ldc[:,0::2]), 2.*ldc[:,1::2]
+    uv[:,0::2] = a * b
+    uv[:,1::2] = a * (1. - b)
+    return uv
 
 class BaseLPF:
     _lpf_name = 'base'
 
-    def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
+    def __init__(self, name: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
                  pbids: list = None, covariates: list = None, tm: TransitModel = None,
-                 nsamples: tuple = None, exptimes: tuple = None):
-        self.tm = tm or MA(interpolate=True, klims=(0.01, 0.75), nk=512, nz=512)
+                 nsamples: tuple = 1, exptimes: tuple = 0.):
+        self.tm = tm or QuadraticModel(klims=(0.01, 0.75), nk=512, nz=512)
 
-        self.target = target            # Name of the planet
-        self.passbands = passbands      # Passbands, should be arranged from the bluest to reddest
-        self.npb = npb = len(passbands) # Number of passbands
+        # LPF name
+        # --------
+        self.name = name
 
-        self.nsamples = nsamples
-        self.exptimes = exptimes
+        # Passbands
+        # ---------
+        # Should be arranged from blue to red
+        if isinstance(passbands, (list, tuple, ndarray)):
+            self.passbands = passbands
+        else:
+            self.passbands = [passbands]
+        self.npb = npb = len(self.passbands)
+
+        self.nsamples = None
+        self.exptimes = None
 
         # Declare high-level objects
         # --------------------------
@@ -115,8 +130,6 @@ class BaseLPF:
         self.ldps = None        # Limb darkening profile set
         self.cntm = None        # Contamination model
 
-        self.ss = SuperSampler(nsamples=nsamples, exptime=exptime) if nsamples > 1 else None
-
         # Declare data arrays and variables
         # ---------------------------------
         self.nlc: int = 0                # Number of light curves
@@ -124,23 +137,20 @@ class BaseLPF:
         self.fluxes: list = None         # List of flux arrays
         self.errors: list = None         # List of flux uncertainties
         self.covariates: list = None     # List of covariates
-        self.wn: ndarray = None          # Array of white noise estimates
-        self.timea: ndarray = None       # Array of concatenated (and possibly supersampled) times
+        self.wn: ndarray = None          # Array of white noise estimates for each light curve
+        self.timea: ndarray = None       # Array of concatenated times
+        self.mfluxa: ndarray = None      # Array of concatenated model fluxes
         self.ofluxa: ndarray = None      # Array of concatenated observed fluxes
         self.errora: ndarray = None      # Array of concatenated model fluxes
-        self.mfluxa: ndarray = None      # Array of concatenated model fluxes
-        self.pbida: ndarray = None       # Array of passband indices for each datapoint
-        self.lcida: ndarray = None       # Array of light curve indices for each datapoint
-        self.lcslices: list = None       # List of light curve slices
 
-        self.timea_orig: ndarray = None  # Array of concatenated times
-        self.lcida_orig: ndarray = None  # Array of concatenated light curve indices
-        self.pbida_orig: ndarray = None  # Array of concatenated passband indices
+        self.lcids: ndarray = None       # Array of light curve indices for each datapoint
+        self.pbids: ndarray = None       # Array of passband indices for each light curve
+        self.lcslices: list = None       # List of light curve slices
 
         # Set up the observation data
         # ---------------------------
-        if times and fluxes and pbids:
-            self._init_data(times, fluxes, pbids, covariates=covariates, errors=errors)
+        if times is not None and fluxes is not None and pbids is not None:
+            self._init_data(times, fluxes, pbids, covariates, errors, nsamples, exptimes)
 
         # Setup parametrisation
         # =====================
@@ -163,7 +173,14 @@ class BaseLPF:
             self._bad_fluxes = None
 
 
-    def _init_data(self, times, fluxes, pbids, covariates=None, errors=None):
+    def _init_data(self, times, fluxes, pbids, covariates=None, errors=None, nsamples=1, exptimes=0.):
+
+        if isinstance(times, ndarray) and times.dtype == float:
+            times = [times]
+
+        if isinstance(fluxes, ndarray) and fluxes.dtype == float:
+            fluxes = [fluxes]
+
         self.nlc = len(times)
         self.times = asarray(times)
         self.fluxes = asarray(fluxes)
@@ -172,24 +189,25 @@ class BaseLPF:
         self.timea = concatenate(self.times)
         self.ofluxa = concatenate(self.fluxes)
         self.mfluxa = zeros_like(self.ofluxa)
-        self.pbida = concatenate([full(t.size, pbid) for t, pbid in zip(self.times, self.pbids)])
-        self.lcida = concatenate([full(t.size, i) for i, t in enumerate(self.times)])
+        self.pbids = atleast_1d(pbids).astype('int')
+        self.lcids = concatenate([full(t.size, i) for i, t in enumerate(self.times)])
+
+        if isscalar(nsamples):
+            self.nsamples = full(self.nlc, nsamples)
+            self.exptimes = full(self.nlc, exptimes)
+        else:
+            assert (len(nsamples) == self.nlc) and (len(exptimes) == self.nlc)
+            self.nsamples = asarray(nsamples, 'int')
+            self.exptimes = asarray(exptimes)
+
+        self.tm.set_data(self.timea, self.lcids, self.pbids, self.nsamples, self.exptimes)
 
         if errors is not None:
             self.errors = asarray(errors)
             self.errora = concatenate(self.errors)
 
-        self.timea_orig = self.timea
-        self.lcida_orig = self.lcida
-        self.pbida_orig = self.pbida
-        if self.ss:
-            self.timea = self.ss.sample(self.timea)
-            self.lcida = repeat(self.lcida, self.ss.nsamples)
-            self.pbida = repeat(self.pbida, self.ss.nsamples)
-
-
-        # Initialise light curves slices
-        # ------------------------------
+        # Initialise the light curves slices
+        # ----------------------------------
         self.lcslices = []
         sstart = 0
         for i in range(self.nlc):
@@ -208,7 +226,6 @@ class BaseLPF:
             self.covstart = concatenate([[0], self.covsize.cumsum()[:-1]])
             self.cova = concatenate(self.covariates)
 
-
     def _init_parameters(self):
         self.ps = ParameterSet()
         self._init_p_orbit()
@@ -222,7 +239,7 @@ class BaseLPF:
         """Orbit parameter initialisation.
         """
         porbit = [
-            GParameter('tc',  'zero_epoch',       'd',      N(0.0,  1.0), (-inf, inf)),
+            GParameter('tc',  'zero_epoch',       'd',      N(0.0,  0.1), (-inf, inf)),
             GParameter('pr',  'period',           'd',      N(1.0, 1e-5), (0,    inf)),
             GParameter('rho', 'stellar_density',  'g/cm^3', U(0.1, 25.0), (0,    inf)),
             GParameter('b',   'impact_parameter', 'R_s',    U(0.0,  1.0), (0,      1))]
@@ -298,44 +315,28 @@ class BaseLPF:
         return pvp
 
     def baseline(self, pv):
-        """Flux baseline (multiplicative)"""
-        return ones(self.nlc)
+        """Multiplicative baseline"""
+        return 1.
 
     def trends(self, pv):
-        """Systematic trends (additive)"""
-        return zeros(self.nlc)
-
-    def _compute_z(self, pv):
-        zpv = unpack_orbit(pv, self._zpv)
-        if isnan(zpv[2]):
-            return None
-        else:
-            return z_circular(self.timea, zpv)
-
-    def _compute_transit(self, pv, z):
-        _k = sqrt(pv[self._pid_k2])
-        uv = qq_to_uv(pv[self._sl_ld], self._tuv)
-        fluxes = eval_quad_ip_mp(z, self.pbida, _k, uv, self._zeros, self.tm.ed, self.tm.ld, self.tm.le, self.tm.kt,
-                                     self.tm.zt)
-        fluxes = self.ss.average(fluxes) if self.ss else fluxes
-        fluxes = [fluxes[sl] for sl in self.lcslices]
-        return fluxes
+        """Additive trends"""
+        return 0.
 
     def transit_model(self, pv):
-        z = self._compute_z(pv)
-        if z is not None:
-            return self._compute_transit(pv, z)
-        else:
-            return self._bad_fluxes
+        pv = atleast_2d(pv)
+        pvp = map_pv(pv)
+        ldc = map_ldc(pv[:,self._sl_ld])
+        flux = self.tm.evaluate_pv(pvp, ldc)
+        return flux
 
     def flux_model(self, pv):
-        bls = self.baseline(pv)
-        trs = self.trends(pv)
-        tms = self.transit_model(pv)
-        return [tm*bl + tr for tm,bl,tr in zip(tms, bls, trs)]
+        baseline    = self.baseline(pv)
+        trends      = self.trends(pv)
+        model_flux = self.transit_model(pv)
+        return baseline * model_flux + trends
 
     def residuals(self, pv):
-        return [fo - fm for fo, fm in zip(self.fluxes, self.flux_model(pv))]
+        return self.ofluxa - self.flux_model(pv)
 
     def set_prior(self, pid: int, prior) -> None:
             self.ps[pid].prior = prior
@@ -424,32 +425,27 @@ class BaseLPF:
         self._init_parameters()
 
     def lnprior(self, pv):
-        return self.ps.lnprior(pv)
+        return self.ps.lnprior(pv) + self.additional_priors(pv)
 
-    def lnprior_hooks(self, pv):
-        """Additional constraints."""
+    def additional_priors(self, pv):
+        """Additional priors."""
         return sum([f(pv) for f in self.lnpriors])
 
     def lnlikelihood(self, pv):
         flux_m = self.flux_model(pv)
-        wn = 10**pv[self._sl_err]
-        lnlike = 0.0
-        for i in range(self.nlc):
-            lnlike += lnlike_normal_s(self.fluxes[i], flux_m[i], wn[i])
-        return lnlike
+        wn = 10**(atleast_2d(pv)[:,self._sl_err])
+        return lnlike_normal_v(self.ofluxa, flux_m, wn, self.lcids)
 
     def lnposterior(self, pv):
-        if any(pv < self.ps.bounds[:, 0]) or any(pv > self.ps.bounds[:, 1]):
-            return -inf
-        else:
-            return self.lnprior(pv) + self.lnlikelihood(pv) + self.lnprior_hooks(pv)
+        lnp = self.lnprior(pv) + self.lnlikelihood(pv)
+        return where(isfinite(lnp), lnp, -inf)
 
     def __call__(self, pv):
         return self.lnposterior(pv)
 
     def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation', leave=False):
         if self.de is None:
-            self.de = DiffEvol(self.lnposterior, clip(self.ps.bounds, -1, 1), npop, maximize=True)
+            self.de = DiffEvol(self.lnposterior, clip(self.ps.bounds, -1, 1), npop, maximize=True, vectorize=True)
             if population is None:
                 self.de._population[:, :] = self.create_pv_population(npop)
             else:
@@ -458,10 +454,8 @@ class BaseLPF:
             pass
 
     def sample_mcmc(self, niter=500, thin=5, label='MCMC sampling', reset=False, leave=True):
-        if not with_emcee:
-            raise ImportError('Emcee not installed.')
         if self.sampler is None:
-            self.sampler = EnsembleSampler(self.de.n_pop, self.de.n_par, self.lnposterior)
+            self.sampler = EnsembleSampler(self.de.n_pop, self.de.n_par, self.lnposterior, vectorize=True)
             pop0 = self.de.population
         else:
             pop0 = self.sampler.chain[:,-1,:].copy()
@@ -475,7 +469,7 @@ class BaseLPF:
         fc = self.sampler.chain[:, burn::thin, :].reshape([-1, self.de.n_par])
         d = fc if include_ldc else fc[:, :ldstart]
         n = self.ps.names if include_ldc else self.ps.names[:ldstart]
-        return pd.DataFrame(d, columns=n) if with_pandas else d
+        return pd.DataFrame(d, columns=n)
 
     def plot_mcmc_chains(self, pid: int=0, alpha: float=0.1, thin: int=1, ax=None):
         fig, ax = (None, ax) if ax is not None else subplots()
@@ -485,7 +479,7 @@ class BaseLPF:
 
 
     def __repr__(self):
-        s  = f"""Target: {self.target}
+        s  = f"""Target: {self.name}
   LPF: {self._lpf_name}
   Passbands: {self.passbands}"""
         return s

@@ -24,8 +24,8 @@ from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_lik
                    full_like, isfinite, where, atleast_2d, int32, uint32)
 from tqdm.auto import tqdm
 
-from pytransit.mandelagol_cl import MandelAgolCL
-from pytransit.orbits_py import as_from_rhop, i_from_ba
+from pytransit.models.ma_quadratic_cl import QuadraticModelCL
+from pytransit.orbits.orbits_py import as_from_rhop, i_from_ba
 from pytransit.lpf.lpf import BaseLPF
 from pytransit.utils.de import DiffEvol
 
@@ -60,16 +60,15 @@ def psum2d(a):
 class OCLBaseLPF(BaseLPF):
     def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
                  pbids: list = None, covariates: list = None, nsamples: tuple = None, exptimes: tuple = None,
-                 cl_ctx=None, cl_queue=None, **kwargs):
+                 klims: tuple = (0.01, 0.75), nk: int = 512, nz: int = 512, cl_ctx=None, cl_queue=None, **kwargs):
 
         self.cl_ctx = cl_ctx or self.tm.ctx
         self.cl_queue = cl_queue or self.tm.queue
         self.cl_lnl_chunks = kwargs.get('cl_lnl_chunks', 1)
         super().__init__(target, passbands, times, fluxes, errors, pbids, covariates, None, nsamples, exptimes)
 
-        self.tm = MandelAgolCL(self.npb, klims=(0.01, 0.75), nk=512, nz=512, cl_ctx=cl_ctx, cl_queue=cl_queue)
-
-        self.tm.set_data(self.timea, self.lcida, self.pbida, self.nsamples, self.exptimes)
+        self.tm = QuadraticModelCL(klims=klims, nk=nk, nz=nz, cl_ctx=cl_ctx, cl_queue=cl_queue)
+        self.tm.set_data(self.timea, self.lcids, self.pbids, self.nsamples, self.exptimes)
 
         src = """
            __kernel void lnl2d(const int nlc, __global const float *obs, __global const float *mod, __global const float *err, __global const int *lcids, __global float *lnl2d){
@@ -139,8 +138,8 @@ class OCLBaseLPF(BaseLPF):
         self.lnlikelihood = self.lnlikelihood_ocl
 
 
-    def _init_data(self, times, fluxes, pbids, errors=None, covariates=None):
-        super()._init_data(times, fluxes, pbids, errors, covariates)
+    def _init_data(self, times, fluxes, pbids, covariates=None, errors=None, nsamples=None, exptimes=None):
+        super()._init_data(times, fluxes, pbids, covariates, errors, nsamples, exptimes)
         self.nlc = int32(self.nlc)
 
         # Initialise the Python arrays
@@ -150,8 +149,8 @@ class OCLBaseLPF(BaseLPF):
         self.lnl2d = zeros([50, self.ofluxa.size], 'f')
         self.lnl1d = zeros([self.lnl2d.shape[0], self.cl_lnl_chunks], 'f')
         self.ferr = zeros([50, self.nlc])
-        self.lcida = self.lcida.astype('int32')
-        self.pbida = self.pbida.astype('int32')
+        self.lcids = self.lcids.astype('int32')
+        self.pbids = self.pbids.astype('int32')
         if covariates is not None:
             self.cova = self.cova.astype('f')
 
@@ -162,7 +161,7 @@ class OCLBaseLPF(BaseLPF):
         self._b_err = cl.Buffer(self.cl_ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ferr)
         self._b_lnl2d = cl.Buffer(self.cl_ctx, mf.WRITE_ONLY, self.lnl2d.nbytes)
         self._b_lnl1d = cl.Buffer(self.cl_ctx, mf.WRITE_ONLY, self.lnl1d.nbytes)
-        self._b_lcids = cl.Buffer(self.cl_ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lcida)
+        self._b_lcids = cl.Buffer(self.cl_ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lcids)
         if covariates is not None:
             self._b_covariates = cl.Buffer(self.cl_ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.cova)
 
@@ -226,10 +225,10 @@ class OCLBaseLPF(BaseLPF):
         lnpriors = zeros(pv.shape[0])
         for i, p in enumerate(self.ps.priors):
             lnpriors += p.logpdf(pv[:, i])
-        return lnpriors
+        return lnpriors + self.additional_priors(pv)
 
     def lnposterior(self, pv):
-        lnp = self.lnlikelihood(pv) + self.lnprior(pv) + self.lnprior_hooks(pv)
+        lnp = self.lnlikelihood(pv) + self.lnprior(pv)
         return where(isfinite(lnp), lnp, -inf)
 
     def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation', leave=False):

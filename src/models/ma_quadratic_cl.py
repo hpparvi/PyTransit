@@ -176,42 +176,30 @@ class QuadraticModelCL(TransitModel):
             return None
 
 
-    def evaluate_pv_ttv(self, t, pvp, ldc, tids, ntr, copy=True, tdv=False):
+    def evaluate_pv_ttv(self, pvp, ldc, copy=True, tdv=False):
+        pvp = atleast_2d(pvp)
         ldc = atleast_2d(ldc).astype(float32)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
-        tids = asarray(tids, 'int32')
-        ntr = uint32(ntr)
 
         # Release and reinitialise the GPU buffers if the sizes of the time or
         # limb darkening coefficient arrays change.
-        if (t.size != self.nptb) or (ldc.size != self.u.size) or (pvp.size != self.pv.size):
+        if (ldc.size != self.u.size) or (pvp.size != self.pv.size):
+            assert self.npb == ldc.shape[1] // 2
 
-            if self._b_time is not None:
-                self._b_time.release()
+            if self._b_f is not None:
                 self._b_f.release()
                 self._b_u.release()
                 self._b_p.release()
 
-            self.npb = 1 if ldc.ndim == 1 else ldc.shape[0]
-            self.nptb = t.size
-
             self.pv = zeros(pvp.shape, float32)
-            self.u  = zeros((self.npb, 2), float32)
-            self.f  = zeros((self.npv, t.size), float32)
+            self.u  = zeros((self.npv, 2*self.npb), float32)
+            self.f  = zeros((self.npv, self.time.size), float32)
 
             mf = cl.mem_flags
-            self._b_time   = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=t)
-            self._b_f   = cl.Buffer(self.ctx, mf.WRITE_ONLY, t.nbytes * self.npv)
+            self._b_f   = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * self.npv)
             self._b_u   = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.u)
             self._b_p   = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
-            self._b_tid = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=tids)
-
-        # Copy the time array to the GPU if it has been changed
-        if id(t) != self._time_id:
-            cl.enqueue_copy(self.queue, self._b_time, t)
-            cl.enqueue_copy(self.queue, self._b_tid, tids)
-            self._time_id = id(t)
 
         # Copy the limb darkening coefficient array to the GPU
         cl.enqueue_copy(self.queue, self._b_u, ldc)
@@ -221,13 +209,21 @@ class QuadraticModelCL(TransitModel):
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
         if tdv:
-            self.prg.ma_eccentric_pop_tdv(self.queue, (self.npv, t.size), None, self._b_time, self._b_p, self._b_u,
-                                          self._b_tid, ntr, self._b_ed, self._b_le, self._b_ld, self.nss, self.etime,
-                                          self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self.spv, self._b_f)
+            self.prg.ma_eccentric_pop_tdv(self.queue, (self.npv, self.nptb), None, self._b_time, self._b_lcids,
+                                      self._b_pbids,
+                                      self._b_p, self._b_u,
+                                      self._b_ed, self._b_le, self._b_ld, self._b_nsamples, self._b_etimes,
+                                      self.k0, self.k1, self.nk, self.nz, self.dk, self.dz,
+                                      self.spv, self.nlc, self.npb, self._b_f)
         else:
-            self.prg.ma_eccentric_pop_ttv(self.queue, (self.npv, t.size), None, self._b_time, self._b_p, self._b_u,
-                                          self._b_tid, ntr, self._b_ed, self._b_le, self._b_ld, self.nss, self.etime,
-                                          self.k0, self.k1, self.nk, self.nz, self.dk, self.dz, self.spv, self._b_f)
+            self.prg.ma_eccentric_pop_ttv(self.queue, (self.npv, self.nptb), None,
+                                          self._b_time, self._b_lcids, self._b_pbids,
+                                          self._b_p, self._b_u,
+                                          self._b_ed, self._b_le, self._b_ld,
+                                          self._b_nsamples, self._b_etimes,
+                                          self.k0, self.k1, self.nk, self.nz, self.dk, self.dz,
+                                          self.spv, self.nlc, self.npb,
+                                          self._b_f)
 
         if copy:
             cl.enqueue_copy(self.queue, self.f, self._b_f)

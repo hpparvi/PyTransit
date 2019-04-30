@@ -1,6 +1,6 @@
 import math as m
 from itertools import product
-from numpy import inf, array, zeros, unique, pi, log, sqrt, where
+from numpy import inf, array, zeros, unique, pi, log, sqrt, where, stack
 from numpy.random import normal, uniform
 from scipy.stats import gamma as gm
 
@@ -261,7 +261,7 @@ class ParameterSet(list):
 
 
     def sample_from_prior(self, size=1):
-        return array([p.rvs(size) for p in self.priors]).T
+        return stack([p.rvs(size) for p in self.priors], 1)
 
 
     @property

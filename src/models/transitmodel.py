@@ -46,7 +46,7 @@ class TransitModel(object):
         method
         is_secondary
         """
-        assert method in self.methods
+        assert method in self.methods, f"Unknown TM evaluation method {method}."
         self.method = method
         self.is_secondary = is_secondary
 
