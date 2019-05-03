@@ -202,9 +202,11 @@ class BaseLPF:
 
         self.tm.set_data(self.timea, self.lcids, self.pbids, self.nsamples, self.exptimes)
 
-        if errors is not None:
+        if errors is None:
+            self.errors = array([full(t.size, nan) for t in self.times])
+        else:
             self.errors = asarray(errors)
-            self.errora = concatenate(self.errors)
+        self.errora = concatenate(self.errors)
 
         # Initialise the light curves slices
         # ----------------------------------
@@ -418,10 +420,9 @@ class BaseLPF:
     def remove_transits(self, tids):
         m = ones(len(self.times), bool)
         m[tids] = False
-        if self.errors is not None:
-            self._init_data(self.times.compress(m), self.fluxes.compress(m), self.pbids.compress(m), self.errors.compress(m))
-        else:
-            self._init_data(self.times.compress(m), self.fluxes.compress(m), self.pbids.compress(m))
+        self._init_data(self.times[m], self.fluxes[m], self.pbids[m],
+                        self.covariates[m] if self.covariates is not None else None,
+                        self.errors[m], self.nsamples[m], self.exptimes[m])
         self._init_parameters()
 
     def lnprior(self, pv):
