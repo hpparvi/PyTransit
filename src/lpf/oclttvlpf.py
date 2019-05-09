@@ -18,7 +18,8 @@ import scipy.ndimage as ndi
 import pyopencl as cl
 
 from matplotlib.pyplot import subplots, setp
-from numpy import sqrt, array, inf, int, s_, percentile, median, mean, round, zeros, isfinite, where, atleast_2d, ceil
+from numpy import sqrt, array, inf, int, s_, percentile, median, mean, round, zeros, isfinite, where, atleast_2d, ceil, \
+    poly1d, polyfit
 
 try:
     import seaborn as sb
@@ -214,8 +215,8 @@ class OCLTTVLPF(OCLBaseLPF):
         df = self.posterior_samples(burn, thin)
         tccols = [c for c in df.columns if 'tc' in c]
         tcs = median(df[tccols], 0)
-        period = mean((tcs[1:] - tcs[0]) / (self.tnumber[1:] - self.tnumber[0]))
-        tc_linear = self.zero_epoch + self.tnumber * period
+        lineph = poly1d(polyfit(self.tnumber, tcs, 1))
+        tc_linear = lineph(self.tnumber)
         p = multiplier[fmt] * percentile(df[tccols] - tc_linear, [50, 16, 84, 0.5, 99.5], 0)
         setp(axs, ylabel='Transit center - linear prediction [{}]'.format(fmt), xlabel='Transit number')
         if windows is None:
