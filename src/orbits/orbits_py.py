@@ -704,3 +704,9 @@ def p_from_dkaiews(d, k, a, i, e, w, tr_sign):
     b  = impact_parameter_ec(a, i, e, w, tr_sign)
     ae = sqrt(1.-e**2)/(1.+tr_sign*e*sin(w))
     return (d*pi) / (arcsin(sqrt((1.+k)**2-b**2)/(a*sin(i))) * ae)
+
+
+@njit
+def as_from_dkp(d, p, k):
+    """Assumes b=0"""
+    return sqrt((1.0+k)**2) / sin(pi*d/p)

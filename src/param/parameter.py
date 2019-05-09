@@ -17,7 +17,7 @@ class Prior:
 
 
 class DefaultPrior(Prior):
-    def logpdf(self, v):
+    def logpdf(self, v: float):
         return 0
 
     def rvs(self, size):
@@ -25,7 +25,7 @@ class DefaultPrior(Prior):
 
 
 class NormalPrior(Prior):
-    def __init__(self, mean, std):
+    def __init__(self, mean: float, std: float):
         self.mean = float(mean)
         self.std = float(std)
         self._f1 = 1 / m.sqrt(2*pi*std**2)
@@ -40,7 +40,7 @@ class NormalPrior(Prior):
 
 
 class UniformPrior(Prior):
-    def __init__(self, a, b):
+    def __init__(self, a: float, b: float):
         self.a, self.b = a, b
         self.lnc = m.log(b-a)
 
@@ -50,6 +50,21 @@ class UniformPrior(Prior):
     def rvs(self, size=1):
         return uniform(self.a, self.b, size)
 
+
+class JeffreysPrior(Prior):
+    def __init__(self, x0: float, x1: float):
+        self.x0 = x0
+        self.x1 = x1
+        self._f = log(x1 / x0)
+
+    def pdf(self, x):
+        return where((x > self.x0) & (x < self.x1), 1. / (x * self._f), -inf)
+
+    def logpdf(self, x):
+        return where((x > self.x0) & (x < self.x1), -log(x * self._f), -inf)
+
+    def rvs(self, size=1):
+        return exp(uniform(log(self.x0), log(self.x1), size))
 
 class LogLogisticPrior(Prior):
     def __init__(self, a, b):
