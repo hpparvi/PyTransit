@@ -167,6 +167,9 @@ class BaseLPF:
         self._zeros = zeros(npb)
         self._ones = ones(npb)
 
+        # Inititalise the instrument
+        self._init_instrument()
+
         if times is not None:
             self._bad_fluxes = [ones_like(t) for t in self.times]
         else:
@@ -279,6 +282,9 @@ class BaseLPF:
         self.ps.add_lightcurve_block('log_err', 1, self.nlc, pns)
         self._sl_err = self.ps.blocks[-1].slice
         self._start_err = self.ps.blocks[-1].start
+
+    def _init_instrument(self):
+        pass
 
     def create_pv_population(self, npop=50):
         pvp = self.ps.sample_from_prior(npop)
@@ -430,7 +436,8 @@ class BaseLPF:
 
     def additional_priors(self, pv):
         """Additional priors."""
-        return sum([f(pv) for f in self.lnpriors])
+        pv = atleast_2d(pv)
+        return sum([f(pv) for f in self.lnpriors], 0)
 
     def lnlikelihood(self, pv):
         flux_m = self.flux_model(pv)

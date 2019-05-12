@@ -1,6 +1,6 @@
 import math as m
 from itertools import product
-from numpy import inf, array, zeros, unique, pi, log, sqrt, where, stack
+from numpy import inf, array, zeros, unique, pi, log, sqrt, where, stack, atleast_2d, squeeze, all
 from numpy.random import normal, uniform
 from scipy.stats import gamma as gm
 
@@ -226,10 +226,12 @@ class ParameterSet(list):
             raise ValueError('Trying to update a frozen ParameterSet')
 
     def lnprior(self, pv):
-        if all(pv > self.bounds[:, 0]) & all(pv < self.bounds[:, 1]):
-            return sum(p.lnprior(v) for p, v in zip(self, pv))
-        else:
-            return -inf
+        pv = atleast_2d(pv)
+        lnp = zeros(pv.shape[0])
+        m = all(pv > self.bounds[:, 0], 1) & all(pv < self.bounds[:, 1], 1)
+        for i, p in enumerate(self):
+            lnp += p.lnprior(pv[:, i])
+        return squeeze(where(m, lnp, -inf))
 
     def freeze(self):
         self._update_indices()
