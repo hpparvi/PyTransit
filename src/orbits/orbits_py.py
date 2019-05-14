@@ -277,32 +277,31 @@ def z_circular(t, pv):
     return z
 
 
-@njit(fastmath=True)
+@njit(fastmath=True, parallel=False)
 def z_ip_v(t, t0, p, a, i, e, w, es, ms, tae):
     Ma = mean_anomaly(t, t0, p, e, w)
     if e < 0.01:
         Ta = Ma
     else:
-        ne = es.size
-        nm = ms.size
         de = es[1] - es[0]
         dm = ms[1] - ms[0]
 
-        ie = iclip(floor(e / de), 0, ne - 1)
-        ae = rclip((e - de * (ie - 1)) / de, 0.0, 1.0)
+        ie = int(floor(e / de))
+        ae = (e - de * ie) / de
         tae2 = tae[ie:ie + 2, :]
 
         Ta = zeros_like(Ma)
 
         for j in range(len(t)):
             if Ma[j] < pi:
-                im = iclip(floor(Ma[j] / dm), 0, nm - 1)
-                am = rclip((Ma[j] - dm * (im - 1)) / dm, 0.0, 1.0)
-                s = 1.0
+                x = Ma[j]
+                s = 1.
             else:
-                im = iclip(floor((TWO_PI - Ma[j]) / dm), 0, nm - 1)
-                am = rclip((TWO_PI - (Ma[j] - dm * (im - 1))) / dm, 0.0, 1.0)
-                s = -1.0
+                x = TWO_PI - Ma[j]
+                s = -1.
+
+            im = int(floor(x / dm))
+            am = (x - im * dm) / dm
 
             Ta[j] = (tae2[0, im] * (1.0 - ae) * (1.0 - am)
                      + tae2[1, im] * ae * (1.0 - am)
@@ -324,28 +323,26 @@ def z_ip_s(t, t0, p, a, i, e, w, es, ms, tae):
     if e < 0.01:
         Ta = Ma
     else:
-        ne = es.size
-        nm = ms.size
         de = es[1] - es[0]
         dm = ms[1] - ms[0]
 
-        ie = iclip(floor(e / de), 0, ne - 1)
-        ae = rclip((e - de * (ie - 1)) / de, 0.0, 1.0)
-        tae2 = tae[ie:ie + 2, :]
+        ie = int(floor(e / de))
+        ae = (e - de * ie) / de
 
         if Ma < pi:
-            im = iclip(floor(Ma / dm), 0, nm - 1)
-            am = rclip((Ma - dm * (im - 1)) / dm, 0.0, 1.0)
-            s = 1.0
+            x = Ma
+            s = 1.
         else:
-            im = iclip(floor((TWO_PI - Ma) / dm), 0, nm - 1)
-            am = rclip((TWO_PI - (Ma - dm * (im - 1))) / dm, 0.0, 1.0)
-            s = -1.0
+            x = TWO_PI - Ma
+            s = -1.
 
-        Ta = (tae2[0, im] * (1.0 - ae) * (1.0 - am)
-              + tae2[1, im] * ae * (1.0 - am)
-              + tae2[0, im + 1] * (1.0 - ae) * am
-              + tae2[1, im + 1] * ae * am)
+        im = int(floor(x / dm))
+        am = (x - im * dm) / dm
+
+        Ta = (tae[ie, im] * (1.0 - ae) * (1.0 - am)
+              + tae[ie + 1, im] * ae * (1.0 - am)
+              + tae[ie, im + 1] * (1.0 - ae) * am
+              + tae[ie + 1, im + 1] * ae * am)
         Ta = Ma + s * Ta
 
         if (Ta < 0.0):
