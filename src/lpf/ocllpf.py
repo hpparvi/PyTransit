@@ -291,16 +291,3 @@ class OCLBaseLPF(BaseLPF):
             self.sampler.reset()
         for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter, desc=label, leave=False):
             pass
-
-
-    def remove_outliers(self, sigma=5):
-        fmodel = self.flux_model(self.de.minimum_location)[0]
-        times, fluxes, pbids, errors = [], [], [], []
-        for i in range(len(self.times)):
-            res = self.fluxes[i] - fmodel[i]
-            mask = ~sigma_clip(res, sigma=sigma).mask
-            times.append(self.times[i][mask])
-            fluxes.append(self.fluxes[i][mask])
-            if self.errors is not None:
-                errors.append(self.errors[i][mask])
-        self._init_data(times, fluxes, self.pbids, (errors if self.errors is not None else None))
