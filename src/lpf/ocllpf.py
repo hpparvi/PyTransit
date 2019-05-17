@@ -26,7 +26,7 @@ from tqdm.auto import tqdm
 
 from pytransit.models.ma_quadratic_cl import QuadraticModelCL
 from pytransit.orbits.orbits_py import as_from_rhop, i_from_ba
-from pytransit.lpf.lpf import BaseLPF
+from .lpf import BaseLPF
 from pytransit.utils.de import DiffEvol
 
 try:
@@ -60,24 +60,45 @@ def psum2d(a):
 class OCLBaseLPF(BaseLPF):
     def __init__(self, target: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
                  pbids: list = None, covariates: list = None, nsamples: tuple = None, exptimes: tuple = None,
-                 klims: tuple = (0.01, 0.75), nk: int = 512, nz: int = 512, cl_ctx=None, cl_queue=None, **kwargs):
+                 wnids: list = None,
+                 klims: tuple = (0.01, 0.75), nk: int = 512, nz: int = 512, cl_ctx=None, cl_queue=None, init_data=True,
+                 cl_lnl_chunks: int = 1):
 
         self.cl_ctx = cl_ctx or self.tm.ctx
         self.cl_queue = cl_queue or self.tm.queue
-        self.cl_lnl_chunks = kwargs.get('cl_lnl_chunks', 1)
-        super().__init__(target, passbands, times, fluxes, errors, pbids, covariates, None, nsamples, exptimes)
+        self.cl_lnl_chunks = cl_lnl_chunks
+
+        # Define the OpenCL buffers
+        # -------------------------
+        self._b_flux = None
+        self._b_err = None
+        self._b_lnl2d = None
+        self._b_lnl1d = None
+        self._b_lcids = None
+        self._b_errids = None
+        self._b_covariates = None
+
+        super().__init__(target, passbands, times, fluxes, errors, pbids, covariates, wnids, None, nsamples, exptimes, init_data=False)
+
+        if init_data:
+            self._init_data(times = times, fluxes = fluxes, pbids = pbids, covariates = covariates,
+                            errors = errors, wnids = wnids, nsamples = nsamples, exptimes = exptimes)
+            self._init_parameters()
+            self._init_instrument()
 
         self.tm = QuadraticModelCL(klims=klims, nk=nk, nz=nz, cl_ctx=cl_ctx, cl_queue=cl_queue)
         self.tm.set_data(self.timea, self.lcids, self.pbids, self.nsamples, self.exptimes)
 
         src = """
-           __kernel void lnl2d(const int nlc, __global const float *obs, __global const float *mod, __global const float *err, __global const int *lcids, __global float *lnl2d){
+           __kernel void lnl2d(const int nlc, __global const float *obs, __global const float *mod, __global const int *lcids,
+           __global const float *err, const int nerr, __global const int *errids, __global float *lnl2d){
                   uint i_tm = get_global_id(1);    // time vector index
                   uint n_tm = get_global_size(1);  // time vector size
                   uint i_pv = get_global_id(0);    // parameter vector index
                   uint n_pv = get_global_size(0);  // parameter vector population size
                   uint gid = i_pv*n_tm + i_tm;     // global linear index
-                  float e = err[i_pv*nlc + lcids[i_tm]];
+                  uint ierr  = errids[lcids[i_tm]];
+                  float e = err[i_pv*nerr + ierr];
                   lnl2d[gid] = -log(e) - 0.5f*log(2*M_PI_F) - 0.5f*pown((obs[i_tm]-mod[gid]) / e, 2);
             }
 
@@ -138,9 +159,10 @@ class OCLBaseLPF(BaseLPF):
         self.lnlikelihood = self.lnlikelihood_ocl
 
 
-    def _init_data(self, times, fluxes, pbids, covariates=None, errors=None, nsamples=None, exptimes=None):
-        super()._init_data(times, fluxes, pbids, covariates, errors, nsamples, exptimes)
+    def _init_data(self, times, fluxes, pbids, covariates=None, errors=None, wnids = None, nsamples=None, exptimes=None):
+        super()._init_data(times, fluxes, pbids, covariates, errors, wnids, nsamples, exptimes)
         self.nlc = int32(self.nlc)
+        self.n_noise_blocks = int32(self.n_noise_blocks)
 
         # Initialise the Python arrays
         # ----------------------------
@@ -151,8 +173,22 @@ class OCLBaseLPF(BaseLPF):
         self.ferr = zeros([50, self.nlc])
         self.lcids = self.lcids.astype('int32')
         self.pbids = self.pbids.astype('int32')
+        self.noise_ids = self.noise_ids.astype('int32')
         if covariates is not None:
             self.cova = self.cova.astype('f')
+
+        # Release OpenCL buffers if they're initialised
+        # ---------------------------------------------
+        if self._b_flux:
+            self._b_flux.release()
+            self._b_err.release()
+            self._b_lnl2d.release()
+            self._b_lnl1d.release()
+            self._b_lcids.release()
+            self._b_errids.release()
+
+        if self._b_covariates:
+            self._b_covariates.release()
 
         # Initialise OpenCL buffers
         # -------------------------
@@ -162,6 +198,7 @@ class OCLBaseLPF(BaseLPF):
         self._b_lnl2d = cl.Buffer(self.cl_ctx, mf.WRITE_ONLY, self.lnl2d.nbytes)
         self._b_lnl1d = cl.Buffer(self.cl_ctx, mf.WRITE_ONLY, self.lnl1d.nbytes)
         self._b_lcids = cl.Buffer(self.cl_ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lcids)
+        self._b_errids = cl.Buffer(self.cl_ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.noise_ids)
         if covariates is not None:
             self._b_covariates = cl.Buffer(self.cl_ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.cova)
 
@@ -182,9 +219,10 @@ class OCLBaseLPF(BaseLPF):
     def flux_model(self, pvp):
         return self.transit_model(pvp, copy=True).astype('d')
 
+
     def _lnl2d(self, pv):
         if self.lnl2d.shape[0] != pv.shape[0] or self.lnl1d.size != pv.shape[0]:
-            self.err = zeros([pv.shape[0], self.nlc], 'f')
+            self.err = zeros([pv.shape[0], self.n_noise_blocks], 'f')
             self._b_err.release()
             self._b_err = cl.Buffer(self.cl_ctx, cl.mem_flags.WRITE_ONLY, self.err.nbytes)
             self.lnl2d = zeros([pv.shape[0], self.ofluxa.size], 'f')
@@ -195,9 +233,9 @@ class OCLBaseLPF(BaseLPF):
                 self._b_lnl1d.release()
             self._b_lnl1d = cl.Buffer(self.cl_ctx, cl.mem_flags.WRITE_ONLY, self.lnl1d.nbytes)
         self.transit_model(pv)
-        cl.enqueue_copy(self.cl_queue, self._b_err, (10 ** pv[:, self._sl_err]).astype('f'))
+        cl.enqueue_copy(self.cl_queue, self._b_err, (10**pv[:, self._sl_err]).astype('f'))
         self.prg_lnl.lnl2d(self.cl_queue, self.tm.f.shape, None, self.nlc, self._b_flux, self.tm._b_f,
-                           self._b_err, self._b_lcids, self._b_lnl2d)
+                           self._b_lcids, self._b_err, self.n_noise_blocks, self._b_errids, self._b_lnl2d)
 
 
     def lnlikelihood_numba(self, pv):

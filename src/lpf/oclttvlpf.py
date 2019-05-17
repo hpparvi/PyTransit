@@ -41,80 +41,18 @@ def plot_estimates(x, p, ax, bwidth=0.8):
 
 class OCLTTVLPF(OCLBaseLPF):
     def __init__(self, target: str, zero_epoch: float, period: float, passbands: list,
-                 times: list = None, fluxes: list = None, errors: list = None, pbids: list = None,
+                 times: list = None, fluxes: list = None, errors: list = None, pbids: list = None, wnids: list = None,
                  nsamples: list = None, exptimes: list = None, cl_ctx=None, cl_queue=None):
 
         self.zero_epoch = zero_epoch
         self.period = period
         self._tc_prior_percentile = 1.
 
-        super().__init__(target, passbands, times, fluxes, errors, pbids, nsamples=nsamples, exptimes=exptimes, cl_ctx=cl_ctx, cl_queue=cl_queue)
+        wnids = wnids if wnids is not  None else zeros(len(times), 'int')
 
-        src = """
-            __kernel void lnl2d(const int nlc, __global const float *obs, __global const float *mod, __global const float *err, __global const int *lcids, __global float *lnl2d){
-                   uint i_tm = get_global_id(1);    // time vector index
-                   uint n_tm = get_global_size(1);  // time vector size
-                   uint i_pv = get_global_id(0);    // parameter vector index
-                   uint n_pv = get_global_size(0);  // parameter vector population size
-                   uint gid = i_pv*n_tm + i_tm;     // global linear index
-                   float e = err[i_pv];
-                   lnl2d[gid] = -log(e) - 0.5f*log(2*M_PI_F) - 0.5f*pown((obs[i_tm]-mod[gid]) / e, 2);
-             }
+        super().__init__(target, passbands, times, fluxes, errors, pbids, nsamples=nsamples, exptimes=exptimes,
+                         wnids=wnids, cl_ctx=cl_ctx, cl_queue=cl_queue)
 
-             __kernel void lnl1d(const uint npt, __global float *lnl2d, __global float *lnl1d){
-                   uint i_pv = get_global_id(0);    // parameter vector index
-                   uint n_pv = get_global_size(0);  // parameter vector population size
-
-                 int i;
-                 bool is_even;
-                 uint midpoint = npt;
-                 __global float *lnl = &lnl2d[i_pv*npt];
-
-                 while(midpoint > 1){
-                     is_even = midpoint % 2 == 0;   
-                     if (is_even == 0){
-                         lnl[0] += lnl[midpoint-1];
-                     }
-                     midpoint /= 2;
-
-                     for(i=0; i<midpoint; i++){
-                         lnl[i] = lnl[i] + lnl[midpoint+i];
-                     }
-                 }
-                 lnl1d[i_pv] = lnl[0];
-             }
-
-            __kernel void lnl1d_chunked(const uint npt, __global float *lnl2d, __global float *lnl1d){
-                uint ipv = get_global_id(0);    // parameter vector index
-                uint npv = get_global_size(0);  // parameter vector population size
-                uint ibl = get_global_id(1);    // block index
-                uint nbl = get_global_size(1);  // number of blocks
-                uint lnp = npt / nbl;
-                  
-                __global float *lnl = &lnl2d[ipv*npt + ibl*lnp];
-              
-                if(ibl == nbl-1){
-                    lnp = npt - (ibl*lnp);
-                }
-            
-                prefetch(lnl, lnp);
-                bool is_even;
-                uint midpoint = lnp;
-                while(midpoint > 1){
-                    is_even = midpoint % 2 == 0;   
-                    if (is_even == 0){
-                        lnl[0] += lnl[midpoint-1];
-                    }
-                    midpoint /= 2;
-            
-                    for(int i=0; i<midpoint; i++){
-                        lnl[i] = lnl[i] + lnl[midpoint+i];
-                    }
-                }
-                lnl1d[ipv*nbl + ibl] = lnl[0];
-            }
-        """
-        self.prg_lnl = cl.Program(self.cl_ctx, src).build()
 
     def _init_p_orbit(self):
         """Orbit parameter initialisation for a TTV model.
@@ -145,19 +83,7 @@ class OCLTTVLPF(OCLBaseLPF):
         self._start_tc = 2
         self._sl_tc = s_[self._start_tc:self._start_tc + self.nlc]
 
-    def _init_p_noise(self):
-        """Initialise a single average white noise parameter shared with all the light curves.
 
-        Initialise a single average white noise estimate for all the light curves. This
-        overrides the standard behaviour where each light curve has a separate
-        white noise estimate. This class is meant mainly for base-spaced observations
-        where the separate transits are cut from long continuous light curves, and the
-        noise properties don't change much.
-        """
-        pns = [LParameter('log_err', 'log_error', '', UP(-8, -0), bounds=(-8, -0))]
-        self.ps.add_lightcurve_block('log_err', 1, 1, pns)
-        self._sl_err = self.ps.blocks[-1].slice
-        self._start_err = self.ps.blocks[-1].start
 
     def optimize_times(self, window):
         times, fluxes, pbids = [], [], []
@@ -168,22 +94,6 @@ class OCLTTVLPF(OCLBaseLPF):
             times.append(self.times[i][mask])
             fluxes.append(self.fluxes[i][mask])
         self._init_data(times, fluxes, self.pbids)
-
-    def lnlikelihood(self, pv):
-        if self.lnl2d.shape[1] != pv.shape[0]:
-            self.err = zeros(pv.shape[0], 'f')
-            self._b_err.release()
-            self._b_err = cl.Buffer(self.cl_ctx, cl.mem_flags.WRITE_ONLY, self.err.nbytes)
-            self.lnl2d = zeros([self.ofluxa.size, pv.shape[0]], 'f')
-            self._b_lnl2d.release()
-            self._b_lnl2d = cl.Buffer(self.cl_ctx, cl.mem_flags.WRITE_ONLY, self.lnl2d.nbytes)
-        self.transit_model(pv)
-        cl.enqueue_copy(self.cl_queue, self._b_err, (10 ** pv[:, self._sl_err]).astype('f'))
-        self.prg_lnl.lnl2d(self.cl_queue, self.tm.f.shape, None, self.nlc, self._b_flux, self.tm._b_f,
-                           self._b_err, self._b_lcids, self._b_lnl2d)
-        cl.enqueue_copy(self.cl_queue, self.lnl2d, self._b_lnl2d)
-        lnl = self.lnl2d.astype('d').sum(0)
-        return where(isfinite(lnl), lnl, -inf)
 
     def transit_model(self, pvp, copy=False):
         pvp = atleast_2d(pvp)

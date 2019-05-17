@@ -22,7 +22,7 @@ from matplotlib.pyplot import subplots
 from numba import njit, prange
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like, all,
                    clip, argsort, any, s_, zeros, arccos, nan, full, pi, sum, repeat, asarray, ndarray, log10,
-                   array, atleast_2d, isscalar, atleast_1d, where, isfinite)
+                   array, atleast_2d, isscalar, atleast_1d, where, isfinite, arange, unique, squeeze)
 from numpy.random import uniform, normal
 from scipy.stats import norm
 from tqdm.auto import tqdm
@@ -97,11 +97,11 @@ def map_ldc(ldc):
     return uv
 
 class BaseLPF:
-    _lpf_name = 'base'
+    _lpf_name = 'BaseLPF'
 
     def __init__(self, name: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
-                 pbids: list = None, covariates: list = None, tm: TransitModel = None,
-                 nsamples: tuple = 1, exptimes: tuple = 0.):
+                 pbids: list = None, covariates: list = None, wnids: list = None, tm: TransitModel = None,
+                 nsamples: tuple = 1, exptimes: tuple = 0., init_data=True):
         self.tm = tm or QuadraticModel(klims=(0.01, 0.75), nk=512, nz=512)
 
         # LPF name
@@ -133,6 +133,7 @@ class BaseLPF:
         # Declare data arrays and variables
         # ---------------------------------
         self.nlc: int = 0                # Number of light curves
+        self.n_noise_blocks: int = 0     # Number of noise blocks
         self.times: list = None          # List of time arrays
         self.fluxes: list = None         # List of flux arrays
         self.errors: list = None         # List of flux uncertainties
@@ -147,36 +148,26 @@ class BaseLPF:
         self.pbids: ndarray = None       # Array of passband indices for each light curve
         self.lcslices: list = None       # List of light curve slices
 
-        # Set up the observation data
-        # ---------------------------
-        if times is not None and fluxes is not None and pbids is not None:
-            self._init_data(times, fluxes, pbids, covariates, errors, nsamples, exptimes)
-
-        # Setup parametrisation
-        # =====================
-        self._init_parameters()
-
         # Initialise the additional lnprior list
         # --------------------------------------
         self.lnpriors = []
 
-        # Initialise the temporary arrays
-        # -------------------------------
-        self._zpv = zeros(6)
-        self._tuv = zeros((npb, 2))
-        self._zeros = zeros(npb)
-        self._ones = ones(npb)
+        if init_data:
+            # Set up the observation data
+            # ---------------------------
+            self._init_data(times = times, fluxes = fluxes, pbids = pbids, covariates = covariates,
+                            errors = errors, wnids = wnids, nsamples = nsamples, exptimes = exptimes)
 
-        # Inititalise the instrument
-        self._init_instrument()
+            # Set up the parametrisation
+            # --------------------------
+            self._init_parameters()
 
-        if times is not None:
-            self._bad_fluxes = [ones_like(t) for t in self.times]
-        else:
-            self._bad_fluxes = None
+            # Inititalise the instrument
+            # --------------------------
+            self._init_instrument()
 
 
-    def _init_data(self, times, fluxes, pbids, covariates=None, errors=None, nsamples=1, exptimes=0.):
+    def _init_data(self, times, fluxes, pbids, covariates=None, errors=None, wnids = None, nsamples=1, exptimes=0.):
 
         if isinstance(times, ndarray) and times.dtype == float:
             times = [times]
@@ -194,6 +185,15 @@ class BaseLPF:
         self.mfluxa = zeros_like(self.ofluxa)
         self.pbids = atleast_1d(pbids).astype('int')
         self.lcids = concatenate([full(t.size, i) for i, t in enumerate(self.times)])
+
+        if wnids is None:
+            self.noise_ids = arange(self.nlc)
+            self.n_noise_blocks = self.nlc
+        else:
+            self.noise_ids = asarray(wnids)
+            self.n_noise_blocks = len(unique(self.noise_ids))
+            assert self.noise_ids.size == self.nlc, "Need one noise block id per light curve."
+            assert self.noise_ids.max() == self.n_noise_blocks - 1, "Error initialising noise block ids."
 
         if isscalar(nsamples):
             self.nsamples = full(self.nlc, nsamples)
@@ -278,8 +278,8 @@ class BaseLPF:
     def _init_p_noise(self):
         """Noise parameter initialisation.
         """
-        pns = [LParameter('lne_{:d}'.format(i), 'log_error_{:d}'.format(i), '', U(-8, -0), bounds=(-8, -0)) for i in range(self.nlc)]
-        self.ps.add_lightcurve_block('log_err', 1, self.nlc, pns)
+        pns = [LParameter('lne_{:d}'.format(i), 'log_error_{:d}'.format(i), '', U(-8, -0), bounds=(-8, -0)) for i in range(self.n_noise_blocks)]
+        self.ps.add_lightcurve_block('log_err', 1, self.n_noise_blocks, pns)
         self._sl_err = self.ps.blocks[-1].slice
         self._start_err = self.ps.blocks[-1].start
 
@@ -412,23 +412,30 @@ class BaseLPF:
         self.lnpriors.append(ldprior)
 
     def remove_outliers(self, sigma=5):
-        fmodel = self.flux_model(self.de.minimum_location)
-        times, fluxes, pbids, errors = [], [], [], []
+        fmodel = squeeze(self.flux_model(self.de.minimum_location))
+        covariates = [] if self.covariates is not None else None
+        times, fluxes, lcids, errors = [], [], [], []
         for i in range(len(self.times)):
-            res = self.fluxes[i] - fmodel[i]
+            res = self.fluxes[i] - fmodel[self.lcslices[i]]
             mask = ~sigma_clip(res, sigma=sigma).mask
             times.append(self.times[i][mask])
             fluxes.append(self.fluxes[i][mask])
+            if covariates is not None:
+                covariates.append(self.covariates[i][mask])
             if self.errors is not None:
                 errors.append(self.errors[i][mask])
-        self._init_data(times, fluxes, self.pbids, (errors if self.errors is not None else None))
+
+        self._init_data(times=times, fluxes=fluxes, covariates=self.covariates, pbids=self.pbids,
+                        errors=(errors if self.errors is not None else None), wnids=self.noise_ids,
+                        nsamples=self.nsamples, exptimes=self.exptimes)
+
 
     def remove_transits(self, tids):
         m = ones(len(self.times), bool)
         m[tids] = False
         self._init_data(self.times[m], self.fluxes[m], self.pbids[m],
                         self.covariates[m] if self.covariates is not None else None,
-                        self.errors[m], self.nsamples[m], self.exptimes[m])
+                        self.errors[m], self.noise_ids[m], self.nsamples[m], self.exptimes[m])
         self._init_parameters()
 
     def lnprior(self, pv):
