@@ -213,7 +213,7 @@ class OCLBaseLPF(BaseLPF):
         a, b = sqrt(pvp[:, self._sl_ld][:, 0]), 2. * pvp[:, self._sl_ld][:, 1]
         uv[:, 0] = a * b
         uv[:, 1] = a * (1. - b)
-        flux = self.tm.evaluate_t_pv2d(pvp_t, uv, copy=copy)
+        flux = self.tm.evaluate_pv(pvp_t, uv, copy=copy)
         return flux if copy else None
 
     def flux_model(self, pvp):

@@ -104,10 +104,10 @@ class TransitModel(object):
 
     # Default evaluation methods
     # --------------------------
-    def evaluate_ps(self, k: float, ldc: ndarray, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0.) -> ndarray:
+    def evaluate_ps(self, k: float, ldc: ndarray, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0., copy: bool = True) -> ndarray:
         raise NotImplementedError
 
-    def evaluate_pv(self, pvp: ndarray) -> ndarray:
+    def evaluate_pv(self, pvp: ndarray, copy: bool = True) -> ndarray:
         raise NotImplementedError
 
     # Evaluation given an array of times

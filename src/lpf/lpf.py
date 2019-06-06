@@ -65,16 +65,6 @@ def lnlike_normal_v(o, m, e, lcids):
             lnl[i] += -log(e[i,k]) - 0.5*log(2*pi) - 0.5*((o[j]-m[i,j])/e[i,k])**2
     return lnl
 
-@njit("f8[:](f8[:], f8[:])", fastmath=False, cache=False)
-def unpack_orbit(pv, zpv):
-    zpv[:2] = pv[:2]
-    zpv[2] = as_from_rhop(pv[2], pv[1])
-    if zpv[2] <= 1.:
-        zpv[2] = nan
-    else:
-        zpv[3] = arccos(pv[3] / zpv[2])
-    return zpv
-
 
 @njit(fastmath=True)
 def map_pv(pv):
@@ -95,6 +85,7 @@ def map_ldc(ldc):
     uv[:,0::2] = a * b
     uv[:,1::2] = a * (1. - b)
     return uv
+
 
 class BaseLPF:
     _lpf_name = 'BaseLPF'
@@ -330,11 +321,11 @@ class BaseLPF:
         """Additive trends"""
         return 0.
 
-    def transit_model(self, pv):
+    def transit_model(self, pv, copy=True):
         pv = atleast_2d(pv)
         pvp = map_pv(pv)
         ldc = map_ldc(pv[:,self._sl_ld])
-        flux = self.tm.evaluate_pv(pvp, ldc)
+        flux = self.tm.evaluate_pv(pvp, ldc, copy)
         return flux
 
     def flux_model(self, pv):

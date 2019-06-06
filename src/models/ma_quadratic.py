@@ -60,7 +60,7 @@ class QuadraticModel(TransitModel):
             self.nk = nk
             self.nz = nz
 
-    def evaluate_ps(self, k: float, ldc: ndarray, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0.) -> ndarray:
+    def evaluate_ps(self, k: float, ldc: ndarray, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0., copy: bool = True) -> ndarray:
         assert self.time is not None, "Need to set the data before calling the transit model."
         ldc = atleast_2d(ldc)
         assert ldc.shape[1] == 2*self.npb, "The quadratic model needs two limb darkening coefficients per passband"
@@ -73,7 +73,7 @@ class QuadraticModel(TransitModel):
             raise NotImplementedError
         return squeeze(flux)
 
-    def evaluate_pv(self, pvp: ndarray, ldc: ndarray) -> ndarray:
+    def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
         assert self.time is not None, "Need to set the data before calling the transit model."
         ldc = atleast_2d(ldc)
         assert ldc.shape[1] == 2*self.npb, "The quadratic model needs two limb darkening coefficients per passband"

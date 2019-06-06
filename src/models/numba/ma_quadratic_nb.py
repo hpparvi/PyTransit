@@ -41,7 +41,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, linspace, array, atleast_2d, floor, full, \
-    inf, isnan
+    inf, isnan, cos, sign, sin
 from numba import njit, prange
 
 from ...orbits.orbits_py import z_ip_s
@@ -527,7 +527,6 @@ def quadratic_interpolated_z_s(z, k, u, edt, ldt, let, kt, zt):
         iz = int(floor((z - zt[0]) / dz))
         az1 = (z - zt[iz]) / dz
         az2 = 1.0 - az1
-
         ed = (edt[ik,     iz    ] * ak2 * az2
             + edt[ik + 1, iz    ] * ak1 * az2
             + edt[ik,     iz + 1] * ak2 * az1
@@ -558,7 +557,7 @@ def quadratic_model_interpolated(t, pvp, ldc, lcids, pbids, nsamples, exptimes,
     flux = zeros((npv, npt))
     for ipv in range(npv):
         k, t0, p, a, i, e, w = pvp[ipv,:]
-        if k < kt[0] or k > kt[-1] or isnan(a) or isnan(i):
+        if k < kt[0] or k > kt[-1] or isnan(k) or isnan(a) or isnan(i):
             flux[ipv, :] = inf
             continue
         for j in prange(npt):
