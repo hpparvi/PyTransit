@@ -269,7 +269,7 @@ class BaseLPF:
     def _init_p_noise(self):
         """Noise parameter initialisation.
         """
-        pns = [LParameter('lne_{:d}'.format(i), 'log_error_{:d}'.format(i), '', U(-8, -0), bounds=(-8, -0)) for i in range(self.n_noise_blocks)]
+        pns = [LParameter('loge_{:d}'.format(i), 'log10_error_{:d}'.format(i), '', U(-4, 0), bounds=(-4, 0)) for i in range(self.n_noise_blocks)]
         self.ps.add_lightcurve_block('log_err', 1, self.n_noise_blocks, pns)
         self._sl_err = self.ps.blocks[-1].slice
         self._start_err = self.ps.blocks[-1].start
