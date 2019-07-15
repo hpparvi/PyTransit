@@ -17,6 +17,8 @@ The package has been used in research since 2010, and is described in [Parviaine
 ## News
 
 - *15.7.2019:* Added a new TESS transit modelling example that reproduces the WASP-4b analysis by [Bouma et al. (2019)](http://adsabs.harvard.edu/abs/2019AJ....157..217B).
+- *15.7.2019:* Added a set of notebooks that illustrate the use of the contamination module in transiting planet candidate 
+validation with multicolour photometry, as detailed in Parviainen et al. (2019, submitted).
 
 ## What's new in PyTransit v2.0 beta (2019)
 
