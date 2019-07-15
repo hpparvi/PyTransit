@@ -17,13 +17,16 @@
 import math as mt
 
 import pandas as pd
+import seaborn as sb
+
 from astropy.stats import sigma_clip
-from matplotlib.pyplot import subplots
+from matplotlib.pyplot import subplots, setp
 from numba import njit, prange
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like, all,
                    clip, argsort, any, s_, zeros, arccos, nan, full, pi, sum, repeat, asarray, ndarray, log10,
                    array, atleast_2d, isscalar, atleast_1d, where, isfinite, arange, unique, squeeze)
 from numpy.random import uniform, normal
+from scipy.optimize import minimize
 from scipy.stats import norm
 from tqdm.auto import tqdm
 from emcee import EnsembleSampler
@@ -45,7 +48,7 @@ from ..utils.de import DiffEvol
 
 @njit(cache=False)
 def lnlike_normal(o, m, e):
-    return -sum(log(e)) -0.5*p.size*log(2.*pi) - 0.5*sum((o-m)**2/e**2)
+    return -sum(log(e)) -0.5*o.size*log(2.*pi) - 0.5*sum((o-m)**2/e**2)
 
 
 @njit("f8(f8[:], f8[:], f8)", cache=False)
@@ -222,6 +225,11 @@ class BaseLPF:
             self.covstart = concatenate([[0], self.covsize.cumsum()[:-1]])
             self.cova = concatenate(self.covariates)
 
+    def print_parameters(self, columns: int = 2):
+        columns = max(1, columns)
+        for i, p in enumerate(self.ps):
+            print(p.__repr__(), end=('\n' if i % columns == columns - 1 else '\t'))
+
     def _init_parameters(self):
         self.ps = ParameterSet()
         self._init_p_orbit()
@@ -244,7 +252,7 @@ class BaseLPF:
     def _init_p_planet(self):
         """Planet parameter initialisation.
         """
-        pk2 = [PParameter('k2', 'area_ratio', 'A_s', GM(0.1), (0.01**2, 0.55**2))]
+        pk2 = [PParameter('k2', 'area_ratio', 'A_s', GM(0.1), (0.01**2, 0.75**2))]
         self.ps.add_passband_block('k2', 1, 1, pk2)
         self._pid_k2 = repeat(self.ps.blocks[-1].start, self.npb)
         self._start_k2 = self.ps.blocks[-1].start
@@ -264,7 +272,7 @@ class BaseLPF:
     def _init_p_baseline(self):
         """Baseline parameter initialisation.
         """
-        pass
+        self._sl_bl = None
 
     def _init_p_noise(self):
         """Noise parameter initialisation.
@@ -449,7 +457,7 @@ class BaseLPF:
     def __call__(self, pv):
         return self.lnposterior(pv)
 
-    def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation', leave=False):
+    def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation', leave=False, plot_convergence: bool = True):
         if self.de is None:
             self.de = DiffEvol(self.lnposterior, clip(self.ps.bounds, -1, 1), npop, maximize=True, vectorize=True)
             if population is None:
@@ -459,16 +467,51 @@ class BaseLPF:
         for _ in tqdm(self.de(niter), total=niter, desc=label, leave=leave):
             pass
 
-    def sample_mcmc(self, niter=500, thin=5, label='MCMC sampling', reset=False, leave=True):
+        if plot_convergence:
+            fig, axs = subplots(1, 5, figsize=(13, 2), constrained_layout=True)
+            rfit = self.de._fitness
+
+            if hasattr(self, '_old_de_fitness'):
+                axs[0].hist(-self._old_de_fitness, facecolor='midnightblue', bins='auto', alpha=0.25)
+            axs[0].hist(-rfit, facecolor='midnightblue', bins='auto')
+
+            for i, ax in zip([0, 2, 3, 4], axs[1:]):
+                if hasattr(self, '_old_de_fitness'):
+                    ax.plot(self._old_de_population[:, i], -self._old_de_fitness, 'kx', alpha=0.25)
+                ax.plot(self.de.population[:, i], -rfit, 'k.')
+                ax.set_xlabel(self.ps.descriptions[i])
+            setp(axs, yticks=[])
+            setp(axs[1], ylabel='Log posterior')
+            setp(axs[0], xlabel='Log posterior')
+            sb.despine(fig, offset=5)
+        self._old_de_population = self.de.population.copy()
+        self._old_de_fitness = self.de._fitness.copy()
+
+    def minimize_local(self, pv0=None, method='powell'):
+        if pv0 is None:
+            if self.de is not None:
+                pv0 = self.de.minimum_location
+            else:
+                pv0 = squeeze(self.create_pv_population(1))
+                if self._sl_bl is not None:
+                    pv0[self._sl_bl] = [p.mean for p in self.ps.priors[self._sl_bl]]
+                pv0[self._sl_err] = log10(self.wn)
+        res = minimize(lambda pv: -self.lnposterior(pv), pv0, method=method)
+        self._local_minimization = res
+        return res.x
+
+    def sample_mcmc(self, niter=500, thin=5, repeats: int = 1, population=None, label='MCMC sampling', reset=True, leave=True):
         if self.sampler is None:
-            self.sampler = EnsembleSampler(self.de.n_pop, self.de.n_par, self.lnposterior, vectorize=True)
-            pop0 = self.de.population
+            pop0 = population if population is not None else  self.de.population.copy()
+            self.sampler = EnsembleSampler(pop0.shape[0], pop0.shape[1], self.lnposterior, vectorize=True)
         else:
             pop0 = self.sampler.chain[:,-1,:].copy()
-        if reset:
-            self.sampler.reset()
-        for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter, desc=label, leave=False):
-            pass
+
+        for i in tqdm(range(repeats), desc='MCMC sampling'):
+            if reset or i > 0:
+                self.sampler.reset()
+            for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter, desc='Run {:d}/{:d}'.format(i+1, repeats), leave=False):
+                pass
 
     def posterior_samples(self, burn: int=0, thin: int=1, include_ldc: bool=False):
         ldstart = self._sl_ld.start
