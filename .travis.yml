@@ -1,6 +1,6 @@
 language: python
 python:
-  - "3.6"
+  - "3.7"
 
 cache: pip
 
@@ -10,8 +10,8 @@ addons:
     - gfortran
 
 install:
-  - pip install numpy scipy
-  - python setup.py config_fc --fcompiler=gnu95 --opt="-Ofast" --f90flags="-cpp -fopenmp -march=native" build install
+  - pip install numpy scipy numba
+  - python setup.py install
 
 script: nosetests -w tests/unit_tests
 
