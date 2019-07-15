@@ -14,6 +14,10 @@ Fast and easy-to-use tools for exoplanet transit light curve modelling with Pyth
 
 The package has been used in research since 2010, and is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433), which also details the model-specific optimisations and model performance.
 
+## News
+
+- *15.7.2019:* Added a new TESS transit modelling example that reproduces the WASP-4b analysis by [Bouma et al. (2019)](http://adsabs.harvard.edu/abs/2019AJ....157..217B).
+
 ## What's new in PyTransit v2.0 beta (2019)
 
 **Freedom from Fortran**
@@ -38,9 +42,12 @@ The package has been used in research since 2010, and is described in [Parviaine
 **Example notebooks**
 - All (well, most of, but this'll be improved) the functionality is now documented in Jupyter notebooks available in
  [GitHub](https://github.com/hpparvi/PyTransit/tree/master/notebooks).
+- TESS modelling examples using `pytransit.lpf.TESSLPF`.
 
-**Utility modules and functions**
-- The `pytransit.modelling.lpf` (LogPosteriorFunction) module contains classes that can be used as a starting point for a transit analysis.
+**Lop posterior function (LPF) classes**
+- The `pytransit.lpf` (LogPosteriorFunction) module contains classes that can be used directly to carry out Bayesian 
+transit analyses. They can also be used as a starting point for more complex models, and have been written to be easily 
+extendable.
 
 ## Features
 
