@@ -126,7 +126,7 @@ class BBContamination(Contamination):
           c : Contamination in the given wavelength(s)
 
         """
-        ftar, fcon = cn_fluxes(wl, Ttar, Tcon, wlref, cnref)
+        ftar, fcon = self.cn_fluxes(wl, Ttar, Tcon, wlref, cnref)
         return fcon / (ftar + fcon)
 
 
@@ -239,8 +239,8 @@ class SMContamination(Contamination):
 
         Parameters
         ----------
-        reftime : float
-            Exposure time in the reference passband
+        ci : float
+            contamination in the reference passband
         teff : float
             Effective stellar temperature [K]
         rpb : str, optional

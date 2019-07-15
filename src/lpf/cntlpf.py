@@ -79,7 +79,7 @@ class PhysContLPF(BaseLPF):
     def _init_p_planet(self):
         ps = self.ps
         pk2 = [PParameter('k2_app', 'apparent_area_ratio', 'A_s', UP(0.01 ** 2, 0.25 ** 2), (0.01 ** 2, 0.25 ** 2))]
-        pcn = [GParameter('k2_true', 'true_area_ratio', 'As', UP(0.01 ** 2, 0.25 ** 2), bounds=(1e-8, inf)),
+        pcn = [GParameter('k2_true', 'true_area_ratio', 'As', UP(0.01**2, 0.75**2), bounds=(1e-8, inf)),
                GParameter('teff_h', 'host_teff', 'K', UP(2500, 12000), bounds=(2500, 12000)),
                GParameter('teff_c', 'contaminant_teff', 'K', UP(2500, 12000), bounds=(2500, 12000))]
         ps.add_passband_block('k2', 1, 1, pk2)
