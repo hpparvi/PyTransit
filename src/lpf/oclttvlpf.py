@@ -14,12 +14,10 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import scipy.ndimage as ndi
-import pyopencl as cl
 
 from matplotlib.pyplot import subplots, setp
-from numpy import sqrt, array, inf, int, s_, percentile, median, mean, round, zeros, isfinite, where, atleast_2d, ceil, \
-    poly1d, polyfit
+from numpy import sqrt, array, inf, int, s_, percentile, median, mean, round, zeros, atleast_2d, ceil, poly1d, polyfit
+from uncertainties import ufloat, UFloat
 
 try:
     import seaborn as sb
@@ -27,10 +25,10 @@ try:
 except ImportError:
     with_seaborn = False
 
-from pytransit.param.parameter import GParameter, LParameter
-from pytransit.param.parameter import UniformPrior as UP, NormalPrior as NP
-from pytransit.lpf.ocllpf import OCLBaseLPF
-from pytransit.orbits.orbits_py import as_from_rhop, i_from_ba
+from ..param.parameter import GParameter, LParameter
+from ..param.parameter import UniformPrior as UP, NormalPrior as NP
+from ..orbits.orbits_py import as_from_rhop, i_from_ba
+from .ocllpf import OCLBaseLPF
 
 
 def plot_estimates(x, p, ax, bwidth=0.8):
@@ -44,11 +42,9 @@ class OCLTTVLPF(OCLBaseLPF):
                  times: list = None, fluxes: list = None, errors: list = None, pbids: list = None, wnids: list = None,
                  nsamples: list = None, exptimes: list = None, cl_ctx=None, cl_queue=None):
 
-        self.zero_epoch = zero_epoch
-        self.period = period
-        self._tc_prior_percentile = 1.
-
-        wnids = wnids if wnids is not  None else zeros(len(times), 'int')
+        self.zero_epoch = zero_epoch if isinstance(zero_epoch, UFloat) else ufloat(zero_epoch, 1e-5)
+        self.period = period if isinstance(period, UFloat) else ufloat(period, 1e-7)
+        self.epoch = round((array([t.mean() for t in times]) - self.zero_epoch.n) / self.period.n).astype(int)
 
         super().__init__(target, passbands, times, fluxes, errors, pbids, nsamples=nsamples, exptimes=exptimes,
                          wnids=wnids, cl_ctx=cl_ctx, cl_queue=cl_queue)
@@ -68,22 +64,15 @@ class OCLTTVLPF(OCLBaseLPF):
 
         # Transit centers
         # ---------------
+        self.epoch = round((array([t.mean() for t in self.times]) - self.zero_epoch.n) / self.period.n).astype(int)
 
-        def create_tc_prior(t, f, p=5):
-            m = f > percentile(f, p)
-            m = ~ndi.binary_erosion(m, iterations=6, border_value=1)
-            return NP(t[m].mean(), 0.25 * t[m].ptp())
-
-        self.tnumber = round((array([t.mean() for t in self.times]) - self.zero_epoch) / self.period).astype(int)
-        for t, f, tn in zip(self.times, self.fluxes, self.tnumber):
-            prior = create_tc_prior(t, f, self._tc_prior_percentile)
-            porbit.append(GParameter(f'tc_{tn:d}', f'transit_centre_{tn:d}', 'd', prior, (-inf, inf)))
+        for e in self.epoch:
+            tc = self.zero_epoch + e*self.period
+            porbit.append(GParameter(f'tc_{e:d}', f'transit_centre_{e:d}', 'd', NP(tc.n, tc.s), (-inf, inf)))
 
         self.ps.add_global_block('orbit', porbit)
         self._start_tc = 2
         self._sl_tc = s_[self._start_tc:self._start_tc + self.nlc]
-
-
 
     def optimize_times(self, window):
         times, fluxes, pbids = [], [], []
@@ -102,8 +91,8 @@ class OCLTTVLPF(OCLBaseLPF):
         tc_end = 1 + self.nlc
         pvp_cl[:, 0:1] = sqrt(pvp[:, self._pid_k2])  # Radius ratio
         pvp_cl[:, 1:tc_end] = pvp[:, self._sl_tc]    # Transit centre and orbital period
-        pvp_cl[:, tc_end + 0] = self.period
-        pvp_cl[:, tc_end + 1] = a = as_from_rhop(pvp[:, 0], self.period)
+        pvp_cl[:, tc_end + 0] = self.period.n
+        pvp_cl[:, tc_end + 1] = a = as_from_rhop(pvp[:, 0], self.period.n)
         pvp_cl[:, tc_end + 2] = i_from_ba(pvp[:, 1], a)
         a, b = sqrt(pvp[:, self._sl_ld][:, 0]), 2. * pvp[:, self._sl_ld][:, 1]
         uv[:, 0] = a * b
@@ -115,7 +104,7 @@ class OCLTTVLPF(OCLBaseLPF):
         df = self.posterior_samples(burn, thin, False)
         tccols = [c for c in df.columns if 'tc' in c]
         tcs = median(df[tccols], 0)
-        return mean((tcs[1:] - tcs[0]) / (self.tnumber[1:] - self.tnumber[0]))
+        return mean((tcs[1:] - tcs[0]) / (self.epoch[1:] - self.epoch[0]))
 
     def plot_ttvs(self, burn=0, thin=1, axs=None, figsize=None, bwidth=0.8, fmt='h', windows=None):
         assert fmt in ('d', 'h', 'min')
@@ -125,26 +114,25 @@ class OCLTTVLPF(OCLBaseLPF):
         df = self.posterior_samples(burn, thin)
         tccols = [c for c in df.columns if 'tc' in c]
         tcs = median(df[tccols], 0)
-        lineph = poly1d(polyfit(self.tnumber, tcs, 1))
-        tc_linear = lineph(self.tnumber)
+        lineph = poly1d(polyfit(self.epoch, tcs, 1))
+        tc_linear = lineph(self.epoch)
         p = multiplier[fmt] * percentile(df[tccols] - tc_linear, [50, 16, 84, 0.5, 99.5], 0)
         setp(axs, ylabel='Transit center - linear prediction [{}]'.format(fmt), xlabel='Transit number')
         if windows is None:
-            plot_estimates(self.tnumber, p, axs, bwidth)
+            plot_estimates(self.epoch, p, axs, bwidth)
             if with_seaborn:
                 sb.despine(ax=axs, offset=15)
         else:
             setp(axs[1:], ylabel='')
             for ax, w in zip(axs, windows):
-                m = (self.tnumber > w[0]) & (self.tnumber < w[1])
-                plot_estimates(self.tnumber[m], p[:, m], ax, bwidth)
+                m = (self.epoch > w[0]) & (self.epoch < w[1])
+                plot_estimates(self.epoch[m], p[:, m], ax, bwidth)
                 setp(ax, xlim=w)
                 if with_seaborn:
                     sb.despine(ax=ax, offset=15)
         if fig:
             fig.tight_layout()
         return axs
-
 
     def plot_transits(self, ncols=4, figsize=(13, 11), remove=(), ylim=None):
         nt = len(self.times)
@@ -183,7 +171,7 @@ class OCLTTVLPF(OCLBaseLPF):
 
             # The transit index
             # -----------------
-            ax.text(0.05, 0.95, self.tnumber[i], ha='left', va='top', transform=ax.transAxes)
+            ax.text(0.05, 0.95, self.epoch[i], ha='left', va='top', transform=ax.transAxes)
             ax.text(0.05, 0.05, "({})".format(i), ha='left', va='bottom', transform=ax.transAxes, size='small')
             ax.set_xlim(self.times[i][[0, -1]])
 
