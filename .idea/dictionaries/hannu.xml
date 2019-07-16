@@ -10,13 +10,16 @@
       <w>figsize</w>
       <w>klims</w>
       <w>lambdae</w>
+      <w>lcslices</w>
       <w>lnlike</w>
       <w>lnpriors</w>
       <w>mcmc</w>
       <w>msun</w>
+      <w>nlegendre</w>
       <w>passband</w>
       <w>passbands</w>
       <w>rsun</w>
+      <w>seaborn</w>
       <w>supersampling</w>
     </words>
   </dictionary>
