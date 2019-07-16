@@ -1,3 +1,5 @@
+seaborn
+uncertainties
 numpy
 scipy
 numba

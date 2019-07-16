@@ -16,30 +16,13 @@
 
 
 import pyopencl as cl
-from astropy.stats import sigma_clip
-
 from numba import njit, float64
-from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like, float32 as f32,
-                   clip, argsort, any, s_, zeros, arccos, nan, isnan, full, pi, sum, repeat, asarray, ndarray,
-                   full_like, isfinite, where, atleast_2d, int32, uint32)
-from tqdm.auto import tqdm
+from numpy import inf, sqrt, zeros, isfinite, where, atleast_2d, int32, uint32
 
-from pytransit.models.ma_quadratic_cl import QuadraticModelCL
-from pytransit.orbits.orbits_py import as_from_rhop, i_from_ba
+from ..models.ma_quadratic_cl import QuadraticModelCL
+from ..orbits.orbits_py import as_from_rhop, i_from_ba
 from .lpf import BaseLPF
-from pytransit.utils.de import DiffEvol
 
-try:
-    import pandas as pd
-    with_pandas = True
-except ImportError:
-    with_pandas = False
-
-try:
-    from emcee import EnsembleSampler
-    with_emcee = True
-except ImportError:
-    with_emcee = False
 
 @njit(parallel=False)
 def psum2d(a):
@@ -219,7 +202,6 @@ class OCLBaseLPF(BaseLPF):
     def flux_model(self, pvp):
         return self.transit_model(pvp, copy=True).astype('d')
 
-
     def _lnl2d(self, pv):
         if self.lnl2d.shape[0] != pv.shape[0] or self.lnl1d.size != pv.shape[0]:
             self.err = zeros([pv.shape[0], self.n_noise_blocks], 'f')
@@ -237,13 +219,11 @@ class OCLBaseLPF(BaseLPF):
         self.prg_lnl.lnl2d(self.cl_queue, self.tm.f.shape, None, self.nlc, self._b_flux, self.tm._b_f,
                            self._b_lcids, self._b_err, self.n_noise_blocks, self._b_errids, self._b_lnl2d)
 
-
     def lnlikelihood_numba(self, pv):
         self._lnl2d(pv)
         cl.enqueue_copy(self.cl_queue, self.lnl2d, self._b_lnl2d)
         lnl = psum2d(self.lnl2d)
         return where(isfinite(lnl), lnl, -inf)
-
 
     def lnlikelihood_ocl(self, pv):
         self._lnl2d(pv)
@@ -268,26 +248,3 @@ class OCLBaseLPF(BaseLPF):
     def lnposterior(self, pv):
         lnp = self.lnlikelihood(pv) + self.lnprior(pv)
         return where(isfinite(lnp), lnp, -inf)
-
-    def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation', leave=False):
-        if self.de is None:
-            self.de = DiffEvol(self.lnposterior, clip(self.ps.bounds, -1, 1), npop, maximize=True, vectorize=True)
-            if population is None:
-                self.de._population[:, :] = self.create_pv_population(npop)
-            else:
-                self.de._population[:, :] = population
-        for _ in tqdm(self.de(niter), total=niter, desc=label, leave=leave):
-            pass
-
-    def sample_mcmc(self, niter=500, thin=5, label='MCMC sampling', reset=False, leave=True):
-        if not with_emcee:
-            raise ImportError('Emcee not installed.')
-        if self.sampler is None:
-            self.sampler = EnsembleSampler(self.de.n_pop, self.de.n_par, self.lnposterior, vectorize=True)
-            pop0 = self.de.population
-        else:
-            pop0 = self.sampler.chain[:, -1, :].copy()
-        if reset:
-            self.sampler.reset()
-        for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter, desc=label, leave=False):
-            pass

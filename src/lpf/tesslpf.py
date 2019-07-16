@@ -133,7 +133,7 @@ class TESSLPF(BaseLPF):
         tm = self.transit_model(pv)
         bl = squeeze(self.baseline(pv))
 
-        bp, bfo, beo = downsample_time(phase, self.ofluxa / bl, binwidth)
+        bp, bfo, beo = downsample_time(phase[sids], (self.ofluxa / bl)[sids], binwidth)
 
         fig, ax = subplots(figsize=figsize)
         ax.plot(phase - 0.5 * p, self.ofluxa / bl, '.', alpha=0.15)

@@ -38,12 +38,12 @@ except ImportError:
     with_ldtk = False
 
 from ..models.transitmodel import TransitModel
-from .. import QuadraticModel
 from ..orbits.orbits_py import duration_eccentric, as_from_rhop, i_from_ba
 from ..param.parameter import ParameterSet, PParameter, GParameter, LParameter
 from ..param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
 from ..contamination.filter import sdss_g, sdss_r, sdss_i, sdss_z
 from ..utils.de import DiffEvol
+from .. import QuadraticModel
 
 
 @njit(cache=False)
@@ -163,10 +163,10 @@ class BaseLPF:
 
     def _init_data(self, times, fluxes, pbids, covariates=None, errors=None, wnids = None, nsamples=1, exptimes=0.):
 
-        if isinstance(times, ndarray) and times.dtype == float:
+        if isinstance(times, ndarray) and times.ndim == 1 and times.dtype == float:
             times = [times]
 
-        if isinstance(fluxes, ndarray) and fluxes.dtype == float:
+        if isinstance(fluxes, ndarray) and times.ndim == 1 and fluxes.dtype == float:
             fluxes = [fluxes]
 
         self.nlc = len(times)
@@ -180,9 +180,11 @@ class BaseLPF:
         self.pbids = atleast_1d(pbids).astype('int')
         self.lcids = concatenate([full(t.size, i) for i, t in enumerate(self.times)])
 
+
+        # TODO: Noise IDs get scrambled when removing transits, fix!!!
         if wnids is None:
-            self.noise_ids = arange(self.nlc)
-            self.n_noise_blocks = self.nlc
+            self.noise_ids = zeros(self.nlc)
+            self.n_noise_blocks = 1
         else:
             self.noise_ids = asarray(wnids)
             self.n_noise_blocks = len(unique(self.noise_ids))
@@ -487,7 +489,7 @@ class BaseLPF:
         self._old_de_population = self.de.population.copy()
         self._old_de_fitness = self.de._fitness.copy()
 
-    def minimize_local(self, pv0=None, method='powell'):
+    def optimize_local(self, pv0=None, method='powell'):
         if pv0 is None:
             if self.de is not None:
                 pv0 = self.de.minimum_location
@@ -500,7 +502,7 @@ class BaseLPF:
         self._local_minimization = res
         return res.x
 
-    def sample_mcmc(self, niter=500, thin=5, repeats: int = 1, population=None, label='MCMC sampling', reset=True, leave=True):
+    def sample_mcmc(self, niter: int = 500, thin: int = 5, repeats: int = 1, population=None, label='MCMC sampling', reset=True, leave=True):
         if self.sampler is None:
             pop0 = population if population is not None else  self.de.population.copy()
             self.sampler = EnsembleSampler(pop0.shape[0], pop0.shape[1], self.lnposterior, vectorize=True)
