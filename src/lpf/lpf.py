@@ -57,14 +57,14 @@ def lnlike_normal_s(o, m, e):
 
 
 @njit(parallel=True, cache=False, fastmath=True)
-def lnlike_normal_v(o, m, e, lcids):
+def lnlike_normal_v(o, m, e, wnids, lcids):
     m = atleast_2d(m)
     npv = m.shape[0]
     npt = o.size
     lnl = zeros(npv)
     for i in prange(npv):
         for j in range(npt):
-            k = lcids[j]
+            k = wnids[lcids[j]]
             lnl[i] += -log(e[i,k]) - 0.5*log(2*pi) - 0.5*((o[j]-m[i,j])/e[i,k])**2
     return lnl
 
@@ -183,7 +183,7 @@ class BaseLPF:
 
         # TODO: Noise IDs get scrambled when removing transits, fix!!!
         if wnids is None:
-            self.noise_ids = zeros(self.nlc)
+            self.noise_ids = zeros(self.nlc, int)
             self.n_noise_blocks = 1
         else:
             self.noise_ids = asarray(wnids)
@@ -450,7 +450,7 @@ class BaseLPF:
     def lnlikelihood(self, pv):
         flux_m = self.flux_model(pv)
         wn = 10**(atleast_2d(pv)[:,self._sl_err])
-        return lnlike_normal_v(self.ofluxa, flux_m, wn, self.lcids)
+        return lnlike_normal_v(self.ofluxa, flux_m, wn, self.noise_ids, self.lcids)
 
     def lnposterior(self, pv):
         lnp = self.lnprior(pv) + self.lnlikelihood(pv)
@@ -472,15 +472,18 @@ class BaseLPF:
         if plot_convergence:
             fig, axs = subplots(1, 5, figsize=(13, 2), constrained_layout=True)
             rfit = self.de._fitness
+            mfit = isfinite(rfit)
 
             if hasattr(self, '_old_de_fitness'):
-                axs[0].hist(-self._old_de_fitness, facecolor='midnightblue', bins='auto', alpha=0.25)
-            axs[0].hist(-rfit, facecolor='midnightblue', bins='auto')
+                m = isfinite(self._old_de_fitness)
+                axs[0].hist(-self._old_de_fitness[m], facecolor='midnightblue', bins=25, alpha=0.25)
+            axs[0].hist(-rfit[mfit], facecolor='midnightblue', bins=25)
 
             for i, ax in zip([0, 2, 3, 4], axs[1:]):
                 if hasattr(self, '_old_de_fitness'):
-                    ax.plot(self._old_de_population[:, i], -self._old_de_fitness, 'kx', alpha=0.25)
-                ax.plot(self.de.population[:, i], -rfit, 'k.')
+                    m = isfinite(self._old_de_fitness)
+                    ax.plot(self._old_de_population[m, i], -self._old_de_fitness[m], 'kx', alpha=0.25)
+                ax.plot(self.de.population[mfit, i], -rfit[mfit], 'k.')
                 ax.set_xlabel(self.ps.descriptions[i])
             setp(axs, yticks=[])
             setp(axs[1], ylabel='Log posterior')
