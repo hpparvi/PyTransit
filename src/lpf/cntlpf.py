@@ -78,8 +78,8 @@ class PhysContLPF(BaseLPF):
 
     def _init_p_planet(self):
         ps = self.ps
-        pk2 = [GParameter('k2_true', 'true_area_ratio', 'As', UP(0.01**2, 0.75**2), bounds=(1e-8, inf))]
-        pcn = [PParameter('k2_app', 'apparent_area_ratio', 'A_s', UP(0.01 ** 2, 0.25 ** 2), (0.01 ** 2, 0.25 ** 2)),
+        pk2 = [PParameter('k2_app', 'apparent_area_ratio', 'A_s', UP(0.01 ** 2, 0.25 ** 2), (0.01 ** 2, 0.25 ** 2))]
+        pcn = [GParameter('k2_true', 'true_area_ratio', 'As', UP(0.01**2, 0.75**2), bounds=(1e-8, inf)),
                GParameter('teff_h', 'host_teff', 'K', UP(2500, 12000), bounds=(2500, 12000)),
                GParameter('teff_c', 'contaminant_teff', 'K', UP(2500, 12000), bounds=(2500, 12000))]
         ps.add_passband_block('k2', 1, 1, pk2)
@@ -99,7 +99,7 @@ class PhysContLPF(BaseLPF):
         """Set up the instrument and contamination model."""
         self.instrument = Instrument('example', [sdss_g, sdss_r, sdss_i, sdss_z])
         self.cm = SMContamination(self.instrument, "i'")
-        self.lnpriors.append(lambda pv: where(pv[:, 5] < pv[:, 4], 0, -inf))
+        self.lnpriors.append(lambda pv: where(pv[:, 4] < pv[:, 5], 0, -inf))
 
     def transit_model(self, pvp):
         pvp = atleast_2d(pvp)
@@ -109,7 +109,7 @@ class PhysContLPF(BaseLPF):
         flux = self.tm.evaluate_pv(pvt, ldc)
         for i, pv in enumerate(pvp):
             if (2500 < pv[6] < 12000) and (2500 < pv[7] < 12000):
-                cnref = 1. - pv[5] / pv[4]
+                cnref = 1. - pv[4] / pv[5]
                 cnt[i, :] = self.cm.contamination(cnref, pv[6], pv[7])
             else:
                 cnt[i, :] = -inf
@@ -120,9 +120,9 @@ class PhysContLPF(BaseLPF):
         npv, i = 0, 0
         while npv < npop and i < 10:
             pvp_trial = self.ps.sample_from_prior(npop)
-            pvp_trial[:, 4] = pvp_trial[:, 5]
+            pvp_trial[:, 5] = pvp_trial[:, 4]
             cref = uniform(0, 0.99, size=npop)
-            pvp_trial[:, 4] = pvp_trial[:, 5] / (1. - cref)
+            pvp_trial[:, 5] = pvp_trial[:, 4] / (1. - cref)
             lnl = self.lnposterior(pvp_trial)
             ids = where(isfinite(lnl))
             pvp = concatenate([pvp, pvp_trial[ids]])
