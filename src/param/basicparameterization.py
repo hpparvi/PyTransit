@@ -1,9 +1,25 @@
+#  PyTransit: fast and easy exoplanet transit modelling in Python.
+#  Copyright (C) 2010-2019  Hannu Parviainen
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 from math import sqrt, acos, atan2
 from numpy import array, inf, pi
 
-from pytransit.utils.orbits import as_from_rhop, i_from_baew
-from pytransit.param.parameter import Parameter
-from pytransit.limb_darkening import QuadraticLD, TriangularQLD
+from ..orbits.orbits_py import as_from_rhop, i_from_baew
+from ..param.parameter import Parameter
+from ..limb_darkening import QuadraticLD, TriangularQLD
 
 class Parameterization(object):
     pars = []

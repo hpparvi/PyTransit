@@ -16,21 +16,18 @@
 
 import scipy.ndimage as ndi
 import pyopencl as cl
+import seaborn as sb
 
 from matplotlib.pyplot import subplots, setp
 from numpy import sqrt, array, inf, int, s_, percentile, median, mean, round, zeros, isfinite, where, atleast_2d, ceil, \
     newaxis
 
-try:
-    import seaborn as sb
-    with_seaborn = True
-except ImportError:
-    with_seaborn = False
+from ..param.parameter import GParameter, LParameter
+from ..param.parameter import UniformPrior as UP, NormalPrior as NP
+from .oclttvlpf import OCLTTVLPF, plot_estimates
+from ..orbits.orbits_py import as_from_rhop, i_from_ba, p_from_dkaiews
 
-from pytransit.param.parameter import GParameter, LParameter
-from pytransit.param.parameter import UniformPrior as UP, NormalPrior as NP
-from pytransit.lpf.oclttvlpf import OCLTTVLPF, plot_estimates
-from pytransit.orbits.orbits_py import as_from_rhop, i_from_ba, p_from_dkaiews
+with_seaborn = True
 
 
 class OCLTDVLPF(OCLTTVLPF):

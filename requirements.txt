@@ -1,3 +1,6 @@
+pyopencl
+corner
+emcee
 seaborn
 uncertainties
 numpy

@@ -13,22 +13,20 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+import seaborn as sb
 from matplotlib.pyplot import subplots, setp
 from numpy import pi, sign, cos, sqrt, sin, array, arccos, inf, round, int, s_, percentile, concatenate, median, mean, \
     arange, poly1d, polyfit
 
 from numba import njit, prange
-from pytransit.lpf.lpf import BaseLPF
-from pytransit.transitmodel import TransitModel
-from pytransit.param.parameter import ParameterSet, PParameter, GParameter
-from pytransit.param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
-from pytransit.orbits_py import as_from_rhop
+from .lpf import BaseLPF
+from ..models.transitmodel import TransitModel
+from ..param.parameter import ParameterSet, PParameter, GParameter
+from ..param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
+from ..orbits.orbits_py import as_from_rhop
 
-try:
-    import seaborn as sb
-    with_seaborn = True
-except ImportError:
-    with_seaborn = False
+with_seaborn = True
 
 @njit("f8[:](f8[:], f8, f8, f8, f8[:], i8[:])", cache=False, parallel=False)
 def z_circular_ttv(t, p, a, i, tc, tcid):

@@ -16,10 +16,8 @@
 ## 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 import numpy as np
-from math import fabs
-#from .gimenez_f import gimenez as g
-#from .orbits_f import orbits as of
 from .transitmodel import TransitModel
+
 
 class Gimenez(TransitModel):
     """Exoplanet transit light curve model by A. Gimenez (A&A 450, 1231--1237, 2006).
@@ -44,6 +42,7 @@ class Gimenez(TransitModel):
             is_secondary: If True, evaluates the model for eclipses. If false, eclipses are filtered out (default = False).
         """
 
+        raise NotImplementedError
         super(Gimenez, self).__init__(is_secondary, exptime)
         self._eval = self._eval_interpolate if (interpolate  or kwargs.get('lerp', False)) else self._eval_nointerpolate
         self._coeff_arr = g.init_arrays(npol, nldc)

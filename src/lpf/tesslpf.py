@@ -55,14 +55,19 @@ def downsample_time(time, vals, inttime=1.):
 
 class TESSLPF(BaseLPF):
     def __init__(self, name: str, dfile: Path, zero_epoch: float, period: float, nsamples: int = 5,
-                 trdur: float = 0.125, bldur: float = 0.3, nlegendre: int = 2):
+                 trdur: float = 0.125, bldur: float = 0.3, nlegendre: int = 2, use_pdc=False):
 
         tb = Table.read(dfile)
         self.bjdrefi = tb.meta['BJDREFI']
         self.zero_epoch = zero_epoch - self.bjdrefi
 
         df = tb.to_pandas().dropna(subset=['TIME', 'SAP_FLUX', 'PDCSAP_FLUX'])
-        self.lc = lc = KeplerLC(df.TIME.values, df.SAP_FLUX.values, zeros(df.shape[0]),
+        if use_pdc:
+            self.lc = lc = KeplerLC(df.TIME.values, df.PDCSAP_FLUX.values, zeros(df.shape[0]),
+                                    self.zero_epoch, period, trdur, bldur)
+
+        else:
+            self.lc = lc = KeplerLC(df.TIME.values, df.SAP_FLUX.values, zeros(df.shape[0]),
                                 self.zero_epoch, period, trdur, bldur)
 
         self.nlegendre = nlegendre
@@ -81,7 +86,7 @@ class TESSLPF(BaseLPF):
         """
         bls = []
         for i in range(self.nlc):
-            bls.append(LParameter(f'bli_{i}', f'bl_intercept_{i}', '', NP(1.0, 0.01), bounds=(0.95, 1.05)))
+            bls.append(LParameter(f'bli_{i}', f'bl_intercept_{i}', '', NP(1.0, 0.001), bounds=(0.95, 1.05)))
             for ipoly in range(1, self.nlegendre + 1):
                 bls.append(
                     LParameter(f'bls_{i}_{ipoly}', f'bl_c_{i}_{ipoly}', '', NP(0.0, 0.001), bounds=(-0.1, 0.1)))

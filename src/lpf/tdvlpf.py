@@ -21,11 +21,11 @@ from numpy import pi, sign, cos, sqrt, sin, array, arccos, inf, round, int, s_, 
 import scipy.ndimage as ndi
 
 from numba import njit, prange
-from pytransit.lpf.ttvlpf import TTVLPF
-from pytransit.transitmodel import TransitModel
-from pytransit.param.parameter import ParameterSet, PParameter, GParameter
-from pytransit.param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
-from pytransit.orbits_py import duration_eccentric, as_from_rhop, p_from_dkaiews
+from .ttvlpf import TTVLPF
+from ..models.transitmodel import TransitModel
+from ..param.parameter import ParameterSet, PParameter, GParameter
+from ..param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
+from ..orbits.orbits_py import duration_eccentric, as_from_rhop, p_from_dkaiews
 
 try:
     import seaborn as sb

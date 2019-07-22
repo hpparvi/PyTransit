@@ -14,8 +14,8 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from orbits import a_from_mp
-from exotk.constants import msun, mjup
+from ..orbits.orbits_py import a_from_mp
+from .constants import msun, mjup
 
 as_c = {'as':1., 'mas':1e3, 'muas':1e6}
 

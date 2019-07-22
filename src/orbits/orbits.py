@@ -28,7 +28,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numpy import pi, array
-import pytransit.orbits_py as o
+import orbits_py  as o
 
 TWO_PI = 2 * pi
 
