@@ -121,7 +121,6 @@ class OCLBaseLPF(BaseLPF):
                     lnp = npt - (ibl*lnp);
                 }
             
-                prefetch(lnl, lnp);
                 bool is_even;
                 uint midpoint = lnp;
                 while(midpoint > 1){
