@@ -4,13 +4,8 @@ python:
 
 cache: pip
 
-addons:
-  apt:
-    packages:
-    - gfortran
-
 install:
-  - pip install numpy scipy numba
+  - pip install numpy scipy numba pyopencl pandas xarray tables astropy matplotlib tqdm
   - python setup.py install
 
 script: nosetests -w tests/unit_tests
