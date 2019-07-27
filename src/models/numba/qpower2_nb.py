@@ -77,7 +77,7 @@ def q2n(z, p, c, alpha, g, I_0):
     a0 = b0 + b1*(z-ra) + b2*(z-ra)**2
     a1 = b1+2*b2*(z-ra)
     aq = arccos(q)
-    J1 = ( (a0*(d-z)-(2/3)*a1*w2 + 0.25*b2*(d-z)*(2*(d-z)**2-p**2))*w + (a0*p**2 + 0.25*b2*p**4)*aq )
+    J1 = (a0*(d-z)-(2/3)*a1*w2 + 0.25*b2*(d-z)*(2*(d-z)**2-p**2))*w + (a0*p**2 + 0.25*b2*p**4)*aq
     J2 = alpha*c*sa**(g-1)*p**4*(0.125*aq + (1/12)*q*(q**2-2.5)*sqrt(1.-q**2) )
     d0 = 1 - c + c*sb**g
     d1 = -alpha*c*rb*sb**(g-1)
