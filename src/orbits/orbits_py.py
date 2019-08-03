@@ -164,7 +164,7 @@ def ta_from_ea_s(Ea, e):
 def ta_newton_s(t, t0, p, e, w):
     return ta_from_ea_s(ea_newton_s(t, t0, p, e, w), e)
 
-@njit("f8[:](f8[:], f8, f8, f8, f8)", parallel=True)
+@njit("f8[:](f8[:], f8, f8, f8, f8)")
 def ta_newton_v(t, t0, p, e, w):
     return ta_from_ea_v(ea_newton_v(t, t0, p, e, w), e)
 
@@ -172,7 +172,7 @@ def ta_newton_v(t, t0, p, e, w):
 def ta_iter_s(t, t0, p, e, w):
     return ta_from_ea_s(ea_iter_s(t, t0, p, e, w), e)
 
-@njit("f8[:](f8[:],f8,f8,f8,f8)", parallel=True)
+@njit("f8[:](f8[:],f8,f8,f8,f8)")
 def ta_iter_v(t, t0, p, e, w):
     return ta_from_ea_v(ea_iter_v(t, t0, p, e, w), e)
 
