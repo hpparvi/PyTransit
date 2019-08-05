@@ -28,7 +28,8 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numba import njit, prange
-from numpy import pi, arccos, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like, zeros, linspace, floor, arcsin
+from numpy import (pi, arccos, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like, zeros, linspace, floor, arcsin,
+                   int, around)
 from scipy.constants import G
 
 HALF_PI = 0.5 * pi
@@ -47,6 +48,9 @@ rsun, rsun_e           = 0.5*1.392684e9, 0.0
 # =========
 
 cache = False
+
+def epoch(time, zero_epoch, period):
+    return around((time - zero_epoch) / period).astype(int)
 
 @njit("f8(f8, f8)", cache=cache)
 def mean_anomaly_offset(e, w):
