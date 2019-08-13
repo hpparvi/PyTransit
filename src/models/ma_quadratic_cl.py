@@ -113,6 +113,7 @@ class QuadraticModelCL(TransitModel):
         self.npb = uint32(1 if pbids is None else unique(pbids).size)
         self.nptb = time.size
 
+        #TODO: Fix nsamples and exptimes in cases where a scalar is given.
         self.time = asarray(time, dtype='float32')
         self.lcids = zeros(time.size, 'uint32') if lcids is None else asarray(lcids, dtype='uint32')
         self.pbids = zeros(self.nlc, 'uint32') if pbids is None else asarray(pbids, dtype='uint32')

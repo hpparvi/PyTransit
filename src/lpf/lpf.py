@@ -161,13 +161,16 @@ class BaseLPF:
             self._init_instrument()
 
 
-    def _init_data(self, times, fluxes, pbids, covariates=None, errors=None, wnids = None, nsamples=1, exptimes=0.):
+    def _init_data(self, times, fluxes, pbids=None, covariates=None, errors=None, wnids = None, nsamples=1, exptimes=0.):
 
         if isinstance(times, ndarray) and times.ndim == 1 and times.dtype == float:
             times = [times]
 
-        if isinstance(fluxes, ndarray) and times.ndim == 1 and fluxes.dtype == float:
+        if isinstance(fluxes, ndarray) and fluxes.ndim == 1 and fluxes.dtype == float:
             fluxes = [fluxes]
+
+        if pbids is None:
+            pbids = zeros(len(fluxes), int)
 
         self.nlc = len(times)
         self.times = asarray(times)
@@ -246,7 +249,7 @@ class BaseLPF:
         """
         porbit = [
             GParameter('tc',  'zero_epoch',       'd',      N(0.0,  0.1), (-inf, inf)),
-            GParameter('pr',  'period',           'd',      N(1.0, 1e-5), (0,    inf)),
+            GParameter('p',   'period',           'd',      N(1.0, 1e-5), (0,    inf)),
             GParameter('rho', 'stellar_density',  'g/cm^3', U(0.1, 25.0), (0,    inf)),
             GParameter('b',   'impact_parameter', 'R_s',    U(0.0,  1.0), (0,      1))]
         self.ps.add_global_block('orbit', porbit)
@@ -347,8 +350,27 @@ class BaseLPF:
     def residuals(self, pv):
         return self.ofluxa - self.flux_model(pv)
 
-    def set_prior(self, pid: int, prior) -> None:
-            self.ps[pid].prior = prior
+    def set_prior(self, parameter, prior, *nargs) -> None:
+        if isinstance(parameter, str):
+            descriptions = self.ps.descriptions
+            names = self.ps.names
+            if parameter in descriptions:
+                parameter = descriptions.index(parameter)
+            elif parameter in names:
+                parameter = names.index(parameter)
+            else:
+                params = ', '.join([f"{ln} ({sn})" for ln, sn in zip(self.ps.descriptions, self.ps.names)])
+                raise ValueError(f'Parameter "{parameter}" not found from the parameter set: {params}')
+
+        if isinstance(prior, str):
+            if prior.lower() in ['n', 'np', 'normal']:
+                prior = N(nargs[0], nargs[1])
+            elif prior.lower() in ['u', 'up', 'uniform']:
+                prior = U(nargs[0], nargs[1])
+            else:
+                raise ValueError(f'Unknown prior "{prior}". Allowed values are (N)ormal and (U)niform.')
+
+        self.ps[parameter].prior = prior
 
     def add_t14_prior(self, mean: float, std: float) -> None:
         """Add a normal prior on the transit duration.
@@ -517,6 +539,7 @@ class BaseLPF:
                 self.sampler.reset()
             for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter, desc='Run {:d}/{:d}'.format(i+1, repeats), leave=False):
                 pass
+            pop0 = self.sampler.chain[:,-1,:].copy()
 
     def posterior_samples(self, burn: int=0, thin: int=1, include_ldc: bool=False):
         ldstart = self._sl_ld.start

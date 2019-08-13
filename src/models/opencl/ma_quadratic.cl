@@ -232,9 +232,10 @@ __kernel void ma_eccentric_pop_ttv(__global const float *times, __global const u
       float exptime = exptimes[lcid];
       float k  = pv[0];
       float tc = pv[1 + lcids[i_tm]];
-      float ma_offset = mean_anomaly_offset(pvo[3], pvo[4]);
 
       flux[gid] = 0.0f;
+
+
       for(int i=1; i<ns+1; i++){
         toffset = exptime * (((float) i - 0.5f)/ (float) ns - 0.5f);
         z = z_circular(times[i_tm]+toffset, tc, pvo[0], pvo[1], pvo[2], 1.0f);
