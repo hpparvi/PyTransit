@@ -107,7 +107,7 @@ class TESSLPF(BaseLPF):
         return squeeze(self.transit_model(pvp) * self.baseline(pvp))
 
     def plot_individual_transits(self, ncols: int = 2, figsize=(14, 8)):
-        df = self.posterior_samples(include_ldc=True)
+        df = self.posterior_samples(derived_parameters=False)
         pvp = permutation(df.values)[:5000]
         pv = df.median()
         tmodels = self.flux_model(pvp)
@@ -150,7 +150,5 @@ class TESSLPF(BaseLPF):
 
     def plot_basic_posteriors(self):
         df = self.posterior_samples()
-        df['k'] = sqrt(df.k2)
-        df.drop('k2', axis=1, inplace=True)
         corner(df['tc pr rho b k'.split()],
                labels='Zero epoch, Period, Stellar density, impact parameter, radius ratio'.split(', '))

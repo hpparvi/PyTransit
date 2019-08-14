@@ -101,7 +101,7 @@ class TTVLPF(BaseLPF):
         return ax
 
     def posterior_period(self, burn: int = 0, thin: int = 1) -> float:
-        df = self.posterior_samples(burn, thin, False)
+        df = self.posterior_samples(burn, thin, derived_parameters=False)
         tccols = [c for c in df.columns if 'tc' in c]
         tcs = median(df[tccols], 0)
         return mean((tcs[1:] - tcs[0]) / (self.tnumber[1:] - self.tnumber[0]))

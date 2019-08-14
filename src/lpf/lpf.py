@@ -580,7 +580,7 @@ class BaseLPF:
     def plot_light_curves(self, method='de', ncol=3, max_samples=1000, figsize=None):
         nrow = int(ceil(self.nlc / ncol))
         if method == 'mcmc':
-            df = self.posterior_samples(include_ldc=True)
+            df = self.posterior_samples(derived_parameters=False)
             fmodel = self.flux_model(permutation(df.values)[:max_samples])
             fmperc = percentile(fmodel, [50, 16, 84, 2.5, 97.5], 0)
         else:
