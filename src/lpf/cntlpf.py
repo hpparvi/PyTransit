@@ -14,7 +14,7 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from numpy import repeat, arange, atleast_2d, zeros_like, zeros, sqrt, where, isfinite, concatenate, inf
+from numpy import repeat, arange, atleast_2d, zeros_like, zeros, sqrt, where, isfinite, concatenate, inf, squeeze
 from numpy.random import uniform
 from numba import njit, prange
 
@@ -47,6 +47,7 @@ def map_pv_pclpf(pv):
 
 @njit
 def contaminate(flux, cnt, lcids, pbids):
+    flux = atleast_2d(flux)
     npv = flux.shape[0]
     npt = flux.shape[1]
     for ipv in range(npv):

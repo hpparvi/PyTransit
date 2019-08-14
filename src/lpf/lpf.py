@@ -15,17 +15,21 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import math as mt
+from pathlib import Path
+from time import strftime
 
 import pandas as pd
 import seaborn as sb
+import xarray as xa
 
 from astropy.stats import sigma_clip
 from matplotlib.pyplot import subplots, setp
 from numba import njit, prange
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like, all,
                    clip, argsort, any, s_, zeros, arccos, nan, full, pi, sum, repeat, asarray, ndarray, log10,
-                   array, atleast_2d, isscalar, atleast_1d, where, isfinite, arange, unique, squeeze)
-from numpy.random import uniform, normal
+                   array, atleast_2d, isscalar, atleast_1d, where, isfinite, arange, unique, squeeze, ceil, percentile,
+                   floor)
+from numpy.random import uniform, normal, permutation
 from scipy.optimize import minimize
 from scipy.stats import norm
 from tqdm.auto import tqdm
@@ -519,9 +523,7 @@ class BaseLPF:
             if self.de is not None:
                 pv0 = self.de.minimum_location
             else:
-                pv0 = squeeze(self.create_pv_population(1))
-                if self._sl_bl is not None:
-                    pv0[self._sl_bl] = [p.mean for p in self.ps.priors[self._sl_bl]]
+                pv0 = self.ps.mean_pv
                 pv0[self._sl_err] = log10(self.wn)
         res = minimize(lambda pv: -self.lnposterior(pv), pv0, method=method)
         self._local_minimization = res
@@ -554,6 +556,53 @@ class BaseLPF:
         fig.tight_layout()
         return fig
 
+    def save(self, save_path='.'):
+        save_path = Path(save_path)
+
+        if self.de:
+            de = xa.DataArray(self.de.population, dims='pvector name'.split(), coords={'name': self.ps.names})
+        else:
+            de = None
+
+        if self.sampler is not None:
+            mc = xa.DataArray(self.sampler.chain, dims='pvector step name'.split(),
+                              coords={'name': self.ps.names}, attrs={'ndim': self.de.n_par, 'npop': self.de.n_pop})
+        else:
+            mc = None
+
+        ds = xa.Dataset(data_vars={'de_population_lm': de, 'lm_mcmc': mc},
+                        attrs={'created': strftime('%Y-%m-%d %H:%M:%S'), 'target': self.name})
+        ds.to_netcdf(save_path.joinpath(f'{self.name}.nc'))
+
+    def plot_light_curves(self, method='de', ncol=3, max_samples=1000, figsize=None):
+        nrow = int(ceil(self.nlc / ncol))
+        if method == 'mcmc':
+            df = self.posterior_samples(include_ldc=True)
+            fmodel = self.flux_model(permutation(df.values)[:max_samples])
+            fmperc = percentile(fmodel, [50, 16, 84, 2.5, 97.5], 0)
+        else:
+            fmodel = squeeze(self.flux_model(self.de.minimum_location))
+            fmperc = None
+
+        fig, axs = subplots(nrow, ncol, figsize=figsize, constrained_layout=True, sharey='all', squeeze=False)
+        for i in range(self.nlc):
+            ax = axs.flat[i]
+            tref = floor(self.times[i].min())
+            time = self.times[i] - tref
+            if method == 'de':
+                ax.plot(time, fmodel[self.lcslices[i]])
+            else:
+                ax.fill_between(time, *fmperc[3:5, self.lcslices[i]], alpha=0.15)
+                ax.fill_between(time, *fmperc[1:3, self.lcslices[i]], alpha=0.25)
+                ax.plot(time, fmperc[0, self.lcslices[i]])
+
+            ax.plot(time, self.fluxes[i], '.k')
+            setp(ax, xlabel=f'Time [BJD - {tref:.0f}]', xlim=time[[0, -1]])
+        setp(axs[:, 0], ylabel='Normalised flux')
+
+        for ax in axs.flat[self.nlc:]:
+            ax.remove()
+        return fig
 
     def __repr__(self):
         s  = f"""Target: {self.name}

@@ -14,10 +14,29 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from numpy import atleast_2d, zeros, concatenate
+from numpy import atleast_2d, zeros, concatenate, ones
 from numpy.polynomial.legendre import legvander
+from numba import njit, prange
 
 from ...param import LParameter, NormalPrior as NP
+
+@njit(parallel=True, fastmath=True)
+def lbaseline(ltimes, lcids, pv, deg):
+    pv = atleast_2d(pv)
+    npv = pv.shape[0]
+    npt = ltimes.size
+    npl = deg + 1
+    bl = zeros((npv, npt))
+    for ipt in prange(npt):
+        leg = ones(npl)
+        ilc = lcids[ipt]
+        leg[1] = ltimes[ipt]
+        for iln in range(npl):
+            for ipv in range(npv):
+                bl[ipv, ipt] += pv[ipv, npl*ilc + iln] * leg[iln]
+            if iln > 0 and npl > 1:
+                leg[iln+1] = ((2*iln + 1)*ltimes[ipt]*leg[iln] - iln*leg[iln-1] ) / (iln+1)
+    return bl
 
 
 class LegendreBaseline:
