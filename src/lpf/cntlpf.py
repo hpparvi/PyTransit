@@ -20,7 +20,7 @@ from numba import njit, prange
 
 from .lpf import BaseLPF
 from ..param import PParameter, GParameter, UniformPrior as UP
-from ..orbits.orbits_py import i_from_ba, as_from_rhop
+from ..orbits.orbits_py import i_from_ba, as_from_rhop, i_from_baew, d_from_pkaiews
 from ..contamination.contamination import Instrument, SMContamination
 from ..contamination.filter import sdss_g, sdss_r, sdss_i, sdss_z
 
@@ -131,3 +131,14 @@ class PhysContLPF(BaseLPF):
             i += 1
         pvp = pvp[:npop]
         return pvp
+
+    def posterior_samples(self, burn: int=0, thin: int=1, derived_parameters: bool = True):
+        df = super().posterior_samples(burn, thin, False)
+        if derived_parameters:
+            df['a'] = as_from_rhop(df.rho.values, df.p.values)
+            df['inc'] = i_from_baew(df.b.values, df.a.values, 0., 0.)
+            df['k_app'] = sqrt(df.k2_app)
+            df['k_true'] = sqrt(df.k2_true)
+            df['t14'] = d_from_pkaiews(df.p.values, df.k_true.values, df.a.values, df.inc.values, 0., 0., 1)
+            df['cref'] = 1 - df.k2_app / df.k2_true
+        return df

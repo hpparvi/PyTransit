@@ -42,7 +42,7 @@ except ImportError:
     with_ldtk = False
 
 from ..models.transitmodel import TransitModel
-from ..orbits.orbits_py import duration_eccentric, as_from_rhop, i_from_ba
+from ..orbits.orbits_py import duration_eccentric, as_from_rhop, i_from_ba, i_from_baew, d_from_pkaiews
 from ..param.parameter import ParameterSet, PParameter, GParameter, LParameter
 from ..param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
 from ..contamination.filter import sdss_g, sdss_r, sdss_i, sdss_z
@@ -543,12 +543,15 @@ class BaseLPF:
                 pass
             pop0 = self.sampler.chain[:,-1,:].copy()
 
-    def posterior_samples(self, burn: int=0, thin: int=1, include_ldc: bool=False):
-        ldstart = self._sl_ld.start
+    def posterior_samples(self, burn: int=0, thin: int=1, derived_parameters: bool = True):
         fc = self.sampler.chain[:, burn::thin, :].reshape([-1, self.de.n_par])
-        d = fc if include_ldc else fc[:, :ldstart]
-        n = self.ps.names if include_ldc else self.ps.names[:ldstart]
-        return pd.DataFrame(d, columns=n)
+        df = pd.DataFrame(fc, columns=self.ps.names)
+        if derived_parameters:
+            df['a'] = as_from_rhop(df.rho.values, df.p.values)
+            df['inc'] = i_from_baew(df.b.values, df.a.values, 0., 0.)
+            df['k'] = sqrt(df.k2)
+            df['t14'] = d_from_pkaiews(df.p.values, df.k.values, df.a.values, df.inc.values, 0., 0., 1)
+        return df
 
     def plot_mcmc_chains(self, pid: int=0, alpha: float=0.1, thin: int=1, ax=None):
         fig, ax = (None, ax) if ax is not None else subplots()
