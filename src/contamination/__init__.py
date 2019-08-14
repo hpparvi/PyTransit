@@ -17,13 +17,16 @@
 from numpy import sqrt
 from .instrument import Instrument
 from .contamination import SMContamination, BBContamination
-from .filter import ClearFilter, BoxcarFilter, TabulatedFilter
+from .filter import ClearFilter, BoxcarFilter, TabulatedFilter, sdss_z, sdss_i, sdss_r, sdss_g
 
 
-def true_radius_ratio(apparent_k, contamination):
+def true_radius_ratio(apparent_k: float, contamination: float) -> float:
     return apparent_k / sqrt(1 - contamination)
 
-def apparent_radius_ratio(true_k, contamination):
+
+def apparent_radius_ratio(true_k: float, contamination: float) -> float:
     return true_k * sqrt(1 - contamination)
 
-__all__ = "SMContamination BBContamination Instrument ClearFilter BoxcarFilter TabulatedFilter true_radius_ratio apparent_radius_ratio".split()
+
+__all__ = ("SMContamination BBContamination Instrument ClearFilter BoxcarFilter TabulatedFilter".split() +
+           "true_radius_ratio apparent_radius_ratio sdss_z sdss_i sdss_r sdss_g".split())
