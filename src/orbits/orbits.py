@@ -28,7 +28,8 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numpy import pi, array
-import orbits_py  as o
+from .orbits_py import mean_anomaly, duration_eccentric, eclipse_phase, ea_iter_v, ea_newton_v, z_ps5, z_newton_v, \
+    z_ps3, z_iter_v, ta_ip, ta_ps5, ta_ps3, ta_newton_v, ta_iter_v, z_circular
 
 TWO_PI = 2 * pi
 
@@ -52,7 +53,7 @@ def extract_time_transit(time, k, tc, p, a, i, e, w, td_factor=1.1):
     -------
 
     """
-    td = o.duration_eccentric(p, k, a, i, e, w, 1)
+    td = duration_eccentric(p, k, a, i, e, w, 1)
     folded_time = (time - tc + 0.5*p) % p - 0.5*p
     mask = abs(folded_time) < td_factor*0.5*td
     return time[mask], mask
@@ -77,8 +78,8 @@ def extract_time_eclipse(time, k, tc, p, a, i, e, w, td_factor=1.1):
     -------
 
     """
-    td  = o.duration_eccentric(p, k, a, i, e, w, 1)
-    tc += o.eclipse_phase(p, i, e, w)
+    td  = duration_eccentric(p, k, a, i, e, w, 1)
+    tc += eclipse_phase(p, i, e, w)
     folded_time = (time - tc + 0.5*p) % p - 0.5*p
     mask = abs(folded_time) < td_factor*0.5*td
     return time[mask], mask
@@ -91,27 +92,26 @@ def not_implemented(*nargs, **kwargs):
 class Orbit(object):
     methods = 'iteration newton ps3 ps5 interpolation'.split()
 
-    ea_functions = dict(iteration=o.ea_iter_v,
-                        newton=o.ea_newton_v,
+    ea_functions = dict(iteration=ea_iter_v,
+                        newton=ea_newton_v,
                         ps3=not_implemented,
                         ps5=not_implemented,
                         interpolation=not_implemented)
 
-    ta_functions = dict(iteration=o.ta_iter_v,
-                        newton=o.ta_newton_v,
-                        ps3=o.ta_ps3,
-                        ps5=o.ta_ps5,
-                        interpolation=o.ta_ip)
+    ta_functions = dict(iteration=ta_iter_v,
+                        newton=ta_newton_v,
+                        ps3=ta_ps3,
+                        ps5=ta_ps5,
+                        interpolation=ta_ip)
 
-    z_functions = dict(iteration=o.z_iter_v,
-                       newton=o.z_newton_v,
-                       ps3=o.z_ps3,
-                       ps5=o.z_ps5,
-                       interpolation=o.z_iter_v)
+    z_functions = dict(iteration=z_iter_v,
+                       newton=z_newton_v,
+                       ps3=z_ps3,
+                       ps5=z_ps5,
+                       interpolation=z_iter_v)
 
-    def __init__(self, method='iteration', nthr=0, circular_e_threshold=1e-5):
+    def __init__(self, method='iteration', circular_e_threshold=1e-2):
         assert method in self.methods
-        self.nthr = nthr
         self.method = method
         self._mine = circular_e_threshold
         self._ea_function = self.ea_functions[method]
@@ -119,7 +119,7 @@ class Orbit(object):
         self._z_function = self.z_functions[method]
 
     def mean_anomaly(self, time, t0, p, e=0., w=0.):
-        return o.mean_anomaly(time, t0, p, e, w)
+        return mean_anomaly(time, t0, p, e, w)
 
     def eccentric_anomaly(self, time, t0, p, e=0., w=0.):
         if e > self._mine:
@@ -137,7 +137,7 @@ class Orbit(object):
         if e > self._mine:
             return self._z_function(time, array([t0, p, a, i, e, w]))
         else:
-            return o.z_circular(time, array([t0, p, a, i, e, w]))
+            return z_circular(time, array([t0, p, a, i, e, w]))
 
     def phase(self, time, t0, p, a, i, e=0., w=0.):
         raise NotImplementedError
@@ -154,5 +154,4 @@ class CircularOrbit(Orbit):
         return self.mean_anomaly(time, t0, p)
 
     def projected_distance(self, time, t0, p, a, i):
-        return o.z_circular(time, t0, p, a, i)
-
+        return z_circular(time, t0, p, a, i)
