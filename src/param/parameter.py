@@ -207,6 +207,13 @@ class ParameterSet(list):
     def sample_from_prior(self, size=1):
         return stack([p.rvs(size) for p in self.priors], 1)
 
+    def check_pv(self, pv):
+        for i, p in enumerate(self):
+            lnp = p.prior.logpdf(pv[i])
+            b = self.bounds[i]
+            is_finite = p.bounds[0] < pv[i] < p.bounds[1]
+            print(f"|{p.pid:3d}| {'*' if not is_finite else ' '} {p.name:10} {b[0]:7.1f} < {pv[i]:10.2f} < {b[1]:<8.1f} {str(p.prior):40} log P = {lnp:6.2f}")
+
     @property
     def mean_pv(self):
         x0 = zeros(len(self))
