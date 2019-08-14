@@ -14,5 +14,6 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from .parameter import (ParameterSet, PParameter, LParameter, GParameter, Prior, NormalPrior, UniformPrior,
+from .parameter import (ParameterSet, PParameter, LParameter, GParameter,
                         PParameterBlock, LParameterBlock, GParameterBlock)
+from .prior import Prior, NormalPrior, UniformPrior

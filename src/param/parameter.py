@@ -14,99 +14,12 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import math as m
+import pandas as pd
+
 from itertools import product
-from numpy import inf, array, zeros, unique, pi, log, sqrt, where, stack, atleast_2d, squeeze, all
-from numpy.random import normal, uniform
-from scipy.stats import gamma as gm
+from numpy import inf, array, zeros, unique, where, stack, atleast_2d, squeeze, all
 
-
-class Prior:
-    def __init__(self):
-        raise NotImplementedError
-
-    def logpdf(self, v):
-        raise NotImplementedError
-
-    def rvs(self, size):
-        raise NotImplementedError
-
-
-class DefaultPrior(Prior):
-    def logpdf(self, v: float):
-        return 0
-
-    def rvs(self, size):
-        return zeros(size)
-
-
-class NormalPrior(Prior):
-    def __init__(self, mean: float, std: float):
-        self.mean = float(mean)
-        self.std = float(std)
-        self._f1 = 1 / m.sqrt(2*pi*std**2)
-        self._lf1 = m.log(self._f1)
-        self._f2 = 1 / (2*std**2)
-
-    def logpdf(self, x):
-        return self._lf1 -self._f2*(x-self.mean)**2
-
-    def rvs(self, size=1):
-        return normal(self.mean, self.std, size)
-
-
-class UniformPrior(Prior):
-    def __init__(self, a: float, b: float):
-        self.a, self.b = a, b
-        self.lnc = m.log(b-a)
-
-    def logpdf(self, v):
-        return where((self.a < v) & (v < self.b), self.lnc, -inf)
-
-    def rvs(self, size=1):
-        return uniform(self.a, self.b, size)
-
-
-class JeffreysPrior(Prior):
-    def __init__(self, x0: float, x1: float):
-        self.x0 = x0
-        self.x1 = x1
-        self._f = log(x1 / x0)
-
-    def pdf(self, x):
-        return where((x > self.x0) & (x < self.x1), 1. / (x * self._f), -inf)
-
-    def logpdf(self, x):
-        return where((x > self.x0) & (x < self.x1), -log(x * self._f), -inf)
-
-    def rvs(self, size=1):
-        return exp(uniform(log(self.x0), log(self.x1), size))
-
-class LogLogisticPrior(Prior):
-    def __init__(self, a, b):
-        self.a, self.b = a, b
-
-    def logpdf(self, v):
-        if not 1e-3 < v < 1.:
-            return -inf
-        else:
-            a,b = self.a, self.b
-            return m.log((b / a) * (v / a) ** (b - 1.) / (1. + (v / a) ** b) ** 2)
-
-    def rvs(self, size=1):
-        return uniform(1e-3, 1.0, size)
-
-
-class GammaPrior(Prior):
-    def __init__(self, a):
-        self.a = a
-        self.A = -m.lgamma(a)
-
-    def logpdf(self, x):
-        return self.A + (self.a - 1.) * log(x) - x
-
-    def rvs(self, size):
-        return gm(self.a).rvs(size)
+from .prior import DefaultPrior, NormalPrior, UniformPrior, JeffreysPrior, LogLogisticPrior, GammaPrior
 
 
 class Parameter:
@@ -121,11 +34,10 @@ class Parameter:
         assert self.scope in ['global', 'local', 'passband']
 
     def __str__(self):
-        return self.name
+        return f"{self.pid:3d} |{self.scope[0].upper():1s}| {self.name:14s} {str(self.prior):40} [{self.bounds[0]:8.2f} .. {self.bounds[1]:8.2f}]"
 
     def __repr__(self):
-        return "{:3d} |{:1s}| {:10s} [{:4.2f} .. {:4.2f}]".format(self.pid, self.scope[0].upper(), self.name,
-                                                                  self.bounds[0], self.bounds[1])
+        return str(self)
 
     def truncated_lnprior(self, v):
         if self.bounds[0] < v < self.bounds[1]:
@@ -285,7 +197,6 @@ class ParameterSet(list):
         # ---------------------------------------
 
 
-
     def find_pid(self, name):
         for p in self:
             if name == p.name:
@@ -296,6 +207,17 @@ class ParameterSet(list):
     def sample_from_prior(self, size=1):
         return stack([p.rvs(size) for p in self.priors], 1)
 
+    @property
+    def mean_pv(self):
+        x0 = zeros(len(self))
+        for i, p in enumerate(self.priors):
+            if isinstance(p, NormalPrior):
+                x0[i] = p.mean
+            elif isinstance(p, UniformPrior):
+                x0[i] = 0.5 * (p.a + p.b)
+            else:
+                raise ValueError
+        return x0
 
     @property
     def names(self):

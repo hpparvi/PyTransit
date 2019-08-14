@@ -52,3 +52,11 @@ from .models.ma_chromosphere import ChromosphereModel
 # -------------
 from .models.ma_quadratic_cl import QuadraticModelCL
 from .models.ma_uniform_cl import UniformModelCL
+
+from .models.transitmodel import TransitModel
+
+from .lpf.lpf import BaseLPF
+from .lpf.cntlpf import PhysContLPF
+from .lpf.baselines.legendrebaseline import LegendreBaseline
+
+from .param.parameter import UniformPrior, NormalPrior
