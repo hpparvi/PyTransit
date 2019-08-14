@@ -14,7 +14,7 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from numpy import atleast_2d, zeros, concatenate, ones
+from numpy import atleast_2d, zeros, concatenate, ones, inf
 from numpy.polynomial.legendre import legvander
 from numba import njit, prange
 
@@ -52,18 +52,19 @@ class LegendreBaseline:
         """Baseline parameter initialisation.
         """
 
-        self.mtimes = [t - t.mean() for t in self.times]
-        self.windows = window = concatenate(self.mtimes).ptp()
-        self.mtimes = [t / window for t in self.mtimes]
-        self.legs = [legvander(t, self.nlegendre) for t in self.mtimes]
+        self._baseline_times = [(t - t.mean()) / t.ptp() for t in self.times]
+        self._baseline_timea = concatenate(self._baseline_times)
+
+        self.legendre_poly = [legvander(t, self.nlegendre) for t in self._baseline_times]
         self.ofluxa = self.ofluxa.astype('d')
 
         bls = []
         for i, tn in enumerate(range(self.nlc)):
-            bls.append(LParameter(f'bli_{tn}', f'bl_intercept_{tn}', '', NP(1.0, 0.01), bounds=(0.98, 1.02)))
+            fstd = self.fluxes[i].std()
+            bls.append(LParameter(f'bli_{tn}', f'bl_intercept_{tn}', '', NP(1.0, fstd), bounds=(-inf, inf)))
             for ipoly in range(1, self.nlegendre + 1):
                 bls.append(
-                    LParameter(f'bls_{tn}_{ipoly}', f'bl_c_{tn}_{ipoly}', '', NP(0.0, 0.001), bounds=(-0.1, 0.1)))
+                    LParameter(f'bls_{tn}_{ipoly}', f'bl_c_{tn}_{ipoly}', '', NP(0.0, fstd), bounds=(-inf, inf)))
         self.ps.add_lightcurve_block('baseline', self.nlegendre + 1, self.nlc, bls)
         self._sl_bl = self.ps.blocks[-1].slice
         self._start_bl = self.ps.blocks[-1].start
@@ -71,9 +72,5 @@ class LegendreBaseline:
     def baseline(self, pvp):
         """Multiplicative baseline"""
         pvp = atleast_2d(pvp)
-        fbl = zeros((pvp.shape[0], self.timea.size))
-        for ipv, pv in enumerate(pvp):
-            bl = pv[self._sl_bl]
-            for itr, sl in enumerate(self.lcslices):
-                fbl[ipv, sl] = bl[itr * (self.nlegendre + 1):(itr + 1) * (self.nlegendre + 1)] @ self.legs[itr].T
-        return fbl
+        return lbaseline(self._baseline_timea, self.lcids, pvp[:,self._sl_bl], self.nlegendre)
+
