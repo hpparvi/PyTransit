@@ -28,8 +28,8 @@ from numba import njit, prange
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like, all,
                    clip, argsort, any, s_, zeros, arccos, nan, full, pi, sum, repeat, asarray, ndarray, log10,
                    array, atleast_2d, isscalar, atleast_1d, where, isfinite, arange, unique, squeeze, ceil, percentile,
-                   floor)
-from numpy.random import uniform, normal, permutation
+                   floor, diag)
+from numpy.random import uniform, normal, permutation, multivariate_normal
 from scipy.optimize import minimize
 from scipy.stats import norm
 from tqdm.auto import tqdm
@@ -42,7 +42,7 @@ except ImportError:
     with_ldtk = False
 
 from ..models.transitmodel import TransitModel
-from ..orbits.orbits_py import duration_eccentric, as_from_rhop, i_from_ba, i_from_baew, d_from_pkaiews
+from ..orbits.orbits_py import duration_eccentric, as_from_rhop, i_from_ba, i_from_baew, d_from_pkaiews, epoch
 from ..param.parameter import ParameterSet, PParameter, GParameter, LParameter
 from ..param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
 from ..contamination.filter import sdss_g, sdss_r, sdss_i, sdss_z
@@ -99,12 +99,13 @@ class BaseLPF:
 
     def __init__(self, name: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
                  pbids: list = None, covariates: list = None, wnids: list = None, tm: TransitModel = None,
-                 nsamples: tuple = 1, exptimes: tuple = 0., init_data=True):
+                 nsamples: tuple = 1, exptimes: tuple = 0., init_data=True, result_dir: Path = None):
         self.tm = tm or QuadraticModel(klims=(0.01, 0.75), nk=512, nz=512)
 
         # LPF name
         # --------
         self.name = name
+        self.result_dir = result_dir
 
         # Passbands
         # ---------
@@ -145,6 +146,8 @@ class BaseLPF:
         self.lcids: ndarray = None       # Array of light curve indices for each datapoint
         self.pbids: ndarray = None       # Array of passband indices for each light curve
         self.lcslices: list = None       # List of light curve slices
+
+        self._local_minimization = None
 
         # Initialise the additional lnprior list
         # --------------------------------------
@@ -485,14 +488,16 @@ class BaseLPF:
     def __call__(self, pv):
         return self.lnposterior(pv)
 
-    def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation', leave=False, plot_convergence: bool = True):
+    def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation', leave=False,
+                        plot_convergence: bool = True, use_tqdm: bool = True):
+
         if self.de is None:
             self.de = DiffEvol(self.lnposterior, clip(self.ps.bounds, -1, 1), npop, maximize=True, vectorize=True)
             if population is None:
                 self.de._population[:, :] = self.create_pv_population(npop)
             else:
                 self.de._population[:,:] = population
-        for _ in tqdm(self.de(niter), total=niter, desc=label, leave=leave):
+        for _ in tqdm(self.de(niter), total=niter, desc=label, leave=leave, disable=(not use_tqdm)):
             pass
 
         if plot_convergence:
@@ -527,20 +532,30 @@ class BaseLPF:
                 pv0[self._sl_err] = log10(self.wn)
         res = minimize(lambda pv: -self.lnposterior(pv), pv0, method=method)
         self._local_minimization = res
-        return res.x
 
-    def sample_mcmc(self, niter: int = 500, thin: int = 5, repeats: int = 1, population=None, label='MCMC sampling', reset=True, leave=True):
+    def sample_mcmc(self, niter: int = 500, thin: int = 5, repeats: int = 1, npop: int = None, population=None,
+                    label='MCMC sampling', reset=True, leave=True, save=False, use_tqdm: bool = True):
         if self.sampler is None:
-            pop0 = population if population is not None else  self.de.population.copy()
+            if population is not None:
+                pop0 = population
+            elif hasattr(self, '_local_minimization') and self._local_minimization is not None:
+                pop0 = multivariate_normal(self._local_minimization.x, diag(full(len(self.ps), 0.001 ** 2)), size=npop)
+            elif self.de is not None:
+                pop0 = self.de.population.copy()
+            else:
+                raise ValueError('Sample MCMC needs an initial population.')
             self.sampler = EnsembleSampler(pop0.shape[0], pop0.shape[1], self.lnposterior, vectorize=True)
         else:
             pop0 = self.sampler.chain[:,-1,:].copy()
 
-        for i in tqdm(range(repeats), desc='MCMC sampling'):
+        for i in tqdm(range(repeats), desc='MCMC sampling', disable=(not use_tqdm)):
             if reset or i > 0:
                 self.sampler.reset()
-            for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter, desc='Run {:d}/{:d}'.format(i+1, repeats), leave=False):
+            for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter,
+                          desc='Run {:d}/{:d}'.format(i+1, repeats), leave=False, disable=(not use_tqdm)):
                 pass
+            if save and self.result_dir is not None:
+                self.save(self.result_dir)
             pop0 = self.sampler.chain[:,-1,:].copy()
 
     def posterior_samples(self, burn: int=0, thin: int=1, derived_parameters: bool = True):
@@ -559,7 +574,7 @@ class BaseLPF:
         fig.tight_layout()
         return fig
 
-    def save(self, save_path='.'):
+    def save(self, save_path: Path = '.'):
         save_path = Path(save_path)
 
         if self.de:
@@ -577,21 +592,24 @@ class BaseLPF:
                         attrs={'created': strftime('%Y-%m-%d %H:%M:%S'), 'target': self.name})
         ds.to_netcdf(save_path.joinpath(f'{self.name}.nc'))
 
-    def plot_light_curves(self, method='de', ncol=3, max_samples=1000, figsize=None):
+    def plot_light_curves(self, method='de', ncol: int = 3, width: float = 2., max_samples: int = 1000, figsize=None):
         nrow = int(ceil(self.nlc / ncol))
         if method == 'mcmc':
             df = self.posterior_samples(derived_parameters=False)
+            t0, p = df.tc.median(), df.p.median()
             fmodel = self.flux_model(permutation(df.values)[:max_samples])
             fmperc = percentile(fmodel, [50, 16, 84, 2.5, 97.5], 0)
         else:
             fmodel = squeeze(self.flux_model(self.de.minimum_location))
+            t0, p = self.de.minimum_location[0], self.de.minimum_location[1]
             fmperc = None
 
-        fig, axs = subplots(nrow, ncol, figsize=figsize, constrained_layout=True, sharey='all', squeeze=False)
+        fig, axs = subplots(nrow, ncol, figsize=figsize, constrained_layout=True, sharey='all', sharex='all', squeeze=False)
         for i in range(self.nlc):
             ax = axs.flat[i]
-            tref = floor(self.times[i].min())
-            time = self.times[i] - tref
+            e = epoch(self.times[i].mean(), t0, p)
+            tc = t0 + e * p
+            time = self.times[i] - tc
             if method == 'de':
                 ax.plot(time, fmodel[self.lcslices[i]])
             else:
@@ -600,7 +618,7 @@ class BaseLPF:
                 ax.plot(time, fmperc[0, self.lcslices[i]])
 
             ax.plot(time, self.fluxes[i], '.k')
-            setp(ax, xlabel=f'Time [BJD - {tref:.0f}]', xlim=time[[0, -1]])
+            setp(ax, xlabel=f'Time - T$_c$ [d]', xlim=(-width/2/24, width/2/24))
         setp(axs[:, 0], ylabel='Normalised flux')
 
         for ax in axs.flat[self.nlc:]:
