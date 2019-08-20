@@ -414,9 +414,8 @@ class BaseLPF:
             return norm.logpdf(a, mean, std)
         self.lnpriors.append(as_prior)
 
-    def add_ldtk_prior(self, teff: tuple, logg: tuple, z: tuple,
-                       uncertainty_multiplier: float = 3,
-                       pbs: tuple = ('g', 'r', 'i', 'z')) -> None:
+    def add_ldtk_prior(self, teff: tuple, logg: tuple, z: tuple, passbands: tuple,
+                       uncertainty_multiplier: float = 3, **kwargs) -> None:
         """Add a LDTk-based prior on the limb darkening.
 
         Parameters
@@ -424,22 +423,30 @@ class BaseLPF:
         teff
         logg
         z
+        passbands
         uncertainty_multiplier
-        pbs
 
         Returns
         -------
 
         """
-        fs = {n: f for n, f in zip('g r i z'.split(), (sdss_g, sdss_r, sdss_i, sdss_z))}
-        filters = [fs[k] for k in pbs]
-        self.ldsc = LDPSetCreator(teff, logg, z, filters)
+        if 'pbs' in kwargs.keys():
+            raise DeprecationWarning("The 'pbs' argument has been renamed to 'passbands'")
+
+        if isinstance(passbands[0], str):
+            raise DeprecationWarning(
+                'Passing passbands by name has been deprecated, they should be now Filter instances.')
+
+        self.ldsc = LDPSetCreator(teff, logg, z, list(passbands))
         self.ldps = self.ldsc.create_profiles(1000)
         self.ldps.resample_linear_z()
         self.ldps.set_uncertainty_multiplier(uncertainty_multiplier)
+
         def ldprior(pv):
-            return self.ldps.lnlike_tq(pv[self._sl_ld])
+            return self.ldps.lnlike_tq(pv[:, self._sl_ld].reshape([pv.shape[0], -1, 2]))
+
         self.lnpriors.append(ldprior)
+
 
     def remove_outliers(self, sigma=5):
         fmodel = squeeze(self.flux_model(self.de.minimum_location))
@@ -535,6 +542,10 @@ class BaseLPF:
 
     def sample_mcmc(self, niter: int = 500, thin: int = 5, repeats: int = 1, npop: int = None, population=None,
                     label='MCMC sampling', reset=True, leave=True, save=False, use_tqdm: bool = True):
+
+        if save and self.result_dir is None:
+            raise ValueError('The MCMC sampler is set to save the results, but the result directory is not set.')
+
         if self.sampler is None:
             if population is not None:
                 pop0 = population
@@ -554,7 +565,7 @@ class BaseLPF:
             for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter,
                           desc='Run {:d}/{:d}'.format(i+1, repeats), leave=False, disable=(not use_tqdm)):
                 pass
-            if save and self.result_dir is not None:
+            if save:
                 self.save(self.result_dir)
             pop0 = self.sampler.chain[:,-1,:].copy()
 
