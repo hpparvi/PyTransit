@@ -100,6 +100,9 @@ class BaseLPF:
     def __init__(self, name: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
                  pbids: list = None, covariates: list = None, wnids: list = None, tm: TransitModel = None,
                  nsamples: tuple = 1, exptimes: tuple = 0., init_data=True, result_dir: Path = None):
+
+        self._pre_initialisation()
+
         self.tm = tm or QuadraticModel(klims=(0.01, 0.75), nk=512, nz=512)
 
         # LPF name
@@ -167,6 +170,8 @@ class BaseLPF:
             # --------------------------
             self._init_instrument()
 
+        self._post_initialisation()
+
 
     def _init_data(self, times, fluxes, pbids=None, covariates=None, errors=None, wnids = None, nsamples=1, exptimes=0.):
 
@@ -231,11 +236,11 @@ class BaseLPF:
         if covariates is not None:
             self.covariates = covariates
             for cv in self.covariates:
-                cv[:, 1:] = (cv[:, 1:] - cv[:, 1:].mean(0)) / cv[:, 1:].ptp(0)
-            self.ncovs = self.covariates[0].shape[1]
-            self.covsize = array([c.size for c in self.covariates])
-            self.covstart = concatenate([[0], self.covsize.cumsum()[:-1]])
-            self.cova = concatenate(self.covariates)
+                cv = (cv - cv.mean(0)) / cv.std(0)
+            #self.ncovs = self.covariates[0].shape[1]
+            #self.covsize = array([c.size for c in self.covariates])
+            #self.covstart = concatenate([[0], self.covsize.cumsum()[:-1]])
+            #self.cova = concatenate(self.covariates)
 
     def print_parameters(self, columns: int = 2):
         columns = max(1, columns)
@@ -295,6 +300,12 @@ class BaseLPF:
         self._start_err = self.ps.blocks[-1].start
 
     def _init_instrument(self):
+        pass
+
+    def _pre_initialisation(self):
+        pass
+
+    def _post_initialisation(self):
         pass
 
     def create_pv_population(self, npop=50):
@@ -637,7 +648,4 @@ class BaseLPF:
         return fig
 
     def __repr__(self):
-        s  = f"""Target: {self.name}
-  LPF: {self._lpf_name}
-  Passbands: {self.passbands}"""
-        return s
+        return f"Target: {self.name}\nLPF: {self._lpf_name}\n Passbands: {self.passbands}"
