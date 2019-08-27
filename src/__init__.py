@@ -58,5 +58,6 @@ from .models.transitmodel import TransitModel
 from .lpf.lpf import BaseLPF
 from .lpf.cntlpf import PhysContLPF
 from .lpf.baselines.legendrebaseline import LegendreBaseline
+from .lpf.baselines.linearbaseline import LinearModelBaseline
 
 from .param.parameter import UniformPrior, NormalPrior

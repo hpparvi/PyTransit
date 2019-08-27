@@ -14,65 +14,49 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from numpy import atleast_2d, zeros, concatenate, ones, inf, full, squeeze, c_
-from numba import njit, prange
+from numba import prange, njit
+from numpy import atleast_2d, zeros, dot, array, concatenate, squeeze, r_, inf
 
 from ...param import LParameter, NormalPrior as NP
 
-@njit(parallel=True, fastmath=True)
-def lbaseline(ltimes, lcids, pv, deg, cstart):
-    pv = atleast_2d(pv)
-    npv = pv.shape[0]
-    npt = ltimes.size
+@njit(parallel=True)
+def linear_model(pvp, timea, lcids, cstart, ncov, cova):
+    pvp = atleast_2d(pvp)
+    npv = pvp.shape[0]
+    npt = timea.size
     bl = zeros((npv, npt))
-    for ipt in prange(npt):
-        ilc = lcids[ipt]
-        npl = deg[ilc] + 1
-        leg = ones(npl)
-        leg[1] = ltimes[ipt]
-        for iln in range(npl):
-            icoef = cstart[ilc] + iln
-            for ipv in range(npv):
-                bl[ipv, ipt] += pv[ipv, icoef] * leg[iln]
-            if iln > 0 and npl > 1:
-                leg[iln+1] = ((2*iln + 1)*ltimes[ipt]*leg[iln] - iln*leg[iln-1] ) / (iln+1)
+    for ipv in prange(npv):
+        ii = 0
+        for ipt in range(npt):
+            ilc = lcids[ipt]  # Current light curve index
+            cst = cstart[ilc]  # Start of the coefficients in the parameter vector
+            nc = ncov[ilc]  # Number of covariates for the current light curve
+            bl[ipv, ipt] = pvp[ipv, cst] + dot(pvp[ipv, cst + 1:cst + nc], cova[ii:ii + nc - 1])
+            ii += nc
     return bl
 
 
-class LegendreBaseline:
-    def __init__(self, nlegendre):
-        self.nlegendre = nlegendre
-        self.times = []
-        self.timea = None
-        self.lcslices = None
-        self.nlc = 0
-        self.ps = None
+class LinearModelBaseline:
 
     def _init_p_baseline(self):
         """Baseline parameter initialisation.
         """
-
-        self._baseline_times = [(t - t.mean()) / t.ptp() for t in self.times]
-        self._baseline_timea = concatenate(self._baseline_times)
-
-        if isinstance(self.nlegendre, int):
-            self.nlegendre = full(self.nlc, self.nlegendre)
-
-        assert self.nlegendre.size == len(self.times)
+        self.ncov = array([c.shape[1] for c in self.covariates])  # Number of covariates per light curve
+        self.cova = concatenate([c.ravel() for c in self.covariates])  # Flattened covariate vector
 
         bls = []
         for i, tn in enumerate(range(self.nlc)):
             fstd = self.fluxes[i].std()
             bls.append(LParameter(f'bli_{tn}', f'bl_intercept_{tn}', '', NP(1.0, fstd), bounds=(-inf, inf)))
-            for ipoly in range(1, self.nlegendre[i] + 1):
+            for ipoly in range(1, self.ncov[i] + 1):
                 bls.append(
                     LParameter(f'bls_{tn}_{ipoly}', f'bl_c_{tn}_{ipoly}', '', NP(0.0, fstd), bounds=(-inf, inf)))
         self.ps.add_global_block('baseline', bls)
         self._sl_bl = self.ps.blocks[-1].slice
         self._start_bl = self.ps.blocks[-1].start
-        self._bl_coeff_start = c_[[0], [self.nlegendre[:-1]+1]].cumsum()
+        self._bl_coeff_start = r_[[0], self.ncov + 1].cumsum()  # Parameter vector start index for the coefficients
 
     def baseline(self, pvp):
-        """Multiplicative baseline"""
         pvp = atleast_2d(pvp)
-        return squeeze(lbaseline(self._baseline_timea, self.lcids, pvp[:,self._sl_bl], self.nlegendre, self._bl_coeff_start))
+        return squeeze(
+            linear_model(pvp[:, self._sl_bl], self.timea, self.lcids, self._bl_coeff_start, self.ncov, self.cova))
