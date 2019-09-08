@@ -614,7 +614,8 @@ class BaseLPF:
                         attrs={'created': strftime('%Y-%m-%d %H:%M:%S'), 'target': self.name})
         ds.to_netcdf(save_path.joinpath(f'{self.name}.nc'))
 
-    def plot_light_curves(self, method='de', ncol: int = 3, width: float = 2., max_samples: int = 1000, figsize=None):
+    def plot_light_curves(self, method='de', ncol: int = 3, width: float = 2., max_samples: int = 1000, figsize=None,
+                          data_alpha=0.5, ylim=None):
         nrow = int(ceil(self.nlc / ncol))
         if method == 'mcmc':
             df = self.posterior_samples(derived_parameters=False)
@@ -626,22 +627,29 @@ class BaseLPF:
             t0, p = self.de.minimum_location[0], self.de.minimum_location[1]
             fmperc = None
 
-        fig, axs = subplots(nrow, ncol, figsize=figsize, constrained_layout=True, sharey='all', sharex='all', squeeze=False)
+        fig, axs = subplots(nrow, ncol, figsize=figsize, constrained_layout=True, sharey='all', sharex='all',
+                            squeeze=False)
         for i in range(self.nlc):
             ax = axs.flat[i]
             e = epoch(self.times[i].mean(), t0, p)
             tc = t0 + e * p
             time = self.times[i] - tc
+
+            ax.plot(time, self.fluxes[i], '.', alpha=data_alpha)
+
             if method == 'de':
-                ax.plot(time, fmodel[self.lcslices[i]])
+                ax.plot(time, fmodel[self.lcslices[i]], 'w', lw=4)
+                ax.plot(time, fmodel[self.lcslices[i]], 'k', lw=1)
             else:
                 ax.fill_between(time, *fmperc[3:5, self.lcslices[i]], alpha=0.15)
                 ax.fill_between(time, *fmperc[1:3, self.lcslices[i]], alpha=0.25)
                 ax.plot(time, fmperc[0, self.lcslices[i]])
 
-            ax.plot(time, self.fluxes[i], '.k')
-            setp(ax, xlabel=f'Time - T$_c$ [d]', xlim=(-width/2/24, width/2/24))
+            setp(ax, xlabel=f'Time - T$_c$ [d]', xlim=(-width / 2 / 24, width / 2 / 24))
         setp(axs[:, 0], ylabel='Normalised flux')
+
+        if ylim is not None:
+            setp(axs, ylim=ylim)
 
         for ax in axs.flat[self.nlc:]:
             ax.remove()
