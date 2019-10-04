@@ -390,6 +390,13 @@ class BaseLPF:
 
         self.ps[parameter].prior = prior
 
+    def set_radius_ratio_prior(self, kmin, kmax):
+        for p in self.ps[self._sl_k2]:
+            p.prior = U(kmin ** 2, kmax ** 2)
+            p.bounds = [kmin ** 2, kmax ** 2]
+        self.ps.thaw()
+        self.ps.freeze()
+
     def add_t14_prior(self, mean: float, std: float) -> None:
         """Add a normal prior on the transit duration.
 
@@ -402,10 +409,13 @@ class BaseLPF:
         -------
 
         """
+
         def T14(pv):
-            a = as_from_rhop(pv[2], pv[1])
-            t14 = duration_eccentric(pv[1], sqrt(pv[4]), a, mt.acos(pv[3] / a), 0, 0, 1)
+            pv = atleast_2d(pv)
+            a = as_from_rhop(pv[:, 2], pv[:, 1])
+            t14 = duration_eccentric(pv[:, 1], sqrt(pv[:, 4]), a, arccos(pv[:, 3] / a), 0, 0, 1)
             return norm.logpdf(t14, mean, std)
+
         self.lnpriors.append(T14)
 
     def add_as_prior(self, mean: float, std: float) -> None:
@@ -580,14 +590,17 @@ class BaseLPF:
                 self.save(self.result_dir)
             pop0 = self.sampler.chain[:,-1,:].copy()
 
-    def posterior_samples(self, burn: int=0, thin: int=1, derived_parameters: bool = True):
+    def posterior_samples(self, burn: int = 0, thin: int = 1, derived_parameters: bool = True):
         fc = self.sampler.chain[:, burn::thin, :].reshape([-1, self.de.n_par])
         df = pd.DataFrame(fc, columns=self.ps.names)
         if derived_parameters:
+            for k2c in df.columns[self._sl_k2]:
+                df[k2c.replace('k2', 'k')] = sqrt(df[k2c])
             df['a'] = as_from_rhop(df.rho.values, df.p.values)
             df['inc'] = i_from_baew(df.b.values, df.a.values, 0., 0.)
-            df['k'] = sqrt(df.k2)
-            df['t14'] = d_from_pkaiews(df.p.values, df.k.values, df.a.values, df.inc.values, 0., 0., 1)
+
+            average_ks = sqrt(df.iloc[:, self._sl_k2]).mean(1).values
+            df['t14'] = d_from_pkaiews(df.p.values, average_ks, df.a.values, df.inc.values, 0., 0., 1)
         return df
 
     def plot_mcmc_chains(self, pid: int=0, alpha: float=0.1, thin: int=1, ax=None):
