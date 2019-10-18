@@ -136,6 +136,7 @@ class BaseLPF:
         # ---------------------------------
         self.nlc: int = 0                # Number of light curves
         self.n_noise_blocks: int = 0     # Number of noise blocks
+        self.noise_ids = None
         self.times: list = None          # List of time arrays
         self.fluxes: list = None         # List of flux arrays
         self.errors: list = None         # List of flux uncertainties
@@ -182,24 +183,26 @@ class BaseLPF:
             fluxes = [fluxes]
 
         if pbids is None:
-            pbids = zeros(len(fluxes), int)
+            if self.pbids is None:
+                self.pbids = zeros(len(fluxes), int)
+        else:
+            self.pbids = atleast_1d(pbids).astype('int')
 
         self.nlc = len(times)
-        self.times = asarray(times)
-        self.fluxes = asarray(fluxes)
-        self.pbids = asarray(pbids)
+        self.times = times
+        self.fluxes = fluxes
         self.wn = [diff(f).std() / sqrt(2) for f in fluxes]
         self.timea = concatenate(self.times)
         self.ofluxa = concatenate(self.fluxes)
         self.mfluxa = zeros_like(self.ofluxa)
-        self.pbids = atleast_1d(pbids).astype('int')
         self.lcids = concatenate([full(t.size, i) for i, t in enumerate(self.times)])
 
 
         # TODO: Noise IDs get scrambled when removing transits, fix!!!
         if wnids is None:
-            self.noise_ids = zeros(self.nlc, int)
-            self.n_noise_blocks = 1
+            if self.noise_ids is None:
+                self.noise_ids = zeros(self.nlc, int)
+                self.n_noise_blocks = 1
         else:
             self.noise_ids = asarray(wnids)
             self.n_noise_blocks = len(unique(self.noise_ids))
