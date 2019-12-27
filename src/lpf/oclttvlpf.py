@@ -111,7 +111,7 @@ class OCLTTVLPF(OCLBaseLPF):
         multiplier = {'d': 1, 'h': 24, 'min': 1440}
         ncol = 1 if windows is None else len(windows)
         fig, axs = (None, axs) if axs is not None else subplots(1, ncol, figsize=figsize, sharey=True)
-        df = self.posterior_samples(burn, thin)
+        df = self.posterior_samples(burn, thin, derived_parameters=False)
         tccols = [c for c in df.columns if 'tc' in c]
         tcs = median(df[tccols], 0)
         lineph = poly1d(polyfit(self.epoch, tcs, 1))

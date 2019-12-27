@@ -26,24 +26,22 @@ from .instrument import Instrument
 from ..utils.physics import planck
 
 class Contamination:
-    """Third light contamination
+    """A base class to deal with transit light curves with flux contamination.
     """
 
-    def __init__(self, instrument, ref_pb=None):
+    def __init__(self, instrument: Instrument, ref_pb: str = None) -> None:
         """
 
         Parameters
         ----------
-        :param instrument : Instrument
+        instrument
             Instrument configuration
-        :param ref_pb : str, optional
+        ref_pb
             name of the reference passband
         """
-        assert isinstance(instrument, Instrument)
-        self.instrument = I = instrument
+        self.instrument = instrument
         self._ri = 0
         self._rpb = self.instrument.pb_names[self._ri]
-
 
     def relative_fluxes(self, teff, rdc=None, rpb=None):
         raise NotImplementedError
@@ -148,19 +146,19 @@ class BBContamination(Contamination):
 
 
 class SMContamination(Contamination):
-    """Third light contamination based on stellar spectrum models
+    """A class that models flux contamination based on stellar spectrum models.
     """
 
-    def __init__(self, instrument, ref_pb=None):
+    def __init__(self, instrument: Instrument, ref_pb: str = None) -> None:
         """
 
-        Parameters
-        ----------
-        :param instrument : Instrument
-            Instrument configuration
-        :param ref_pb : str, optional
-            name of the reference passband
-        """
+          Parameters
+          ----------
+          instrument
+              Instrument configuration
+          ref_pb
+              name of the reference passband
+          """
         super().__init__(instrument, ref_pb)
         I = self.instrument
 
@@ -215,7 +213,6 @@ class SMContamination(Contamination):
             self._compute_relative_flux_tables(rdc, rpb)
         return self._ip(teff)
 
-
     def relative_flux_mixture(self, teffs, fractions, rdc=None):
         teffs = asarray(teffs)
         fractions = asarray(fractions)
@@ -227,7 +224,6 @@ class SMContamination(Contamination):
         x[1:] = fractions
         x[0] = 1. - x[1:].sum()
         return (self.relative_fluxes(teffs, rdc) * x).sum(1)
-
 
     def exposure_times(self, teff, rtime, rflux=1.0, tflux=1.0, rdc=None, rpb=None):
         """Exposure times that give equal flux as in the reference passband
@@ -274,13 +270,13 @@ class SMContamination(Contamination):
         return b.T / (a + b.T)
 
     def c_as_pandas(self, ci, teff1, teff2, rdc=None, rpb=None):
-        """Contamination as pandas DataFrame."""
+        """Contamination as a pandas DataFrame."""
         return pd.DataFrame(self.contamination(ci, teff1, teff2, rdc, rpb),
                             columns=pd.Index(self.pb_names, name='passband'),
                             index=pd.Index(uint32(teff2), name='teff'))
 
     def c_as_xarray(self, ci, teff1, teff2, rdc=None, rpb=None):
-        """Contamination as xarray DataArray."""
+        """Contamination as an xarray DataArray."""
         from xarray import DataArray
         return DataArray(self.contamination(ci, teff1, teff2, rdc, rpb),
                          name='contamination',

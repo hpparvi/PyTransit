@@ -100,7 +100,10 @@ class BaseLPF:
     def __init__(self, name: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
                  pbids: list = None, covariates: list = None, wnids: list = None, tm: TransitModel = None,
                  nsamples: tuple = 1, exptimes: tuple = 0., init_data=True, result_dir: Path = None):
-        """
+        """The base Log Posterior Function class.
+
+        The `BaseLPF` class creates the basis for transit light curve analyses using `PyTransit`. This class can be
+        used in a basic analysis directly, or it can be inherited to create a basis for a more complex analysis.
 
         Parameters
         ----------
