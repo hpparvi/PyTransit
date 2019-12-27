@@ -28,7 +28,7 @@ from numba import njit, prange
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like, all,
                    clip, argsort, any, s_, zeros, arccos, nan, full, pi, sum, repeat, asarray, ndarray, log10,
                    array, atleast_2d, isscalar, atleast_1d, where, isfinite, arange, unique, squeeze, ceil, percentile,
-                   floor, diag)
+                   floor, diag, nanstd)
 from numpy.random import uniform, normal, permutation, multivariate_normal
 from scipy.optimize import minimize
 from scipy.stats import norm
@@ -55,7 +55,7 @@ def lnlike_normal(o, m, e):
     return -sum(log(e)) -0.5*o.size*log(2.*pi) - 0.5*sum((o-m)**2/e**2)
 
 
-@njit("f8(f8[:], f8[:], f8)", cache=False)
+@njit(cache=False)
 def lnlike_normal_s(o, m, e):
     return -o.size*log(e) -0.5*o.size*log(2.*pi) - 0.5*sum((o-m)**2)/e**2
 
@@ -100,6 +100,49 @@ class BaseLPF:
     def __init__(self, name: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
                  pbids: list = None, covariates: list = None, wnids: list = None, tm: TransitModel = None,
                  nsamples: tuple = 1, exptimes: tuple = 0., init_data=True, result_dir: Path = None):
+        """
+
+        Parameters
+        ----------
+        name: str
+            Name of the log posterior function instance.
+
+        passbands: iterable
+            List of unique passband names (filters) that the light curves have been observed in.
+
+        times: iterable
+            List of 1d ndarrays each containing the mid-observation times for a single light curve.
+
+        fluxes: iterable
+            List of 1d ndarrays each containing the normalized fluxes for a single light curve.
+
+        errors: iterable
+            List of 1d ndarrays each containing the flux measurement uncertainties for a single light curvel.
+
+        pbids: iterable of ints
+            List of passband indices mapping each light curve to a single passband.
+
+        covariates: iterable
+            List of covariates one 2d narray per light curve.
+
+        wnids: iterable of ints
+            List of noise set indices mapping each light curve to a single noise set.
+
+        tm: TransitModel
+            Transitmodel to use instead of the default model.
+
+        nsamples: list[int]
+            List of supersampling factors.  The values should be integers and given one per light curve.
+
+        exptimes: list[float]
+            List of exposure times. The values should be floats with the time given in days.
+
+        init_data: bool
+            Set to `False` to allow the LPF to be initialized without data. This is mainly for debugging.
+
+        result_dir: Path
+            Default saving directory
+        """
 
         self._pre_initialisation()
 
@@ -191,12 +234,11 @@ class BaseLPF:
         self.nlc = len(times)
         self.times = times
         self.fluxes = fluxes
-        self.wn = [diff(f).std() / sqrt(2) for f in fluxes]
+        self.wn = [nanstd(diff(f)) / sqrt(2) for f in fluxes]
         self.timea = concatenate(self.times)
         self.ofluxa = concatenate(self.fluxes)
         self.mfluxa = zeros_like(self.ofluxa)
         self.lcids = concatenate([full(t.size, i) for i, t in enumerate(self.times)])
-
 
         # TODO: Noise IDs get scrambled when removing transits, fix!!!
         if wnids is None:
