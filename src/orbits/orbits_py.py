@@ -52,19 +52,19 @@ cache = False
 def epoch(time, zero_epoch, period):
     return around((time - zero_epoch) / period).astype(int)
 
-@njit("f8(f8, f8)", cache=cache)
+@njit
 def mean_anomaly_offset(e, w):
     mean_anomaly_offset = arctan2(sqrt(1.0-e**2) * sin(HALF_PI - w), e + cos(HALF_PI - w))
     mean_anomaly_offset -= e*sin(mean_anomaly_offset)
     return mean_anomaly_offset
 
-@njit("f8(f8, f8, f8, f8, f8)", cache=cache)
+@njit
 def z_from_ta_s(Ta, a, i, e, w):
     z  = a*(1.0-e**2)/(1.0+e*cos(Ta)) * sqrt(1.0 - sin(w+Ta)**2 * sin(i)**2)
     z *= copysign(1.0, sin(w+Ta))
     return z
 
-@njit("f8[:](f8[:], f8, f8, f8, f8)", parallel=True)
+@njit(parallel=True)
 def z_from_ta_v(Ta, a, i, e, w):
     z  = a*(1.0-e**2)/(1.0+e*cos(Ta)) * sqrt(1.0 - sin(w+Ta)**2 * sin(i)**2)
     z *= sign(1.0, sin(w+Ta))
@@ -97,7 +97,7 @@ def mean_anomaly_p(t, t0, p, e, w):
 # Ecccentric anomaly
 # ==================
 
-@njit("f8[:](f8[:], f8, f8, f8, f8)", cache=cache)
+@njit(cache=cache)
 def ea_newton_v(t, t0, p, e, w):
     Ma = mean_anomaly(t, t0, p, e, w)
     Ea = Ma.copy()
@@ -110,7 +110,7 @@ def ea_newton_v(t, t0, p, e, w):
             k += 1
     return Ea
 
-@njit("f8(f8, f8, f8, f8, f8)", cache=cache)
+@njit(cache=cache)
 def ea_newton_s(t, t0, p, e, w):
     Ma = mean_anomaly(t, t0, p, e, w)
     Ea = Ma
@@ -122,7 +122,7 @@ def ea_newton_s(t, t0, p, e, w):
         k += 1
     return Ea
 
-@njit("f8(f8,f8,f8,f8,f8)", cache=cache)
+@njit(cache=cache)
 def ea_iter_s(t, t0, p, e, w):
     Ma = mean_anomaly(t, t0, p, e, w)
     ec = e*sin(Ma)/(1.0 - e*cos(Ma))
@@ -134,7 +134,7 @@ def ea_iter_s(t, t0, p, e, w):
     Ea  = Ma + ec
     return Ea
 
-@njit("f8[:](f8[:],f8,f8,f8,f8)", parallel=True)
+@njit(parallel=True)
 def ea_iter_v(t, t0, p, e, w):
     Ma = mean_anomaly(t, t0, p, e, w)
     ec = e*sin(Ma)/(1.0 - e*cos(Ma))
@@ -150,33 +150,33 @@ def ea_iter_v(t, t0, p, e, w):
 # True Anomaly
 # ============
 
-@njit("f8[:](f8[:],f8)", parallel=True)
+@njit(parallel=True)
 def ta_from_ea_v(Ea, e):
     sta = sqrt(1.0-e**2) * sin(Ea)/(1.0-e*cos(Ea))
     cta = (cos(Ea)-e)/(1.0-e*cos(Ea))
     Ta  = arctan2(sta, cta)
     return Ta
 
-@njit("f8(f8,f8)", cache=cache)
+@njit(cache=cache)
 def ta_from_ea_s(Ea, e):
     sta = sqrt(1.0-e**2) * sin(Ea)/(1.0-e*cos(Ea))
     cta = (cos(Ea)-e)/(1.0-e*cos(Ea))
     Ta  = arctan2(sta, cta)
     return Ta
 
-@njit("f8(f8, f8, f8, f8, f8)", cache=cache)
+@njit(cache=cache)
 def ta_newton_s(t, t0, p, e, w):
     return ta_from_ea_s(ea_newton_s(t, t0, p, e, w), e)
 
-@njit("f8[:](f8[:], f8, f8, f8, f8)")
+@njit
 def ta_newton_v(t, t0, p, e, w):
     return ta_from_ea_v(ea_newton_v(t, t0, p, e, w), e)
 
-@njit("f8(f8,f8,f8,f8,f8)", cache=cache)
+@njit(cache=cache)
 def ta_iter_s(t, t0, p, e, w):
     return ta_from_ea_s(ea_iter_s(t, t0, p, e, w), e)
 
-@njit("f8[:](f8[:],f8,f8,f8,f8)")
+@njit
 def ta_iter_v(t, t0, p, e, w):
     return ta_from_ea_v(ea_iter_v(t, t0, p, e, w), e)
 
@@ -368,13 +368,13 @@ def z_newton_s(t, pv):
     Ta = ta_newton_s(t, t0, p, e, w)
     return z_from_ta_s(Ta, a, i, e, w)
 
-@njit("f8[:](f8[:], f8[:])", cache=cache)
+@njit(cache=cache)
 def z_newton_v(ts, pv):
     t0, p, a, i, e, w = pv
     Ta = ta_newton_v(ts, t0, p, e, w)
     return z_from_ta_v(Ta, a, i, e, w)
 
-@njit("f8[:](f8[:], f8[:])", parallel=True, fastmath=True)
+@njit(parallel=True, fastmath=True)
 def z_newton_p(ts, pv):
     t0, p, a, i, e, w = pv
     zs = zeros_like(ts)
@@ -398,7 +398,7 @@ def z_newton_p(ts, pv):
         zs[j] = z
     return zs
 
-@njit("f8[:,:](f8[:], f8[:,:])", parallel=True, fastmath=True)
+@njit(parallel=True, fastmath=True)
 def z_newton_mp(ts, pvs):
     zs = zeros((pvs.shape[0], ts.size))
     for j in prange(zs.size):
@@ -436,14 +436,14 @@ def z_iter_s(t, pv):
     return z_from_ta_s(Ta, a, i, e, w)
 
 
-@njit("f8[:](f8[:], f8[:])", cache=cache)
+@njit(cache=cache)
 def z_iter_v(ts, pv):
     t0, p, a, i, e, w = pv
     Ta = ta_iter_v(ts, t0, p, e, w)
     return z_from_ta_v(Ta, a, i, e, w)
 
 
-@njit("f8[:](f8[:], f8[:])", parallel=True, fastmath=True)
+@njit(parallel=True, fastmath=True)
 def z_iter_p(ts, pv):
     t0, p, a, i, e, w = pv
     ma_offset = arctan2(sqrt(1.0 - e ** 2) * sin(HALF_PI - w), e + cos(HALF_PI - w))
@@ -471,13 +471,13 @@ def z_iter_p(ts, pv):
 # -------------------
 
 
-@njit("f8[:](f8[:], f8[:])", cache=cache)
+@njit(cache=cache)
 def z_ps3(t, pv):
     t0, p, a, i, e, w = pv
     return z_from_ta_v(ta_ps3(t, t0, p, e, w), a, i, e, w)
 
 
-@njit("f8[:](f8[:], f8[:])", cache=cache)
+@njit(cache=cache)
 def z_ps5(t, pv):
     t0, p, a, i, e, w = pv
     return z_from_ta_v(ta_ps5(t, t0, p, e, w), a, i, e, w)

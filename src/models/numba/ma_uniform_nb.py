@@ -50,7 +50,7 @@ FOUR_PI = 4.0 * pi
 INV_PI = 1 / pi
 
 
-@njit(["f4[:](f4[:], f4)", "f8[:](f8[:], f8)"], cache=False, fastmath=True)
+@njit(cache=False, fastmath=True)
 def uniform_z_v(zs, k):
     flux = zeros_like(zs)
 

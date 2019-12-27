@@ -50,7 +50,7 @@ HALF_PI = 0.5 * pi
 FOUR_PI = 4.0 * pi
 INV_PI = 1 / pi
 
-@njit(["f4(f4,f4)", "f8(f8,f8)"], cache=False)
+@njit(cache=False)
 def ellpicb(n, k):
     """The complete elliptical integral of the third kind
 
@@ -124,7 +124,7 @@ def ellk(k):
     return ek1 - ek2
 
 
-@njit("Tuple((f8[:,:], f8[:], f8[:], f8[:]))(f8[:], f8, f8[:,:], f8[:])", cache=False, parallel=False)
+@njit(cache=False, parallel=False)
 def eval_quad(z0, k, u, c):
     if abs(k - 0.5) < 1.0e-4:
         k = 0.5
@@ -357,7 +357,7 @@ def calculate_interpolation_tables(kmin=0.05, kmax=0.2, nk=512, nz=512):
     return ed, le, ld, ks, zs
 
 
-@njit("f8[:,:](f8[:], f8, f8[:,:], f8[:], f8[:,:], f8[:,:], f8[:,:], f8[:], f8[:])", cache=False, parallel=False, fastmath=True)
+@njit(cache=False, parallel=False, fastmath=True)
 def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
     npb = u.shape[0]
     flux = zeros((len(zs), npb))
@@ -407,7 +407,7 @@ def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
     return flux
 
 
-@njit("f8[:,:](f8[:], f8, f8[:,:], f8[:], f8[:,:], f8[:,:], f8[:,:], f8[:], f8[:])", cache=False, parallel=False, fastmath=True)
+@njit(cache=False, parallel=False, fastmath=True)
 def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
     npb = u.shape[0]
     flux = zeros((len(zs), npb))
@@ -457,7 +457,7 @@ def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
     return flux
 
 
-@njit("f8[:](f8[:], i8[:], f8[:], f8[:,:], f8[:], f8[:,:], f8[:,:], f8[:,:], f8[:], f8[:])", cache=False, parallel=False, fastmath=True)
+@njit(cache=False, parallel=False, fastmath=True)
 def eval_quad_ip_mp(zs, pbi, ks, u, c, edt, ldt, let, kt, zt):
     npb = u.shape[0]
     flux = zeros(zs.size)

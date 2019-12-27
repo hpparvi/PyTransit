@@ -36,7 +36,7 @@ HALF_PI = 0.5 * pi
 FOUR_PI = 4.0 * pi
 INV_PI = 1 / pi
 
-@njit(["f4(f4,f4)", "f8(f8,f8)"], cache=False)
+@njit(cache=False)
 def ellpicb(n, k):
     """The complete elliptical integral of the third kind
 

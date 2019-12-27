@@ -56,7 +56,7 @@ def evolve_vector(i, pop, f, c):
     return v
 
 
-@njit("float64[:,:](float64[:,:], float64[:,:], float64, float64)")
+@njit
 def evolve_population(pop, pop2, f, c):
     npop, ndim = pop.shape
 
