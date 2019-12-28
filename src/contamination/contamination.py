@@ -20,7 +20,8 @@ from typing import Union, Iterable
 import pandas as pd
 import xarray as xa
 from matplotlib.pyplot import subplots, setp
-from numpy import transpose, newaxis, uint32, ndarray, asarray, zeros_like, log, exp, sqrt, ceil, linspace, array
+from numpy import transpose, newaxis, uint32, ndarray, asarray, zeros_like, log, exp, ceil, linspace, array
+from pandas import DataFrame
 from pkg_resources import resource_filename
 from scipy.interpolate import interp1d
 
@@ -48,16 +49,16 @@ class _BaseContamination:
             name of the reference passband
         """
         self.instrument = instrument
-        self._ri = 0
-        self._rpb = self.instrument.pb_names[self._ri]
+        self._ri = self.instrument.pb_names.index(ref_pb)
+        self._rpb = ref_pb
 
-    def relative_fluxes(self, teff: float, rdc=None, rpb=None):
+    def relative_fluxes(self, teff:  Union[float, ndarray]):
         raise NotImplementedError
 
     def relative_flux_mixture(self, teffs: float, fractions, rdc=None):
         raise NotImplementedError
 
-    def contamination(self, ci, teff1: float, teff2: float, rdc=None, rpb=None):
+    def contamination(self, cr: float, teff1: float, teff2: float):
         raise NotImplementedError
 
     def exposure_times(self, teff, rtime, rflux=1.0, tflux=1.0):
@@ -73,22 +74,20 @@ class _BaseContamination:
             Flux in the reference passband with the reference exposure time
         tflux : float, optional
             Target flux in the reference passband
-        rpb : str, optional
-            Name of the reference passband
 
         """
         return rtime * tflux / rflux / self.relative_fluxes(teff)
 
-    def c_as_pandas(self, ci, teff1, teff2, rdc=None, rpb=None):
+    def c_as_pandas(self, ci, teff1, teff2):
         """Contamination as a pandas DataFrame."""
-        return pd.DataFrame(self.contamination(ci, teff1, teff2, rdc, rpb),
+        return pd.DataFrame(self.contamination(ci, teff1, teff2),
                             columns=pd.Index(self.instrument.pb_names, name='passband'),
                             index=pd.Index(uint32(teff2), name='teff'))
 
-    def c_as_xarray(self, ci, teff1, teff2, rdc=None, rpb=None):
+    def c_as_xarray(self, ci, teff1, teff2):
         """Contamination as an xarray DataArray."""
         from xarray import DataArray
-        return DataArray(self.contamination(ci, teff1, teff2, rdc, rpb),
+        return DataArray(self.contamination(ci, teff1, teff2),
                          name='contamination',
                          dims=['teff', 'passband'],
                          coords=[uint32(teff2), self.instrument.pb_names],
@@ -121,7 +120,8 @@ class BBContamination(_BaseContamination):
             nwl = ceil((f.wl_max - f.wl_min) / self._delta_l)
             self._wl_grids.append(linspace(f.wl_min, f.wl_max, nwl))
 
-    def absolute_flux(self, teff: float, wl: Union[float,Iterable]) -> ndarray:
+    @staticmethod
+    def absolute_flux(teff: float, wl: Union[float, Iterable]) -> ndarray:
         """The absolute flux given an effective temperature and wavelength.
 
         Parameters
@@ -137,7 +137,8 @@ class BBContamination(_BaseContamination):
         """
         return planck(teff, 1e-9 * wl)
 
-    def relative_flux(self, teff: float, wl: float, wlref: float) -> ndarray:
+    @staticmethod
+    def relative_flux(teff: float, wl: Union[float, ndarray], wlref: float) -> ndarray:
         """The black body flux normalized to a given reference wavelength.
 
         Parameters
@@ -170,7 +171,7 @@ class BBContamination(_BaseContamination):
         return array(
             [(self.absolute_flux(teff, g) * f(g)).mean() for f, g in zip(self.instrument.filters, self._wl_grids)])
 
-    def relative_fluxes(self, teff: float) -> ndarray:
+    def relative_fluxes(self, teff: Union[float, ndarray]) -> ndarray:
         """Calculates the integrated fluxes for all filters normalized to the reference passband.
 
         Parameters
@@ -223,14 +224,14 @@ class BBContamination(_BaseContamination):
         -------
 
         """
-        l = linspace(wlmin, wlmax, nwl)
-        ft = (1 - cref) * self.relative_flux(teff1, l, wlref)
-        fc = cref * self.relative_flux(teff2, l, wlref)
+        wl = linspace(wlmin, wlmax, nwl)
+        ft = (1 - cref) * self.relative_flux(teff1, wl, wlref)
+        fc = cref * self.relative_flux(teff2, wl, wlref)
 
         fig, axs = subplots(2, 1, figsize=figsize, sharex='all')
-        axs[0].plot(l, ft, label='host')
-        axs[0].plot(l, fc, label='contaminant')
-        axs[1].plot(l, fc / (ft + fc), 'k')
+        axs[0].plot(wl, ft, label='host')
+        axs[0].plot(wl, fc, label='contaminant')
+        axs[1].plot(wl, fc / (ft + fc), 'k')
 
         for ax in axs:
             ax.axhline(cref, ls='--', c='0.75')
@@ -257,14 +258,13 @@ class SMContamination(_BaseContamination):
               name of the reference passband
           """
         super().__init__(instrument, ref_pb)
-        I = self.instrument
 
-        self._spectra = sp = pd.read_hdf(resource_filename(__name__, join("data", "spectra.h5")), 'Z0')
+        self._spectra: DataFrame = DataFrame(pd.read_hdf(resource_filename(__name__, join("data", "spectra.h5")), 'Z0'))
         self._tr_table = trt = xa.open_dataarray(resource_filename(__name__, join("data", "transmission.nc")))
         self._tr_mean = trm = trt.mean(['airmass', 'pwv'])
         self.extinction = interp1d(trm.wavelength, trm, bounds_error=False, fill_value=0.0)
-        self.wl = wl = sp.index.values
-        self.lte = lte = sp.columns.values
+        self.wl = self._spectra.index.values
+        self.lte = lte = self._spectra.columns.values
         self._apply_extinction = True
 
         # Dataframe indices
@@ -291,9 +291,9 @@ class SMContamination(_BaseContamination):
 
     def _integrate_fluxes(self, rdc=None):
         rd = self.reddening(rdc) if rdc is not None else 1.
-        I, sp, wl = self.instrument, self._spectra, self.wl
+        i, sp, wl = self.instrument, self._spectra, self.wl
         tr = self.extinction(wl) if self._apply_extinction else 1.
-        int_fluxes = transpose([(sp.values.T * f(wl) * qe(wl) * tr * rd).sum(1) for f, qe in zip(I.filters, I.qes)])
+        int_fluxes = transpose([(sp.values.T * f(wl) * qe(wl) * tr * rd).sum(1) for f, qe in zip(i.filters, i.qes)])
         self._af = pd.DataFrame(int_fluxes, columns=self.ipb, index=self.iteff)
 
     def _compute_relative_flux_tables(self, rdc=None, rpb=None):
@@ -305,7 +305,7 @@ class SMContamination(_BaseContamination):
         self._rf = pd.DataFrame(af / af[:, self._ri][:, newaxis], columns=self.ipb, index=self.iteff)
         self._ip = interp1d(self.iteff.values, self._rf.values.T, bounds_error=True)
 
-    def relative_fluxes(self, teff: float, rdc=None, rpb=None):
+    def relative_fluxes(self, teff: Union[float, ndarray], rdc=None, rpb=None):
         if (rpb is not None and rpb != self._rpb) or (rdc is not None):
             self._compute_relative_flux_tables(rdc, rpb)
         return self._ip(teff)
@@ -322,28 +322,24 @@ class SMContamination(_BaseContamination):
         x[0] = 1. - x[1:].sum()
         return (self.relative_fluxes(teffs, rdc) * x).sum(1)
 
-    def contamination(self, ci: float, teff1: float, teff2: float, rdc=None, rpb=None):
+    def contamination(self, cref: float, teff1: float, teff2: float):
         """Contamination given reference contamination, host TEff, and contaminant TEff(s)
 
         Per-passband contamination given the contamination in the reference passband and TEffs of the two stars.
 
         Parameters
         ----------
-        ci : float
+        cref : float
             contamination in the reference passband
-        teff : float
+        teff1
             Effective stellar temperature [K]
-        rpb : str, optional
-            Name of the reference passband
+        teff2
+            Effective stellar temperature [K]
 
         Returns
         -------
-        contamination : ndarray
-
+        Per-passband contamination
         """
-        if rpb is not None:
-            self._compute_relative_flux_tables(rdc, rpb)
-        a = (1 - ci) * self._ip(teff1)
-        b = ci * self._ip(teff2)
+        a = (1.0 - cref) * self._ip(teff1)
+        b = cref * self._ip(teff2)
         return b.T / (a + b.T)
-
