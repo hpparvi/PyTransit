@@ -15,23 +15,31 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from os.path import join
+from typing import Union, Iterable
 
 import pandas as pd
 import xarray as xa
-from numpy import transpose, newaxis, uint32, ndarray, asarray, zeros_like, log, exp, sqrt
+from matplotlib.pyplot import subplots, setp
+from numpy import transpose, newaxis, uint32, ndarray, asarray, zeros_like, log, exp, sqrt, ceil, linspace, array
 from pkg_resources import resource_filename
 from scipy.interpolate import interp1d
 
 from .instrument import Instrument
 from ..utils.physics import planck
 
-class Contamination:
-    """A base class to deal with transit light curves with flux contamination.
+
+class _BaseContamination:
+    """A base class to model flux contamination (blending) in transit light curves.
+
+    A base class to model flux contamination (blending) in transit light curves.
+
+    Notes
+    -----
+    This class does not implement all the necessary functionality, and is not meant to be used as-is.
     """
 
     def __init__(self, instrument: Instrument, ref_pb: str = None) -> None:
         """
-
         Parameters
         ----------
         instrument
@@ -43,13 +51,13 @@ class Contamination:
         self._ri = 0
         self._rpb = self.instrument.pb_names[self._ri]
 
-    def relative_fluxes(self, teff, rdc=None, rpb=None):
+    def relative_fluxes(self, teff: float, rdc=None, rpb=None):
         raise NotImplementedError
 
-    def relative_flux_mixture(self, teffs, fractions, rdc=None):
+    def relative_flux_mixture(self, teffs: float, fractions, rdc=None):
         raise NotImplementedError
 
-    def contamination(self, ci, teff1, teff2, rdc=None, rpb=None):
+    def contamination(self, ci, teff1: float, teff2: float, rdc=None, rpb=None):
         raise NotImplementedError
 
     def exposure_times(self, teff, rtime, rflux=1.0, tflux=1.0, rdc=None, rpb=None):
@@ -72,80 +80,154 @@ class Contamination:
         return rtime * tflux / rflux / self.relative_fluxes(teff, rdc, rpb)
 
 
-class BBContamination(Contamination):
-    """Third light contamination based on black body approximation
+class BBContamination(_BaseContamination):
+    """Third light contamination based on black body approximation.
+
+    This class offers a simple black-body model for flux contamination in which the target star and the contaminant(s)
+    are approximated as black bodies with effective temperatures Tt, Tc1, Tc2, ..., Tcn.
     """
-    def __init__(self, instrument, ref_pb):
+
+    def __init__(self, instrument: Instrument, ref_pb: str, delta_l: float = 10):
         """
 
         Parameters
         ----------
-        :param instrument : Instrument
-            Instrument configuration
-        :param ref_pb : str, optional
-            name of the reference passband
+        instrument
+            Instrument configuration.
+        ref_pb
+            Reference passband name.
+        delta_l
+            Wavelength grid spacing in nm.
         """
         super().__init__(instrument, ref_pb)
-        I = self.instrument
+        self._delta_l = delta_l
+        self._wl_grids = []
+        for f in self.instrument.filters:
+            nwl = ceil((f.wl_max - f.wl_min) / self._delta_l)
+            self._wl_grids.append(linspace(f.wl_min, f.wl_max, nwl))
 
-    def cn_fluxes(self, wl, Ttar, Tcon, wlref, cnref):
-        """Relative target and contaminant star fluxes given a reference wavelength and a contamination factor.
-
-        Calculates the relative target and contaminant star fluxes
-        for wavelengths `wl` given the target and comparison star
-        temperatures, a reference wavelength, and a contamination
-        factor in the reference wavelength.
+    def absolute_flux(self, teff: float, wl: Union[float,Iterable]) -> ndarray:
+        """The absolute flux given an effective temperature and wavelength.
 
         Parameters
         ----------
+        teff
+            The effective temperature in K
+        wl
+            The wavelength (or an array of) in nm
 
-          wl     : Wavelength [m]
-          Ttar   : Target star effective temperature [K]
-          Tcon   : Comparison star effective temperature [K]
-          wlref  : Reference wavelength [m]
-          cnref  : Contamination in the reference wavelength (0-1)
+        Returns
+        -------
+        Black body spectral radiance.
+        """
+        return planck(teff, 1e-9 * wl)
+
+    def relative_flux(self, teff: float, wl: float, wlref: float) -> ndarray:
+        """The black body flux normalized to a given reference wavelength.
+
+        Parameters
+        ----------
+        teff
+            The effective temperature of the radiating body [K]
+        wl
+            The wavelength [nm]
+        wlref
+            The reference wavelength [nm]
+
+        Returns
+        -------
+        The black body flux normalized to a given reference wavelength
+        """
+        return planck(teff, 1e-9 * wl) / planck(teff, 1e-9 * wlref)
+
+    def absolute_fluxes(self, teff: float) -> ndarray:
+        """Calculates the integrated absolute fluxes for all filters for a star with the given effective temperature
+
+        Parameters
+        ----------
+        teff
+            The effective temperature of the radiating body [K]
+
+        Returns
+        -------
+        The integrated absolute fluxes for the filters in the instrument.
+        """
+        return array(
+            [(self.absolute_flux(teff, g) * f(g)).mean() for f, g in zip(self.instrument.filters, self._wl_grids)])
+
+    def relative_fluxes(self, teff: float) -> ndarray:
+        """Calculates the integrated fluxes for all filters normalized to the reference passband.
+
+        Parameters
+        ----------
+        teff
+            The effective temperature of the radiating body [K]
+
+        Returns
+        -------
+            The integrated fluxes for all filters normalized to the reference passband.
+        """
+        fluxes = self.absolute_fluxes(teff)
+        return fluxes / fluxes[self._ri]
+
+    def contamination(self, cref: float, teff1: float, teff2: float) -> ndarray:
+        """Calculates the contamination factors for all the filters given the contamination in the reference passband.
+
+        Parameters
+        ----------
+        cref
+            Reference passband contamination
+        teff1
+            Host star effective temperature
+        teff2
+            Contaminant effective temperature
+
+        Returns
+        -------
+            Contamination factors for all the filters.
+        """
+        ft = (1.0 - cref) * self.relative_fluxes(teff1)
+        fc = cref * self.relative_fluxes(teff2)
+        return fc / (ft + fc)
+
+    def plot(self, teff1: float, teff2: float, cref, wlref=600, wlmin=100, wlmax=1100, nwl=200, figsize=None):
+        """Plots the contamination model.
+
+        Parameters
+        ----------
+        teff1
+        teff2
+        cref
+        wlref
+        wlmin
+        wlmax
+        nwl
+        figsize
 
         Returns
         -------
 
-          ftar  : Target flux
-          fcon  : contaminant flux
         """
-        ftar = (1 - cnref) * planck(Ttar, wl) / planck(Ttar, wlref)
-        fcon = cnref * planck(Tcon, wl) / planck(Tcon, wlref)
-        return ftar, fcon
+        l = linspace(wlmin, wlmax, nwl)
+        ft = (1 - cref) * self.relative_flux(teff1, l, wlref)
+        fc = cref * self.relative_flux(teff2, l, wlref)
+
+        fig, axs = subplots(2, 1, figsize=figsize, sharex='all')
+        axs[0].plot(l, ft, label='host')
+        axs[0].plot(l, fc, label='contaminant')
+        axs[1].plot(l, fc / (ft + fc), 'k')
+
+        for ax in axs:
+            ax.axhline(cref, ls='--', c='0.75')
+            ax.axvline(wlref, ls='--', c='0.75')
+
+        axs[0].legend(fontsize='small')
+        setp(axs, xlim=(wlmin, wlmax))
+        setp(axs[1], ylim=(-0.05, 1.05))
+        fig.tight_layout()
 
 
-    def contamination(self, wl, Ttar, Tcon, wlref, cnref):
-        """Contamination given a reference wavelength and a contamination factor.
-
-        Calculates the contamination factor for wavelengths `wl`
-        given the target and comparison star temperatures, a
-        reference wavelength, and a contamination factor in the
-        reference wavelength.
-
-
-        Parameters
-        ----------
-
-          wl     : Wavelength [m]
-          Ttar   : Target star effective temperature [K]
-          Tcon   : Comparison star effective temperature [K]
-          wlref  : Reference wavelength [m]
-          cnref  : Contamination in the reference wavelength (0-1)
-
-        Returns
-        -------
-
-          c : Contamination in the given wavelength(s)
-
-        """
-        ftar, fcon = self.cn_fluxes(wl, Ttar, Tcon, wlref, cnref)
-        return fcon / (ftar + fcon)
-
-
-
-class SMContamination(Contamination):
+class SMContamination(_BaseContamination):
     """A class that models flux contamination based on stellar spectrum models.
     """
 
@@ -272,7 +354,7 @@ class SMContamination(Contamination):
     def c_as_pandas(self, ci, teff1, teff2, rdc=None, rpb=None):
         """Contamination as a pandas DataFrame."""
         return pd.DataFrame(self.contamination(ci, teff1, teff2, rdc, rpb),
-                            columns=pd.Index(self.pb_names, name='passband'),
+                            columns=pd.Index(self.instrument.pb_names, name='passband'),
                             index=pd.Index(uint32(teff2), name='teff'))
 
     def c_as_xarray(self, ci, teff1, teff2, rdc=None, rpb=None):
@@ -281,5 +363,5 @@ class SMContamination(Contamination):
         return DataArray(self.contamination(ci, teff1, teff2, rdc, rpb),
                          name='contamination',
                          dims=['teff', 'passband'],
-                         coords=[uint32(teff2), self.pb_names],
+                         coords=[uint32(teff2), self.instrument.pb_names],
                          attrs={'TEff_1': teff1})
