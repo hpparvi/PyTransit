@@ -60,7 +60,7 @@ class _BaseContamination:
     def contamination(self, ci, teff1: float, teff2: float, rdc=None, rpb=None):
         raise NotImplementedError
 
-    def exposure_times(self, teff, rtime, rflux=1.0, tflux=1.0, rdc=None, rpb=None):
+    def exposure_times(self, teff, rtime, rflux=1.0, tflux=1.0):
         """Exposure times that give equal flux as in the reference passband
 
         Parameters
@@ -77,7 +77,22 @@ class _BaseContamination:
             Name of the reference passband
 
         """
-        return rtime * tflux / rflux / self.relative_fluxes(teff, rdc, rpb)
+        return rtime * tflux / rflux / self.relative_fluxes(teff)
+
+    def c_as_pandas(self, ci, teff1, teff2, rdc=None, rpb=None):
+        """Contamination as a pandas DataFrame."""
+        return pd.DataFrame(self.contamination(ci, teff1, teff2, rdc, rpb),
+                            columns=pd.Index(self.instrument.pb_names, name='passband'),
+                            index=pd.Index(uint32(teff2), name='teff'))
+
+    def c_as_xarray(self, ci, teff1, teff2, rdc=None, rpb=None):
+        """Contamination as an xarray DataArray."""
+        from xarray import DataArray
+        return DataArray(self.contamination(ci, teff1, teff2, rdc, rpb),
+                         name='contamination',
+                         dims=['teff', 'passband'],
+                         coords=[uint32(teff2), self.instrument.pb_names],
+                         attrs={'TEff_1': teff1})
 
 
 class BBContamination(_BaseContamination):
@@ -290,7 +305,7 @@ class SMContamination(_BaseContamination):
         self._rf = pd.DataFrame(af / af[:, self._ri][:, newaxis], columns=self.ipb, index=self.iteff)
         self._ip = interp1d(self.iteff.values, self._rf.values.T, bounds_error=True)
 
-    def relative_fluxes(self, teff, rdc=None, rpb=None):
+    def relative_fluxes(self, teff: float, rdc=None, rpb=None):
         if (rpb is not None and rpb != self._rpb) or (rdc is not None):
             self._compute_relative_flux_tables(rdc, rpb)
         return self._ip(teff)
@@ -307,26 +322,7 @@ class SMContamination(_BaseContamination):
         x[0] = 1. - x[1:].sum()
         return (self.relative_fluxes(teffs, rdc) * x).sum(1)
 
-    def exposure_times(self, teff, rtime, rflux=1.0, tflux=1.0, rdc=None, rpb=None):
-        """Exposure times that give equal flux as in the reference passband
-
-        Parameters
-        ----------
-        teff : float
-            Effective stellar temperature [K]
-        rtime : float
-            Exposure time in the reference passband
-        rflux : float, optional
-            Flux in the reference passband with the reference exposure time
-        tflux : float, optional
-            Target flux in the reference passband
-        rpb : str, optional
-            Name of the reference passband
-
-        """
-        return rtime * tflux / rflux / self.relative_fluxes(teff, rdc, rpb)
-
-    def contamination(self, ci, teff1, teff2, rdc=None, rpb=None):
+    def contamination(self, ci: float, teff1: float, teff2: float, rdc=None, rpb=None):
         """Contamination given reference contamination, host TEff, and contaminant TEff(s)
 
         Per-passband contamination given the contamination in the reference passband and TEffs of the two stars.
@@ -351,17 +347,3 @@ class SMContamination(_BaseContamination):
         b = ci * self._ip(teff2)
         return b.T / (a + b.T)
 
-    def c_as_pandas(self, ci, teff1, teff2, rdc=None, rpb=None):
-        """Contamination as a pandas DataFrame."""
-        return pd.DataFrame(self.contamination(ci, teff1, teff2, rdc, rpb),
-                            columns=pd.Index(self.instrument.pb_names, name='passband'),
-                            index=pd.Index(uint32(teff2), name='teff'))
-
-    def c_as_xarray(self, ci, teff1, teff2, rdc=None, rpb=None):
-        """Contamination as an xarray DataArray."""
-        from xarray import DataArray
-        return DataArray(self.contamination(ci, teff1, teff2, rdc, rpb),
-                         name='contamination',
-                         dims=['teff', 'passband'],
-                         coords=[uint32(teff2), self.instrument.pb_names],
-                         attrs={'TEff_1': teff1})
