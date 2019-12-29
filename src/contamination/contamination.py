@@ -19,6 +19,7 @@ from typing import Union, Iterable
 
 import pandas as pd
 import xarray as xa
+from numba import njit
 from matplotlib.pyplot import subplots, setp
 from numpy import transpose, newaxis, uint32, ndarray, asarray, zeros_like, log, exp, ceil, linspace, array
 from pandas import DataFrame
@@ -27,6 +28,15 @@ from scipy.interpolate import interp1d
 
 from .instrument import Instrument
 from ..utils.physics import planck
+
+
+@njit
+def contaminate_light_curve(flux, contamination, pbids):
+    npt = flux.size
+    contaminated_flux = zeros_like(flux)
+    for i in range(npt):
+        contaminated_flux[i] = contamination[pbids[i]] + (1.0-contamination[pbids[i]])*flux[i]
+    return contaminated_flux
 
 
 class _BaseContamination:
