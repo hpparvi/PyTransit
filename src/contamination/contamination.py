@@ -31,7 +31,24 @@ from ..utils.physics import planck
 
 
 @njit
-def contaminate_light_curve(flux, contamination, pbids):
+def contaminate_light_curve(flux: ndarray, contamination: ndarray, pbids: ndarray) -> ndarray:
+    """Contaminates a transit light curve.
+
+    Contaminates a transit light curve with npb passbands. 
+
+    Parameters
+    ----------
+    flux: 1d array-like
+        Transit light curve with npb passbands.
+    contamination: 1d array-like
+        Array of per-passband contamination values.
+    pbids: 1d array-like
+        Passband indices that map each light curve element to a single passband.
+
+    Returns
+    -------
+    Contaminated transit light curve
+    """
     npt = flux.size
     contaminated_flux = zeros_like(flux)
     for i in range(npt):
