@@ -19,12 +19,13 @@ from typing import Union, Iterable
 
 import pandas as pd
 import xarray as xa
+
 from numba import njit
 from matplotlib.pyplot import subplots, setp
 from numpy import transpose, newaxis, uint32, ndarray, asarray, zeros_like, log, exp, ceil, linspace, array
 from pandas import DataFrame
 from pkg_resources import resource_filename
-from scipy.interpolate import interp1d
+from scipy.interpolate import interp1d, RegularGridInterpolator
 
 from .instrument import Instrument
 from ..utils.physics import planck
@@ -34,7 +35,7 @@ from ..utils.physics import planck
 def contaminate_light_curve(flux: ndarray, contamination: ndarray, pbids: ndarray) -> ndarray:
     """Contaminates a transit light curve.
 
-    Contaminates a transit light curve with npb passbands. 
+    Contaminates a transit light curve with npb passbands.
 
     Parameters
     ----------
@@ -119,6 +120,48 @@ class _BaseContamination:
                          dims=['teff', 'passband'],
                          coords=[uint32(teff2), self.instrument.pb_names],
                          attrs={'TEff_1': teff1})
+
+    def plot(self, teff1: float, teff2: float, cref, wlref=600, wlmin=305, wlmax=995, nwl=500, figsize=None, axs=None):
+        """Plots the contamination model.
+
+        Parameters
+        ----------
+        teff1
+        teff2
+        cref
+        wlref
+        wlmin
+        wlmax
+        nwl
+        figsize
+
+        Returns
+        -------
+
+        """
+        wl = linspace(wlmin, wlmax, nwl)
+        ft = (1 - cref) * self.relative_flux(teff1, wl, wlref)
+        fc = cref * self.relative_flux(teff2, wl, wlref)
+
+        if axs is None:
+            fig, axs = subplots(2, 1, figsize=figsize, sharex='all', constrained_layout=True)
+        else:
+            fig = None
+
+        axs[0].plot(wl, ft, label='host')
+        axs[0].plot(wl, fc, label='contaminant')
+        axs[1].plot(wl, fc / (ft + fc), 'k')
+
+        for ax in axs:
+            ax.axhline(cref, ls='--', c='0.75')
+            ax.axvline(wlref, ls='--', c='0.75')
+
+        axs[0].legend(fontsize='small')
+        setp(axs, xlim=(wlmin, wlmax))
+        setp(axs[0], ylabel='Relative flux')
+        setp(axs[1], ylim=(-0.05, 1.05), xlabel='Wavelength [nm]', ylabel='Contamination')
+        #fig.tight_layout()
+        return fig
 
 
 class BBContamination(_BaseContamination):
@@ -233,42 +276,6 @@ class BBContamination(_BaseContamination):
         fc = cref * self.relative_fluxes(teff2)
         return fc / (ft + fc)
 
-    def plot(self, teff1: float, teff2: float, cref, wlref=600, wlmin=100, wlmax=1100, nwl=200, figsize=None):
-        """Plots the contamination model.
-
-        Parameters
-        ----------
-        teff1
-        teff2
-        cref
-        wlref
-        wlmin
-        wlmax
-        nwl
-        figsize
-
-        Returns
-        -------
-
-        """
-        wl = linspace(wlmin, wlmax, nwl)
-        ft = (1 - cref) * self.relative_flux(teff1, wl, wlref)
-        fc = cref * self.relative_flux(teff2, wl, wlref)
-
-        fig, axs = subplots(2, 1, figsize=figsize, sharex='all')
-        axs[0].plot(wl, ft, label='host')
-        axs[0].plot(wl, fc, label='contaminant')
-        axs[1].plot(wl, fc / (ft + fc), 'k')
-
-        for ax in axs:
-            ax.axhline(cref, ls='--', c='0.75')
-            ax.axvline(wlref, ls='--', c='0.75')
-
-        axs[0].legend(fontsize='small')
-        setp(axs, xlim=(wlmin, wlmax))
-        setp(axs[1], ylim=(-0.05, 1.05))
-        fig.tight_layout()
-
 
 class SMContamination(_BaseContamination):
     """A class that models flux contamination based on stellar spectrum models.
@@ -293,6 +300,10 @@ class SMContamination(_BaseContamination):
         self.wl = self._spectra.index.values
         self.lte = lte = self._spectra.columns.values
         self._apply_extinction = True
+
+        # 2D interpolator for the spectrum table
+        # --------------------------------------
+        self._rgi = RegularGridInterpolator((self.wl, self.lte), self._spectra.values)
 
         # Dataframe indices
         # -----------------
@@ -331,6 +342,40 @@ class SMContamination(_BaseContamination):
             self._ri = self.instrument.pb_names.index(rpb)
         self._rf = pd.DataFrame(af / af[:, self._ri][:, newaxis], columns=self.ipb, index=self.iteff)
         self._ip = interp1d(self.iteff.values, self._rf.values.T, bounds_error=True)
+
+    def absolute_flux(self, teff: float, wl: Union[float, Iterable]) -> ndarray:
+        """The absolute flux given an effective temperature and a set of wavelength.
+
+        Parameters
+        ----------
+        teff: float
+            The effective temperature [K]
+        wl: array-like
+            The wavelengths to calculate the flux in [nm]
+
+        Returns
+        -------
+        Spectral radiance.
+        """
+        return self._rgi((wl, teff))
+
+    def relative_flux(self, teff: float, wl: Union[float, ndarray], wlref: float) -> ndarray:
+        """The stellar flux normalized to a given reference wavelength.
+
+        Parameters
+        ----------
+        teff: float
+            The effective temperature of the radiating body [K]
+        wl: array-like
+            The wavelengths to calculate the flux in [nm]
+        wlref: float
+            The reference wavelength [nm]
+
+        Returns
+        -------
+        The flux normalized to a given reference wavelength
+        """
+        return self.absolute_flux(teff, wl) / self.absolute_flux(teff, wlref)
 
     def relative_fluxes(self, teff: Union[float, ndarray], rdc=None, rpb=None):
         if (rpb is not None and rpb != self._rpb) or (rdc is not None):
