@@ -67,7 +67,7 @@ class _BaseContamination:
     This class does not implement all the necessary functionality, and is not meant to be used as-is.
     """
 
-    def __init__(self, instrument: Instrument, ref_pb: str = None) -> None:
+    def __init__(self, instrument: Instrument, ref_pb: str) -> None:
         """
         Parameters
         ----------
@@ -83,7 +83,7 @@ class _BaseContamination:
     def relative_fluxes(self, teff:  Union[float, ndarray]):
         raise NotImplementedError
 
-    def relative_flux_mixture(self, teffs: float, fractions, rdc=None):
+    def relative_flux_mixture(self, teffs: Iterable, fractions: Iterable):
         raise NotImplementedError
 
     def contamination(self, cr: float, teff1: float, teff2: float):

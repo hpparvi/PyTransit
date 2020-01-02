@@ -8,7 +8,11 @@ PyTransit
 [![ASCL](https://img.shields.io/badge/ASCL-A1505.024-blue.svg?style=flat)](http://ascl.net/1505.024)
 [![DOI](https://zenodo.org/badge/5871/hpparvi/PyTransit.svg)](https://zenodo.org/badge/latestdoi/5871/hpparvi/PyTransit)
 
-Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. PyTransit offers optimised CPU and GPU implementations of popular exoplanet transit models with a unified interface. The Mandel & Agol and Gimenez models come with specialised optimisations for transmission spectroscopy that allow a transit model to be calculated in multiple passbands with only a minor additional computational cost to a single passband.
+Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. PyTransit offers optimised CPU and 
+GPU implementations of popular exoplanet transit models with a unified interface, and thrives to be *the fastest and the 
+most versatile* tool for transit modelling in Python. The Mandel & Agol and Gimenez models 
+come with specialised optimisations for transmission spectroscopy that allow a transit model to be calculated in multiple 
+passbands with only a minor additional computational cost to a single passband.
 
 ![](notebooks/model_example_1.png)
 
