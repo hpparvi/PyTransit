@@ -17,6 +17,7 @@
 
 # -- Project information -----------------------------------------------------
 
+master_doc = 'index'
 project = 'PyTransit'
 copyright = '2020, Hannu Parviainen'
 author = 'Hannu Parviainen'
