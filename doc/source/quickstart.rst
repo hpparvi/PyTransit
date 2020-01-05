@@ -6,7 +6,7 @@ Installation
 
 Pytransit can be installed by `pip`, or by cloning the repository from GitHub.
 
-.. code-block::
+.. code-block:: bash
 
     git clone https://github.com/hpparvi/PyTransit.git
     cd PyTransit
@@ -16,7 +16,7 @@ Basic transit model evaluation
 ------------------------------
 
 First, the transit model needs to be imported from PyTransit. After this, it can be initialised, and
-setup by giving it a set of mid-observation times.
+set up by giving it a set of mid-observation times.
 
 .. code-block:: python
 
