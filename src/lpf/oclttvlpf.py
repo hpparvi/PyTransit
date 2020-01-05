@@ -17,6 +17,7 @@
 
 from matplotlib.pyplot import subplots, setp
 from numpy import sqrt, array, inf, int, s_, percentile, median, mean, round, zeros, atleast_2d, ceil, poly1d, polyfit
+from numpy.random.mtrand import permutation
 from uncertainties import ufloat, UFloat
 
 try:
@@ -106,27 +107,34 @@ class OCLTTVLPF(OCLBaseLPF):
         tcs = median(df[tccols], 0)
         return mean((tcs[1:] - tcs[0]) / (self.epoch[1:] - self.epoch[0]))
 
-    def plot_ttvs(self, burn=0, thin=1, axs=None, figsize=None, bwidth=0.8, fmt='h', windows=None):
+    def plot_ttvs(self, burn=0, thin=1, axs=None, figsize=None, bwidth=0.8, fmt='h', windows=None, sigma=inf, nsamples=1000):
         assert fmt in ('d', 'h', 'min')
         multiplier = {'d': 1, 'h': 24, 'min': 1440}
         ncol = 1 if windows is None else len(windows)
         fig, axs = (None, axs) if axs is not None else subplots(1, ncol, figsize=figsize, sharey=True)
         df = self.posterior_samples(burn, thin, derived_parameters=False)
         tccols = [c for c in df.columns if 'tc' in c]
-        tcs = median(df[tccols], 0)
-        lineph = poly1d(polyfit(self.epoch, tcs, 1))
-        tc_linear = lineph(self.epoch)
-        p = multiplier[fmt] * percentile(df[tccols] - tc_linear, [50, 16, 84, 0.5, 99.5], 0)
+        df = df[tccols]
+        s = df.std()
+        m = (s < median(s) + sigma * s.std()).values
+        df = df.iloc[:, m]
+        epochs = self.epoch[m]
+
+        samples = []
+        for tcs in permutation(df.values)[:nsamples]:
+            samples.append(tcs - poly1d(polyfit(epochs, tcs, 1))(epochs))
+        samples = array(samples)
+        p = multiplier[fmt] * percentile(samples, [50, 16, 84, 0.5, 99.5], 0)
         setp(axs, ylabel='Transit center - linear prediction [{}]'.format(fmt), xlabel='Transit number')
         if windows is None:
-            plot_estimates(self.epoch, p, axs, bwidth)
+            plot_estimates(epochs, p, axs, bwidth)
             if with_seaborn:
                 sb.despine(ax=axs, offset=15)
         else:
             setp(axs[1:], ylabel='')
             for ax, w in zip(axs, windows):
-                m = (self.epoch > w[0]) & (self.epoch < w[1])
-                plot_estimates(self.epoch[m], p[:, m], ax, bwidth)
+                m = (epochs > w[0]) & (epochs < w[1])
+                plot_estimates(epochs[m], p[:, m], ax, bwidth)
                 setp(ax, xlim=w)
                 if with_seaborn:
                     sb.despine(ax=ax, offset=15)

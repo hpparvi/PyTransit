@@ -74,6 +74,8 @@ class TESSLPF(BaseLPF):
             df = tb.to_pandas().dropna(subset=['TIME', 'SAP_FLUX', 'PDCSAP_FLUX'])
             time, flux = df.TIME.values, df.PDCSAP_FLUX.values if use_pdc else df.SAP_FLUX.values
 
+        time += self.bjdrefi
+
         if split_transits:
             self.zero_epoch = zero_epoch - self.bjdrefi
             self.period = period
