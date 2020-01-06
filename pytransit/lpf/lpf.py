@@ -17,6 +17,7 @@
 import math as mt
 from pathlib import Path
 from time import strftime
+from typing import Union, Iterable
 
 import pandas as pd
 import seaborn as sb
@@ -465,7 +466,7 @@ class BaseLPF:
         self.lnpriors.append(T14)
 
     def add_as_prior(self, mean: float, std: float) -> None:
-        """Add a normal prior on the scaled semi-major axis (a / Rstar).
+        """Add a normal prior on the scaled semi-major axis :math:`(a / R_\star)`.
 
         Parameters
         ----------
@@ -540,7 +541,18 @@ class BaseLPF:
                         self.errors[m], self.noise_ids[m], self.nsamples[m], self.exptimes[m])
         self._init_parameters()
 
-    def lnprior(self, pv):
+    def lnprior(self, pv: ndarray) -> Union[Iterable,float]:
+        """Log prior density for a 1D or 2D array of model parameters.
+
+        Parameters
+        ----------
+        pv: ndarray
+            Either a 1D parameter vector or a 2D parameter array.
+
+        Returns
+        -------
+            Log prior density for the given parameter vector(s).
+        """
         return self.ps.lnprior(pv) + self.additional_priors(pv)
 
     def additional_priors(self, pv):
@@ -549,6 +561,17 @@ class BaseLPF:
         return sum([f(pv) for f in self.lnpriors], 0)
 
     def lnlikelihood(self, pv):
+        """Log likelihood for a 1D or 2D array of model parameters.
+
+        Parameters
+        ----------
+        pv: ndarray
+            Either a 1D parameter vector or a 2D parameter array.
+
+        Returns
+        -------
+            Log likelihood for the given parameter vector(s).
+        """
         flux_m = self.flux_model(pv)
         wn = 10**(atleast_2d(pv)[:,self._sl_err])
         return lnlike_normal_v(self.ofluxa, flux_m, wn, self.noise_ids, self.lcids)

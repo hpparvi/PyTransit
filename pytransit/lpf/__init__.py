@@ -14,5 +14,13 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Log posterior functions for transit modelling and parameter estimation.
+
+A log posterior function (LPF) class creates a basis for Bayesian parameter estimation from transit light curves.
+In PyTransit, LPFs are a bit more than what the name implies. An LPF stores the observations, model priors, etc.
+It also contains methods for posterior optimisation and MCMC sampling.
+
+"""
+
 from .lpf import BaseLPF
 from .baselines.legendrebaseline import LegendreBaseline
