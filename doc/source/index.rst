@@ -25,6 +25,7 @@ can also be used almost directly for transit modelling and parameter estimation.
     implemented_models
     lpfs
     advanced
+    api/modules
 
 Indices and tables
 ==================

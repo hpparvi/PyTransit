@@ -450,12 +450,10 @@ class BaseLPF:
 
         Parameters
         ----------
-        mean
-        std
-
-        Returns
-        -------
-
+        mean: float
+            Mean of the normal distribution
+        std: float
+            Standard deviation of the normal distribution.
         """
 
         def T14(pv):
@@ -467,16 +465,14 @@ class BaseLPF:
         self.lnpriors.append(T14)
 
     def add_as_prior(self, mean: float, std: float) -> None:
-        """Add a prior on the scaled semi-major axis
+        """Add a normal prior on the scaled semi-major axis (a / Rstar).
 
         Parameters
         ----------
-        mean
-        std
-
-        Returns
-        -------
-
+        mean: float
+            Mean of the normal distribution.
+        std: float
+            Standard deviation of the normal distribution
         """
         def as_prior(pv):
             a = as_from_rhop(pv[2], pv[1])

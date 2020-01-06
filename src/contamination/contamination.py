@@ -14,6 +14,13 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Module to model flux contamination in transit light curves.
+
+Module to model flux contamination in transit light curves. The `pytransit.contamination` module contains two flux
+contamination models: a physical model based on simulated stellar spectra (`SMContamination`), and a simple one
+based on black body approximation (`BBContamination`). The models share an common interface.
+"""
+
 from os.path import join
 from typing import Union, Iterable
 
