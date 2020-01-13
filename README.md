@@ -2,6 +2,7 @@ PyTransit
 =========
 
 [![Travis](http://img.shields.io/travis/hpparvi/PyTransit/development.svg?style=flat)](https://travis-ci.org/hpparvi/PyTransit)
+[![Documentation Status](https://readthedocs.org/projects/pytransit/badge/?version=latest)](https://pytransit.readthedocs.io/en/latest/?badge=latest)
 [![Licence](http://img.shields.io/badge/license-GPLv2-blue.svg?style=flat)](http://www.gnu.org/licenses/gpl-2.0.html)
 [![MNRAS](https://img.shields.io/badge/MNRAS-10.1093%2Fmnras%2Fstv894-blue.svg)](http://mnras.oxfordjournals.org/content/450/3/3233)
 [![arXiv](http://img.shields.io/badge/arXiv-1504.07433-blue.svg?style=flat)](http://arxiv.org/abs/1504.07433)
@@ -17,6 +18,10 @@ passbands with only a minor additional computational cost to a single passband.
 ![](notebooks/model_example_1.png)
 
 The package has been used in research since 2010, and is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433), which also details the model-specific optimisations and model performance.
+
+## Documentation
+
+Read the docs at [pytransit.readthedocs.io](https://pytransit.readthedocs.io).
 
 ## News
 

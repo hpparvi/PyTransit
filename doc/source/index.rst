@@ -20,12 +20,14 @@ can also be used almost directly for transit modelling and parameter estimation.
     :maxdepth: 2
     :caption: Contents:
 
+    installation
     quickstart
     models
     implemented_models
     lpfs
     advanced
     api/modules
+
 
 Indices and tables
 ==================
