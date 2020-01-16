@@ -45,6 +45,9 @@ and optionally other information, such as passbands, exposure times, supersampli
 Data setup
 ----------
 
+Basics
+******
+
 At its simplest, the data setup requires the mid-observation times. If no other other information is
 given, the model assumes that all the data have been observed in a single passband and that the
 exposure time is short enough so that supersampling is not needed.
@@ -53,38 +56,92 @@ exposure time is short enough so that supersampling is not needed.
 
     tm.set_data(time)
 
-If the exposure time is long (Kepler and TESS long cadence mode, for example), supersampling can
-be set up by giving the exposure time and supersampling rage
-
-.. code-block:: python
-
-    tm.set_data(time, exptime=xxx, nsamples=yyy)
-
-where `exptime`and `nsamples` are floats.
-
 Heterogeneous light curves
 **************************
 
-If the time array consists of many light curves heteregeneos
+PyTransit can be used to model heterogeneous time series. That is, the time array can consist of many transit light curves
+observed in different passbands and with different exposure times (requiring different supersampling rates). For this to
+work, the model first needs to assign each individual exposure to a single *light curve*. This is done by passing the
+model an integer array of light curve indices (`lcids`), where each element maps an exposure to a light curve.
 
 .. code-block:: python
 
     tm.set_data(time=[0,1,2,3,4], lcids=[0,0,0,1,1])
 
+Just setting the light curve indices doesn't do anything by itself, but it is necessary to use the more advanced features
+described below.
+
+The model doesn't need to be told explicitly how many light curves the dataset contains, since the number
+of light curves is obtained from the unique `lcids` elements.
 
 Multiple passbands
 ******************
+
+PyTransit can model transits observed in multiple passbands, where each passband has a different stellar limb darkening
+profile. For this, the model needs to be given an integer array of passband indices (`pbids`), where *each element maps*
+*a light curve to a single passband*. Expanding the previous example, we can tell the model that the two light curves
+belong to different passbands as
 
 .. code-block:: python
 
     tm.set_data(time=[0,1,2,3,4], lcids=[0,0,0,1,1], pbids=[0,1])
 
-Common evaluation methods
--------------------------
+After this, the model expects to get a two-dimensional array of limb darkening coefficients when evaluated, as explained
+later in more detail.
+
+Supersampling
+*************
+
+If the exposure time is long (Kepler and TESS long cadence mode, for example), supersampling can
+be set up by giving the exposure time (`exptime`) and supersampling rate (`nsamples`), where `exptime` and `nsamples`
+are either floats or arrays.
+
+A single float can be given when modelling a homogeneous time series
+
+.. code-block:: python
+
+    tm.set_data(time, exptime=0.02, nsamples=10)
+
+in which case the whole time series will have a constant supersampling rate. An array of per-light-curve values can be
+given when modelling heterogeneous time series
+
+.. code-block:: python
+
+    tm.set_data(time=[0,1,2,3,4], lcids=[0,0,0,1,1], exptime=[0.0007, 0.02], nsamples=[1, 10])
+
+in which case each light curve will have a separate supersampling rate.
+
+Advanced example
+****************
+
+For a slightly more advanced example, a set of three light curves, two observed in one passband and the third in another
+passband, with times
+
+.. code-block:: python
+
+    times_1 (lc = 0, pb = 0, sc) = [1, 2, 3, 4]
+    times_2 (lc = 1, pb = 0, lc) = [3, 4]
+    times_3 (lc = 2, pb = 1, sc) = [1, 5, 6]
+
+would be set up as
+
+.. code-block:: python
+
+    tm.set_data(time  = [1, 2, 3, 4, 3, 4, 1, 5, 6],
+                lcids = [0, 0, 0, 0, 1, 1, 2, 2, 2],
+                pbids = [0, 0, 1],
+                nsamples = [  1,  10,   1],
+                exptimes = [0.1, 1.0, 0.1])
+
+
+Model evaluation
+----------------
 
 .. code-block:: python
 
     tm.evaluate_ps()
+
+.. code-block:: python
 
     tm.evaluate_pv()
 
