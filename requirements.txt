@@ -12,3 +12,4 @@ tables
 astropy
 matplotlib
 tqdm
+semantic_version

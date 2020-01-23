@@ -16,10 +16,10 @@
 
 from setuptools import setup, find_packages
 
-version = '2.0'
+from version import version
 
 setup(name='PyTransit',
-      version=version,
+      version=str(version),
       description='Fast and painless exoplanet transit light curve modelling.',
       author='Hannu Parviainen',
       author_email='hpparvi@gmail.com',
@@ -29,7 +29,7 @@ setup(name='PyTransit',
                 'pytransit.utils', 'pytransit.param', 'pytransit.contamination','pytransit.lpf', 'pytransit.lpf.tess',
                 'pytransit.lpf.baselines'],
       package_data={'':['*.cl'], 'pytransit.contamination':['data/*']},
-      install_requires=["numpy", "numba", "scipy", "pandas", "xarray", "tables"],
+      install_requires=["numpy", "numba", "scipy", "pandas", "xarray", "tables", "semantic_version"],
       include_package_data=True,
       license='GPLv2',
       classifiers=[
@@ -40,8 +40,6 @@ setup(name='PyTransit',
           "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
           "Operating System :: OS Independent",
           "Programming Language :: Python",
-          "Programming Language :: Fortran",
-          "Programming Language :: Other"
       ],
       keywords='astronomy astrophysics exoplanets'
       )
