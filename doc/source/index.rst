@@ -14,7 +14,7 @@ systems. PyTransit v2 replaces all the Fortran routines with numba-accelerated p
 aims to implement all the major functionality also in OpenCL.
 
 While PyTransit is aimed to work as a library offering tools for customised transit analysis codes, it
-can also be used almost directly for transit modelling and parameter estimation.
+can also be used directly for transit modelling and parameter estimation.
 
 .. toctree::
     :maxdepth: 2
