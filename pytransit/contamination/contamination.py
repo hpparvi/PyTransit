@@ -194,7 +194,7 @@ class BBContamination(_BaseContamination):
         self._delta_l = delta_l
         self._wl_grids = []
         for f in self.instrument.filters:
-            nwl = ceil((f.wl_max - f.wl_min) / self._delta_l)
+            nwl = int(ceil((f.wl_max - f.wl_min) / self._delta_l))
             self._wl_grids.append(linspace(f.wl_min, f.wl_max, nwl))
 
     @staticmethod
