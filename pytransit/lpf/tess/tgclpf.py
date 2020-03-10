@@ -42,7 +42,8 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
     **Note:** This LPF is meant to be inherited by an LPF that implements the `read_data` method.
     """
 
-    def __init__(self, name: str, zero_epoch, period, use_ldtk: bool = False):
+    def __init__(self, name: str, use_ldtk: bool = False):
+        self.result_dir = Path('.')
 
         times, fluxes, pbnames, pbs, wns, covs = self.read_data()
         pbids = pd.Categorical(pbs, categories=pbnames).codes
@@ -51,12 +52,6 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         self.wns = wns
         PhysContLPF.__init__(self, name, passbands=pbnames, times=times, fluxes=fluxes, pbids=pbids, wnids=wnids,
                              covariates=covs)
-
-        self.result_dir = Path('.')
-        self.set_prior('zero_epoch', NP(zero_epoch.n, zero_epoch.s))
-        self.set_prior('period', NP(period.n, period.s))
-        self.set_prior('k2_app', UP(0.10 ** 2, 0.20 ** 2))
-        self.set_prior('teff_h', NP(3250, 140))
 
     def read_data(self):
         """Read in the TESS light curve and the ground-based data.
