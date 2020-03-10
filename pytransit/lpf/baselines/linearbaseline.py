@@ -46,11 +46,14 @@ class LinearModelBaseline:
 
         bls = []
         for i, tn in enumerate(range(self.nlc)):
+            ins = '' if not hasattr(self, 'ins') else self.ins[i] + '_'
+            pii = '' if not hasattr(self, 'piis') else self.piis[i]
+
             fstd = self.fluxes[i].std()
-            bls.append(LParameter(f'bli_{tn}', f'bl_intercept_{tn}', '', NP(1.0, fstd), bounds=(-inf, inf)))
+            bls.append(LParameter(f'bli_{ins}{pii}', f'bl_intercept_{ins}{pii}', '', NP(1.0, fstd), bounds=(-inf, inf)))
             for ipoly in range(1, self.ncov[i] + 1):
                 bls.append(
-                    LParameter(f'bls_{tn}_{ipoly}', f'bl_c_{tn}_{ipoly}', '', NP(0.0, fstd), bounds=(-inf, inf)))
+                    LParameter(f'bls_{ins}{pii}_{ipoly}', f'bl_c_{ins}{pii}_{ipoly}', '', NP(0.0, fstd), bounds=(-inf, inf)))
         self.ps.add_global_block('baseline', bls)
         self._sl_bl = self.ps.blocks[-1].slice
         self._start_bl = self.ps.blocks[-1].start

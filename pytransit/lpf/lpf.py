@@ -328,9 +328,9 @@ class BaseLPF:
         """Limb darkening parameter initialisation.
         """
         pld = concatenate([
-            [PParameter('q1_{:d}'.format(i), 'q1_coefficient', '', U(0, 1), bounds=(0, 1)),
-             PParameter('q2_{:d}'.format(i), 'q2_coefficient', '', U(0, 1), bounds=(0, 1))]
-            for i in range(self.npb)])
+            [PParameter(f'q1_{pb}', 'q1 coefficient {pb}', '', U(0, 1), bounds=(0, 1)),
+             PParameter(f'q2_{pb}', 'q2 coefficient {pb}', '', U(0, 1), bounds=(0, 1))]
+            for i,pb in enumerate(self.passbands)])
         self.ps.add_passband_block('ldc', 2, self.npb, pld)
         self._sl_ld = self.ps.blocks[-1].slice
         self._start_ld = self.ps.blocks[-1].start
