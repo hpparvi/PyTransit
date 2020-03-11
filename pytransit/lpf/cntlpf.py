@@ -91,16 +91,11 @@ class PhysContLPF(BaseLPF):
         self._pid_cn = arange(ps.blocks[-1].start, ps.blocks[-1].stop)
         self._sl_cn = ps.blocks[-1].slice
 
-    def additional_priors(self, pv):
-        """Additional priors."""
-        pv = atleast_2d(pv)
-        return sum([f(pv) for f in self.lnpriors], 0)
-
     def _init_instrument(self):
         """Set up the instrument and contamination model."""
         self.instrument = Instrument('example', [sdss_g, sdss_r, sdss_i, sdss_z])
         self.cm = SMContamination(self.instrument, "i'")
-        self.lnpriors.append(lambda pv: where(pv[:, 4] < pv[:, 5], 0, -inf))
+        self._additional_log_priors.append(lambda pv: where(pv[:, 4] < pv[:, 5], 0, -inf))
 
     def transit_model(self, pvp):
         pvp = atleast_2d(pvp)

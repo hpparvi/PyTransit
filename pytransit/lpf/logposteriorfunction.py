@@ -45,6 +45,7 @@ class LogPosteriorFunction:
             Name of the log posterior function instance.
         """
         self.name = name
+        self.result_dir = Path(result_dir if result_dir is not None else '.')
 
         # Declare high-level objects
         # --------------------------
@@ -52,7 +53,6 @@ class LogPosteriorFunction:
         self.de = None  # Differential evolution optimiser
         self.sampler = None  # MCMC sampler
         self._local_minimization = None
-        self.result_dir = Path(result_dir)
 
         # Initialise the additional lnprior list
         # --------------------------------------
@@ -149,13 +149,13 @@ class LogPosteriorFunction:
             rfit = self.de._fitness
             mfit = isfinite(rfit)
 
-            if hasattr(self, '_old_de_fitness'):
+            if self._old_de_fitness is not None:
                 m = isfinite(self._old_de_fitness)
                 axs[0].hist(-self._old_de_fitness[m], facecolor='midnightblue', bins=25, alpha=0.25)
             axs[0].hist(-rfit[mfit], facecolor='midnightblue', bins=25)
 
             for i, ax in zip(plot_parameters, axs[1:]):
-                if hasattr(self, '_old_de_fitness'):
+                if self._old_de_fitness is not None:
                     m = isfinite(self._old_de_fitness)
                     ax.plot(self._old_de_population[m, i], -self._old_de_fitness[m], 'kx', alpha=0.25)
                 ax.plot(self.de.population[mfit, i], -rfit[mfit], 'k.')

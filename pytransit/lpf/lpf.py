@@ -14,14 +14,8 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import math as mt
 from pathlib import Path
-from time import strftime
-from typing import Union, Iterable
-
-import pandas as pd
-import seaborn as sb
-import xarray as xa
+from typing import List, Union, Iterable
 
 from astropy.stats import sigma_clip
 from matplotlib.pyplot import subplots, setp
@@ -31,10 +25,7 @@ from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_lik
                    array, atleast_2d, isscalar, atleast_1d, where, isfinite, arange, unique, squeeze, ceil, percentile,
                    floor, diag, nanstd)
 from numpy.random import uniform, normal, permutation, multivariate_normal
-from scipy.optimize import minimize
 from scipy.stats import norm
-from tqdm.auto import tqdm
-from emcee import EnsembleSampler
 
 try:
     from ldtk import LDPSetCreator
@@ -46,9 +37,8 @@ from ..models.transitmodel import TransitModel
 from ..orbits.orbits_py import duration_eccentric, as_from_rhop, i_from_ba, i_from_baew, d_from_pkaiews, epoch
 from ..param.parameter import ParameterSet, PParameter, GParameter, LParameter
 from ..param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as GM
-from ..contamination.filter import sdss_g, sdss_r, sdss_i, sdss_z
-from ..utils.de import DiffEvol
 from .. import QuadraticModel
+from .logposteriorfunction import LogPosteriorFunction
 
 
 @njit(cache=False)
@@ -95,10 +85,10 @@ def map_ldc(ldc):
     return uv
 
 
-class BaseLPF:
+class BaseLPF(LogPosteriorFunction):
     _lpf_name = 'BaseLPF'
 
-    def __init__(self, name: str, passbands: list, times: list = None, fluxes: list = None, errors: list = None,
+    def __init__(self, name: str, passbands: list, times: list = None, fluxes: Iterable = None, errors: list = None,
                  pbids: list = None, covariates: list = None, wnids: list = None, tm: TransitModel = None,
                  nsamples: tuple = 1, exptimes: tuple = 0., init_data=True, result_dir: Path = None):
         """The base Log Posterior Function class.
@@ -150,16 +140,13 @@ class BaseLPF:
 
         self._pre_initialisation()
 
-        self.tm = tm or QuadraticModel(klims=(0.01, 0.75), nk=512, nz=512)
+        super().__init__(name=name, result_dir=result_dir)
 
-        # LPF name
-        # --------
-        self.name = name
-        self.result_dir = result_dir
+        self.tm = tm or QuadraticModel(klims=(0.01, 0.75), nk=512, nz=512)
 
         # Passbands
         # ---------
-        # Should be arranged from blue to red
+        # Passbands should be arranged from blue to red
         if isinstance(passbands, (list, tuple, ndarray)):
             self.passbands = passbands
         else:
@@ -221,7 +208,9 @@ class BaseLPF:
         self._post_initialisation()
 
 
-    def _init_data(self, times, fluxes, pbids=None, covariates=None, errors=None, wnids = None, nsamples=1, exptimes=0.):
+    def _init_data(self, times: Union[List, ndarray], fluxes: Union[List, ndarray], pbids: Union[List, ndarray] = None,
+                   covariates: Union[List, ndarray] = None, errors: Union[List, ndarray] = None, wnids: Union[List, ndarray] = None,
+                   nsamples: Union[int, ndarray, Iterable] = 1, exptimes: Union[float, ndarray, Iterable] = 0.):
 
         if isinstance(times, ndarray) and times.ndim == 1 and times.dtype == float:
             times = [times]
@@ -291,10 +280,6 @@ class BaseLPF:
             #self.covstart = concatenate([[0], self.covsize.cumsum()[:-1]])
             #self.cova = concatenate(self.covariates)
 
-    def print_parameters(self, columns: int = 2):
-        columns = max(1, columns)
-        for i, p in enumerate(self.ps):
-            print(p.__repr__(), end=('\n' if i % columns == columns - 1 else '\t'))
 
     def _init_parameters(self):
         self.ps = ParameterSet()
@@ -417,27 +402,21 @@ class BaseLPF:
     def residuals(self, pv):
         return self.ofluxa - self.flux_model(pv)
 
-    def set_prior(self, parameter, prior, *nargs) -> None:
-        if isinstance(parameter, str):
-            descriptions = self.ps.descriptions
-            names = self.ps.names
-            if parameter in descriptions:
-                parameter = descriptions.index(parameter)
-            elif parameter in names:
-                parameter = names.index(parameter)
-            else:
-                params = ', '.join([f"{ln} ({sn})" for ln, sn in zip(self.ps.descriptions, self.ps.names)])
-                raise ValueError(f'Parameter "{parameter}" not found from the parameter set: {params}')
+    def lnlikelihood(self, pv):
+        """Log likelihood for a 1D or 2D array of model parameters.
 
-        if isinstance(prior, str):
-            if prior.lower() in ['n', 'np', 'normal']:
-                prior = N(nargs[0], nargs[1])
-            elif prior.lower() in ['u', 'up', 'uniform']:
-                prior = U(nargs[0], nargs[1])
-            else:
-                raise ValueError(f'Unknown prior "{prior}". Allowed values are (N)ormal and (U)niform.')
+        Parameters
+        ----------
+        pv: ndarray
+            Either a 1D parameter vector or a 2D parameter array.
 
-        self.ps[parameter].prior = prior
+        Returns
+        -------
+            Log likelihood for the given parameter vector(s).
+        """
+        flux_m = self.flux_model(pv)
+        wn = 10**(atleast_2d(pv)[:,self._sl_err])
+        return lnlike_normal_v(self.ofluxa, flux_m, wn, self.noise_ids, self.lcids)
 
     def set_radius_ratio_prior(self, kmin, kmax):
         for p in self.ps[self._sl_k2]:
@@ -507,12 +486,9 @@ class BaseLPF:
         self.ldps = self.ldsc.create_profiles(1000)
         self.ldps.resample_linear_z()
         self.ldps.set_uncertainty_multiplier(uncertainty_multiplier)
-
         def ldprior(pv):
             return self.ldps.lnlike_tq(pv[:, self._sl_ld].reshape([pv.shape[0], -1, 2]))
-
         self.lnpriors.append(ldprior)
-
 
     def remove_outliers(self, sigma=5):
         fmodel = squeeze(self.flux_model(self.de.minimum_location))
@@ -532,7 +508,6 @@ class BaseLPF:
                         errors=(errors if self.errors is not None else None), wnids=self.noise_ids,
                         nsamples=self.nsamples, exptimes=self.exptimes)
 
-
     def remove_transits(self, tids):
         m = ones(len(self.times), bool)
         m[tids] = False
@@ -541,125 +516,8 @@ class BaseLPF:
                         self.errors[m], self.noise_ids[m], self.nsamples[m], self.exptimes[m])
         self._init_parameters()
 
-    def lnprior(self, pv: ndarray) -> Union[Iterable,float]:
-        """Log prior density for a 1D or 2D array of model parameters.
-
-        Parameters
-        ----------
-        pv: ndarray
-            Either a 1D parameter vector or a 2D parameter array.
-
-        Returns
-        -------
-            Log prior density for the given parameter vector(s).
-        """
-        return self.ps.lnprior(pv) + self.additional_priors(pv)
-
-    def additional_priors(self, pv):
-        """Additional priors."""
-        pv = atleast_2d(pv)
-        return sum([f(pv) for f in self.lnpriors], 0)
-
-    def lnlikelihood(self, pv):
-        """Log likelihood for a 1D or 2D array of model parameters.
-
-        Parameters
-        ----------
-        pv: ndarray
-            Either a 1D parameter vector or a 2D parameter array.
-
-        Returns
-        -------
-            Log likelihood for the given parameter vector(s).
-        """
-        flux_m = self.flux_model(pv)
-        wn = 10**(atleast_2d(pv)[:,self._sl_err])
-        return lnlike_normal_v(self.ofluxa, flux_m, wn, self.noise_ids, self.lcids)
-
-    def lnposterior(self, pv):
-        lnp = self.lnprior(pv) + self.lnlikelihood(pv)
-        return where(isfinite(lnp), lnp, -inf)
-
-    def __call__(self, pv):
-        return self.lnposterior(pv)
-
-    def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation', leave=False,
-                        plot_convergence: bool = True, use_tqdm: bool = True):
-
-        if self.de is None:
-            self.de = DiffEvol(self.lnposterior, clip(self.ps.bounds, -1, 1), npop, maximize=True, vectorize=True)
-            if population is None:
-                self.de._population[:, :] = self.create_pv_population(npop)
-            else:
-                self.de._population[:,:] = population
-        for _ in tqdm(self.de(niter), total=niter, desc=label, leave=leave, disable=(not use_tqdm)):
-            pass
-
-        if plot_convergence:
-            fig, axs = subplots(1, 5, figsize=(13, 2), constrained_layout=True)
-            rfit = self.de._fitness
-            mfit = isfinite(rfit)
-
-            if hasattr(self, '_old_de_fitness'):
-                m = isfinite(self._old_de_fitness)
-                axs[0].hist(-self._old_de_fitness[m], facecolor='midnightblue', bins=25, alpha=0.25)
-            axs[0].hist(-rfit[mfit], facecolor='midnightblue', bins=25)
-
-            for i, ax in zip([0, 2, 3, 4], axs[1:]):
-                if hasattr(self, '_old_de_fitness'):
-                    m = isfinite(self._old_de_fitness)
-                    ax.plot(self._old_de_population[m, i], -self._old_de_fitness[m], 'kx', alpha=0.25)
-                ax.plot(self.de.population[mfit, i], -rfit[mfit], 'k.')
-                ax.set_xlabel(self.ps.descriptions[i])
-            setp(axs, yticks=[])
-            setp(axs[1], ylabel='Log posterior')
-            setp(axs[0], xlabel='Log posterior')
-            sb.despine(fig, offset=5)
-        self._old_de_population = self.de.population.copy()
-        self._old_de_fitness = self.de._fitness.copy()
-
-    def optimize_local(self, pv0=None, method='powell'):
-        if pv0 is None:
-            if self.de is not None:
-                pv0 = self.de.minimum_location
-            else:
-                pv0 = self.ps.mean_pv
-                pv0[self._sl_err] = log10(self.wn)
-        res = minimize(lambda pv: -self.lnposterior(pv), pv0, method=method)
-        self._local_minimization = res
-
-    def sample_mcmc(self, niter: int = 500, thin: int = 5, repeats: int = 1, npop: int = None, population=None,
-                    label='MCMC sampling', reset=True, leave=True, save=False, use_tqdm: bool = True):
-
-        if save and self.result_dir is None:
-            raise ValueError('The MCMC sampler is set to save the results, but the result directory is not set.')
-
-        if self.sampler is None:
-            if population is not None:
-                pop0 = population
-            elif hasattr(self, '_local_minimization') and self._local_minimization is not None:
-                pop0 = multivariate_normal(self._local_minimization.x, diag(full(len(self.ps), 0.001 ** 2)), size=npop)
-            elif self.de is not None:
-                pop0 = self.de.population.copy()
-            else:
-                raise ValueError('Sample MCMC needs an initial population.')
-            self.sampler = EnsembleSampler(pop0.shape[0], pop0.shape[1], self.lnposterior, vectorize=True)
-        else:
-            pop0 = self.sampler.chain[:,-1,:].copy()
-
-        for i in tqdm(range(repeats), desc='MCMC sampling', disable=(not use_tqdm)):
-            if reset or i > 0:
-                self.sampler.reset()
-            for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter,
-                          desc='Run {:d}/{:d}'.format(i+1, repeats), leave=False, disable=(not use_tqdm)):
-                pass
-            if save:
-                self.save(self.result_dir)
-            pop0 = self.sampler.chain[:,-1,:].copy()
-
     def posterior_samples(self, burn: int = 0, thin: int = 1, derived_parameters: bool = True):
-        fc = self.sampler.chain[:, burn::thin, :].reshape([-1, self.de.n_par])
-        df = pd.DataFrame(fc, columns=self.ps.names)
+        df = super().posterior_samples(burn=burn, thin=thin)
         if derived_parameters:
             for k2c in df.columns[self._sl_k2]:
                 df[k2c.replace('k2', 'k')] = sqrt(df[k2c])
@@ -669,30 +527,6 @@ class BaseLPF:
             average_ks = sqrt(df.iloc[:, self._sl_k2]).mean(1).values
             df['t14'] = d_from_pkaiews(df.p.values, average_ks, df.a.values, df.inc.values, 0., 0., 1)
         return df
-
-    def plot_mcmc_chains(self, pid: int=0, alpha: float=0.1, thin: int=1, ax=None):
-        fig, ax = (None, ax) if ax is not None else subplots()
-        ax.plot(self.sampler.chain[:, ::thin, pid].T, 'k', alpha=alpha)
-        fig.tight_layout()
-        return fig
-
-    def save(self, save_path: Path = '.'):
-        save_path = Path(save_path)
-
-        if self.de:
-            de = xa.DataArray(self.de.population, dims='pvector name'.split(), coords={'name': self.ps.names})
-        else:
-            de = None
-
-        if self.sampler is not None:
-            mc = xa.DataArray(self.sampler.chain, dims='pvector step name'.split(),
-                              coords={'name': self.ps.names}, attrs={'ndim': self.de.n_par, 'npop': self.de.n_pop})
-        else:
-            mc = None
-
-        ds = xa.Dataset(data_vars={'de_population_lm': de, 'lm_mcmc': mc},
-                        attrs={'created': strftime('%Y-%m-%d %H:%M:%S'), 'target': self.name})
-        ds.to_netcdf(save_path.joinpath(f'{self.name}.nc'))
 
     def plot_light_curves(self, method='de', ncol: int = 3, width: float = 2., max_samples: int = 1000, figsize=None,
                           data_alpha=0.5, ylim=None):
