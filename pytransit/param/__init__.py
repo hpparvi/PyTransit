@@ -17,3 +17,4 @@
 from .parameter import (ParameterSet, PParameter, LParameter, GParameter,
                         PParameterBlock, LParameterBlock, GParameterBlock)
 from .prior import Prior, NormalPrior, UniformPrior
+from .utilities import derive_qois
