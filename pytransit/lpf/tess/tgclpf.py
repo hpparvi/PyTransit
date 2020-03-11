@@ -18,7 +18,8 @@ from pathlib import Path
 
 import pandas as pd
 from matplotlib.pyplot import subplots, setp
-from numpy import arange, concatenate, zeros, inf, atleast_2d, where, repeat, squeeze, argsort, isfinite, ndarray, floor
+from numpy import arange, concatenate, zeros, inf, atleast_2d, where, repeat, squeeze, argsort, isfinite, ndarray, \
+    floor, ceil
 from numpy.random import uniform
 
 from pytransit import LinearModelBaseline
@@ -48,6 +49,9 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         times, fluxes, pbnames, pbs, wns, covs = self.read_data()
         pbids = pd.Categorical(pbs, categories=pbnames).codes
         wnids = arange(len(times))
+
+        self._stess = None
+        self._ntess = None
 
         self.wns = wns
         PhysContLPF.__init__(self, name, passbands=pbnames, times=times, fluxes=fluxes, pbids=pbids, wnids=wnids,
@@ -176,7 +180,7 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
                 raise NotImplementedError
 
         nlc = self.nlc - self._stess
-        nrow = int(floor(nlc / ncol))
+        nrow = int(ceil(nlc / ncol))
 
         if axes is None:
             fig, axs = subplots(nrow, ncol, figsize=figsize, constrained_layout=True, sharex='all', sharey='all',
@@ -190,7 +194,8 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         etess = self._stess
         t0, p = self.de.minimum_location[[0, 1]]
 
-        for i, ax in enumerate(axs.T.flat):
+        for i in range(nlc):
+            ax = axs.flat[i]
             t = self.times[etess + i]
             e = epoch(t.mean(), t0, p)
             tc = t0 + e * p
