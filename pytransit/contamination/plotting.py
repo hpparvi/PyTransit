@@ -52,16 +52,15 @@ def plot_kdist(samples, side: str = 'right', ax=None, clip: tuple = (0, 1), perc
     ax.plot((sign * offset, sign * my), (m, m), 'k')
     p = percentile(samples, percentiles)
     mask = (yd > p[0]) & (yd < p[1])
-    ax.fill_betweenx(yd[mask], sign * (offset + xd[mask] / xd.max()), alpha=0.25)
+    ax.fill_betweenx(yd[mask], sign * (offset + xd[mask] / xd.max()),  sign*offset, alpha=0.25)
     return fig
 
-
 def plot_two_sided_kde(left, right, clip: tuple = (0, 1), percentiles: tuple = (16, 84),
-                       offset: float = 0.02, bw=0.005, gridsize: int = 200):
-    fig = plot_kdist(left, side='left', clip=clip, percentiles=percentiles, offset=offset, bw=bw, gridsize=gridsize)
-    plot_kdist(right, side='right', clip=clip, percentiles=percentiles, offset=offset, bw=bw, gridsize=gridsize,
-               ax=fig.axes[0])
-    pl.setp(fig.axes[0], xlim=(-1.1, 1.1))
+                       offset: float = 0.02, bw=0.005, gridsize: int = 200, ax = None):
+    fig, ax = (None, ax) if ax is not None else pl.subplots()
+    plot_kdist(left, side='left', clip=clip, percentiles=percentiles, offset=offset, bw=bw, gridsize=gridsize, ax=ax)
+    plot_kdist(right, side='right', clip=clip, percentiles=percentiles, offset=offset, bw=bw, gridsize=gridsize, ax=ax)
+    pl.setp(ax, xlim=(-1.1, 1.1))
     return fig
 
 def _jplot(hte, cte, cnr, imp, rho, fw=10, nb=30, gs=25, simulation=False, **kwargs):
