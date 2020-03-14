@@ -185,12 +185,6 @@ class BaseLPF(LogPosteriorFunction):
         self.pbids: ndarray = None       # Array of passband indices for each light curve
         self.lcslices: list = None       # List of light curve slices
 
-        self._local_minimization = None
-
-        # Initialise the additional lnprior list
-        # --------------------------------------
-        self.lnpriors = []
-
         if init_data:
             # Set up the observation data
             # ---------------------------
@@ -442,7 +436,7 @@ class BaseLPF(LogPosteriorFunction):
             t14 = duration_eccentric(pv[:, 1], sqrt(pv[:, 4]), a, arccos(pv[:, 3] / a), 0, 0, 1)
             return norm.logpdf(t14, mean, std)
 
-        self.lnpriors.append(T14)
+        self._additional_log_priors.append(T14)
 
     def add_as_prior(self, mean: float, std: float) -> None:
         """Add a normal prior on the scaled semi-major axis :math:`(a / R_\star)`.
@@ -457,7 +451,7 @@ class BaseLPF(LogPosteriorFunction):
         def as_prior(pv):
             a = as_from_rhop(pv[2], pv[1])
             return norm.logpdf(a, mean, std)
-        self.lnpriors.append(as_prior)
+        self._additional_log_priors.append(as_prior)
 
     def add_ldtk_prior(self, teff: tuple, logg: tuple, z: tuple, passbands: tuple,
                        uncertainty_multiplier: float = 3, **kwargs) -> None:
@@ -488,7 +482,7 @@ class BaseLPF(LogPosteriorFunction):
         self.ldps.set_uncertainty_multiplier(uncertainty_multiplier)
         def ldprior(pv):
             return self.ldps.lnlike_tq(pv[:, self._sl_ld].reshape([pv.shape[0], -1, 2]))
-        self.lnpriors.append(ldprior)
+        self._additional_log_priors.append(ldprior)
 
     def remove_outliers(self, sigma=5):
         fmodel = squeeze(self.flux_model(self.de.minimum_location))
