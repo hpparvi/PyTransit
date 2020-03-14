@@ -26,6 +26,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+from typing import Union
 
 from numpy import ones, ndarray, asarray, zeros, unique, atleast_1d
 
@@ -101,9 +102,13 @@ class TransitModel(object):
         else:
             return self.evaluate_pv(*nargs, **kwargs)
 
-
     # Default evaluation methods
     # --------------------------
+    def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
+                 a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = None, w: Union[float, ndarray] = None,
+                 copy: bool = True) -> ndarray:
+        raise NotImplementedError
+
     def evaluate_ps(self, k: float, ldc: ndarray, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0., copy: bool = True) -> ndarray:
         raise NotImplementedError
 

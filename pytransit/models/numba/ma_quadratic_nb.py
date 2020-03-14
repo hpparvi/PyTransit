@@ -249,7 +249,7 @@ def eval_quad(z0, k, u, c):
 
 
 @njit(cache=False, parallel=False)
-def quadratic_z_s(z, k, u, ):
+def quadratic_z_s(z, k, u):
     if abs(k - 0.5) < 1.0e-4:
         k = 0.5
 
@@ -571,4 +571,36 @@ def quadratic_model_interpolated(t, pvp, ldc, lcids, pbids, nsamples, exptimes,
                 else:
                     flux[ipv, j] += quadratic_interpolated_z_s(z, k, ldc[ipv, 2*ipb:2*(ipb+1)], edt, ldt, let, kt, zt)
             flux[ipv, j] /= nsamples[ilc]
+    return flux
+
+
+@njit(parallel=True, fastmath=False)
+def quadratic_model_interpolated_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes,
+                                   es, ms, tae, edt, ldt, let, kt, zt):
+    ldc = atleast_2d(ldc)
+    npv = k.shape[0]
+    npt = t.size
+    flux = zeros((npv, npt))
+    for j in prange(npt):
+        for ipv in range(npv):
+            ilc = lcids[j]
+            ipb = pbids[ilc]
+
+            if k.shape[1] == 1:
+                _k = k[ipv, 0]
+            else:
+                _k = k[ipv, ipb]
+
+            if _k < kt[0] or _k > kt[-1] or isnan(_k) or isnan(a[ipv]) or isnan(i[ipv]):
+                flux[ipv, j] = inf
+            else:
+                for isample in range(1, nsamples[ilc] + 1):
+                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                    z = z_ip_s(t[j] + time_offset, t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], es, ms, tae)
+                    if z > 1.0 + _k:
+                        flux[ipv, j] += 1.
+                    else:
+                        flux[ipv, j] += quadratic_interpolated_z_s(z, _k, ldc[ipv, 2 * ipb:2 * (ipb + 1)], edt, ldt,
+                                                                   let, kt, zt)
+                flux[ipv, j] /= nsamples[ilc]
     return flux
