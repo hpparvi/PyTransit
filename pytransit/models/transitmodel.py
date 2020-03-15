@@ -92,7 +92,6 @@ class TransitModel(object):
         self.nsamples = atleast_1d(nsamples) if nsamples is not None else ones(self.nlc, 'int')
         self.exptimes = atleast_1d(exptimes) if exptimes is not None else zeros(self.nlc, 'int')
 
-
     def init_orbit_table(self, ne: int = 256, nm: int = 512):
         self._tae, self._es, self._ms = ta_ip_calculate_table(ne, nm)
 

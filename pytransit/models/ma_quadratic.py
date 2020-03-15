@@ -28,10 +28,10 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Union
 
-from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros
+from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray
 
 from .numba.ma_quadratic_nb import quadratic_model_interpolated, calculate_interpolation_tables, \
-    quadratic_model_interpolated_v
+    quadratic_model_interpolated_v, quadratic_model_interpolated_s, quadratic_model_direct_v, quadratic_model_direct_s
 from .transitmodel import TransitModel
 
 __all__ = ['QuadraticModel']
@@ -87,27 +87,78 @@ class QuadraticModel(TransitModel):
             raise NotImplementedError
         return squeeze(flux)
 
-
     def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
-                 a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = None, w: Union[float, ndarray] = None,
+                 a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = None,
+                 w: Union[float, ndarray] = None,
                  copy: bool = True) -> ndarray:
-        t0, p, a, i = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i)
-        k, ldc = atleast_2d(k), atleast_2d(ldc)
+        """Evaluates the transit model for a set of scalar or vector parameters.
 
-        if e is None:
-            e = zeros(p.size)
-            w = zeros(p.size)
-        else:
-            e, w = atleast_1d(e), atleast_1d(w)
+        Parameters
+        ----------
+        k
+            Radius ratio(s) either as a single float, 1D vector, or 2D array.
+        ldc
+            Limb darkening coefficients as a 1D or 2D array.
+        t0
+            Transit center(s) as a float or a 1D vector.
+        p
+            Orbital period(s) as a float or a 1D vector.
+        a
+            Orbital semi-major axis (axes) divided by the stellar radius as a float or a 1D vector.
+        i
+            Orbital inclination(s) as a float or a 1D vector.
+        e
+            Orbital eccentricity as a float or a 1D vector.
+        w
+            Argument of periastron as a float or a 1D vector.
+        copy
 
-        if self.interpolate:
-            flux = quadratic_model_interpolated_v(self.time, k, t0, p, a, i, e, w, ldc,
-                                                  self.lcids, self.pbids, self.nsamples, self.exptimes,
-                                                  self._es, self._ms, self._tae, self.ed, self.ld, self.le,
-                                                  self.kt, self.zt)
+        Notes
+        -----
+        The model can be evaluated either for one set of parameters or for many sets of parameters simultaneously.
+        The orbital parameters can be given either as a float or a 1D array-like (preferably ndarray for optimal speed.)
+
+        Returns
+        -------
+
+        """
+
+        ldc = atleast_2d(ldc)
+        npv = ldc.shape[0]
+
+        # Scalar parameters branch
+        # ------------------------
+        if isinstance(t0, float):
+            k = asarray(k)
+            if e is None:
+                e, w = 0., 0.
+
+            if not (isinstance(p, float) and isinstance(a, float) and isinstance(i, float)
+                    and isinstance(e, float) and isinstance(w, float)):
+                raise ValueError("All the orbital parameters need to be scalar if `t0` is scalar.")
+
+            if self.interpolate:
+                flux = quadratic_model_interpolated_s(self.time, k, t0, p, a, i, e, w, ldc,
+                                                      self.lcids, self.pbids, self.nsamples, self.exptimes,
+                                                      self._es, self._ms, self._tae, self.ed, self.ld, self.le,
+                                                      self.kt, self.zt)
+            else:
+                flux = quadratic_model_direct_s(self.time, k, t0, p, a, i, e, w, ldc,
+                                                self.lcids, self.pbids, self.nsamples, self.exptimes,
+                                                self._es, self._ms, self._tae)
+
+        # Parameter population branch
+        # ---------------------------
         else:
-            raise NotImplementedError
-            # flux = quadratic_model_direct_v(self.time, k, t0, p, a, i, e, w, ldc,
-            #                                    self.lcids, self.pbids, self.nsamples, self.exptimes,
-            #                               self._es, self._ms, self._tae)
+            if e is None:
+                e, w = zeros(npv), zeros(npv)
+            if self.interpolate:
+                flux = quadratic_model_interpolated_v(self.time, k, t0, p, a, i, e, w, ldc,
+                                                      self.lcids, self.pbids, self.nsamples, self.exptimes,
+                                                      self._es, self._ms, self._tae, self.ed, self.ld, self.le,
+                                                      self.kt, self.zt)
+            else:
+                flux = quadratic_model_direct_v(self.time, k, t0, p, a, i, e, w, ldc,
+                                                self.lcids, self.pbids, self.nsamples, self.exptimes,
+                                                self._es, self._ms, self._tae)
         return squeeze(flux)
