@@ -18,34 +18,29 @@ set up by giving it a set of mid-observation times.
     tm = QuadraticModel()
     tm.set_data(time)
 
-where `time` is a NumPy array (or a list or a tuple) of transit mid-times for which the model will be evaluated.
+where `time` is a NumPy array (or a list or a tuple) of mid-exposure times for which the model will be evaluated.
 
-After the initialisation and setup, the transit model can be evaluated for a set of scalar parameters as
+After the initialisation and setup, the transit model can be evaluated as
 
 .. code-block:: python
 
-    flux = tm.evaluate_ps(k, ldc, t0, p, a, i, e, w)
+    flux = tm.evaluate(k, ldc, t0, p, a, i, e, w)
 
 where `k` is the planet-star radius ratio, `t0` is the zero epoch, `p` is the orbital period, `a` is the scaled
 semi-major axis, `i` is the inclination, `e` is the eccentricity, `w` is the argument of periastron, and
 `ldc` is an `ndarray` containing the model-specific limb darkening coefficients.
 
-The model can also be evaluated using a 1D parameter vector or a 2D parameter array (one or two dimensional NumPy ndarrays)
+The radius ratio can either be a scalar, a 1D vector, or a 2D array, the limb darkening coefficients are given as a
+1D vector or a 2D array, and the orbital parameters (`t0`, `p`, `a`, `i`, `e`, and `w`) can be either scalars or vectors.
 
-.. code-block:: python
+In the most simple case the limb darkening coefficients are given as a single vector and the rest of the parameters are
+scalars, in which case the `flux` array will also be one dimensional. However, if we want to evaluate the model for multiple parameter values (such as when using *emcee* for MCMC
+sampling), giving a 2D array of limb darkening coefficients and the rest of the parameters as vectors allows PyTransit
+to evaluate the models in parallel, which can lead to significant performance improvements (especially with the OpenCL
+versions of the transit models). Evaluating the model for `n` sets of parameters will result in a `flux` array with a
+shape  `(n, time.size)`.
 
-    flux = tm.evaluate_pv(pv, ldc)
-
-If `pv` is one dimensional, it is assumed to contain the model parameters `[k, t0, p, a, i, e, w]`. If `pv` is
-two-dimensional, it is assumed to contain `n` parameter vectors, one per row (that is, the parameter array should have
-a shape `(n, 7)`).
-
-In the 2D parameter array case, the model is evaluated for all the `n` parameter vectors in parallel and the `flux` array
-will have a shape `(n, time.size)`. The parallelisation can yield significant gains in evaluation speed (especially
-with the OpenCL versions of the transit models), and `TransitModel.evaluate_pv` with a 2D parameter array should be used
-always when evaluating the model for a set of parameters (such as when doing MCMC with *emcee*).
-
-.. note::
-
-    Both the `TransitModel.evaluate_ps` and the 1D version of 'TransitModel.evaluate_pv'
-    use the 2D version of 'TransitModel.evaluate_pv' under the hood.
+A third case, giving a 2D array of radius ratios (or a 1D vector of radius ratios when the orbital parameters are
+scalars), is slightly more advanced, and is used when modelling multicolor photometry (or transmission spectroscopy).
+In this case the model assumes the radius ratio varies from passband to passband, and the setup requires also passband
+indices (see later).
