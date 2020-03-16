@@ -9,7 +9,7 @@ model-specific variations). So, while we use a Mandel & Agol quadratic limb dark
 (`pytransit.QuadraticModel`) as an example here, the evaluation works the same for all the models.
 
 First, the transit model needs to be imported from PyTransit. After this, it can be initialised, and
-set up by giving it a set of mid-observation times.
+set up by giving it (at least) a set of mid-exposure times.
 
 .. code-block:: python
 
