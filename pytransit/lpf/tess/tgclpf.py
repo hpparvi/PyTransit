@@ -45,13 +45,12 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
 
     def __init__(self, name: str, use_ldtk: bool = False):
         self.result_dir = Path('.')
+        self._stess = None
+        self._ntess = None
 
         times, fluxes, pbnames, pbs, wns, covs = self.read_data()
         pbids = pd.Categorical(pbs, categories=pbnames).codes
         wnids = arange(len(times))
-
-        self._stess = None
-        self._ntess = None
 
         self.wns = wns
         PhysContLPF.__init__(self, name, passbands=pbnames, times=times, fluxes=fluxes, pbids=pbids, wnids=wnids,
@@ -96,11 +95,6 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         pvp = pvp[:npop]
         return pvp
 
-    def additional_priors(self, pv) -> ndarray:
-        """Additional priors."""
-        pv = atleast_2d(pv)
-        return sum([f(pv) for f in self.lnpriors], 0)
-
     def posterior_samples(self, burn: int = 0, thin: int = 1, derived_parameters: bool = True):
         df = super().posterior_samples(burn, thin, derived_parameters)
         if derived_parameters:
@@ -111,8 +105,8 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         """Set up the instrument and contamination model."""
         self.instrument = Instrument('example', [sdss_g, sdss_r, sdss_i, sdss_z])
         self.cm = SMContamination(self.instrument, "i'")
-        self.lnpriors.append(lambda pv: where(pv[:, 4] < pv[:, 5], 0, -inf))
-        self.lnpriors.append(lambda pv: where(pv[:, 8] < pv[:, 5], 0, -inf))
+        self.add_prior(lambda pv: where(pv[:, 4] < pv[:, 5], 0, -inf))
+        self.add_prior(lambda pv: where(pv[:, 8] < pv[:, 5], 0, -inf))
 
     def transit_model(self, pvp):
         pvp = atleast_2d(pvp)
@@ -170,21 +164,24 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
 
         return fig
 
-    def plot_gb_transits(self, method='de', pv: ndarray = None, figsize: tuple = (14, 2), axes=None, ncol: int = 4,
+    def plot_gb_transits(self, solution='de', pv: ndarray = None, figsize: tuple = None, axes=None, ncol: int = 4,
                          xlim: tuple = None, ylim: tuple = None):
 
         if pv is None:
-            if method == 'de':
+            if solution.lower() == 'local':
+                pv = self._local_minimization.x
+            elif solution.lower() in ('de', 'global'):
                 pv = self.de.minimum_location
+            elif solution.lower() in ('mcmc', 'mc'):
+                pv = self.posterior_samples().median().values
             else:
-                raise NotImplementedError
+                raise NotImplementedError("'solution' should be either 'local', 'global', or 'mcmc'")
 
         nlc = self.nlc - self._stess
         nrow = int(ceil(nlc / ncol))
 
         if axes is None:
-            fig, axs = subplots(nrow, ncol, figsize=figsize, constrained_layout=True, sharex='all', sharey='all',
-                                squeeze=False)
+            fig, axs = subplots(nrow, ncol, figsize=figsize, sharex='all', sharey='all', squeeze=False)
         else:
             fig, axs = None, axes
 
@@ -192,7 +189,7 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
 
         fmodel = squeeze(self.flux_model(pv))
         etess = self._stess
-        t0, p = self.de.minimum_location[[0, 1]]
+        t0, p = pv[[0, 1]]
 
         for i in range(nlc):
             ax = axs.flat[i]
@@ -206,4 +203,5 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         setp(axs, xlim=xlim, ylim=ylim)
         setp(axs[-1, :], xlabel='Time - T$_c$ [h]')
         setp(axs[:, 0], ylabel='Normalised flux')
+        fig.tight_layout()
         return fig

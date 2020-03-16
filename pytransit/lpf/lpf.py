@@ -372,6 +372,9 @@ class BaseLPF(LogPosteriorFunction):
             pvp[:, self._start_err] = log10(uniform(0.5*wn, 2*wn, size=npop))
         return pvp
 
+    def add_prior(self, prior):
+        self._additional_log_priors.append(prior)
+
     def baseline(self, pv):
         """Multiplicative baseline"""
         return 1.

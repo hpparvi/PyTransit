@@ -197,7 +197,7 @@ class LogPosteriorFunction:
             pop0 = self.sampler.chain[:, -1, :].copy()
 
     def posterior_samples(self, burn: int = 0, thin: int = 1):
-        fc = self.sampler.chain[:, burn::thin, :].reshape([-1, self.de.n_par])
+        fc = self.sampler.chain[:, burn::thin, :].reshape([-1, len(self.ps)])
         df = pd.DataFrame(fc, columns=self.ps.names)
         return df
 
@@ -209,6 +209,7 @@ class LogPosteriorFunction:
 
     def save(self, save_path: Path = '.'):
         save_path = Path(save_path)
+        npar = len(self.ps)
 
         if self.de:
             de = xa.DataArray(self.de.population, dims='pvector parameter'.split(), coords={'parameter': self.ps.names})
@@ -217,7 +218,7 @@ class LogPosteriorFunction:
 
         if self.sampler is not None:
             mc = xa.DataArray(self.sampler.chain, dims='pvector step parameter'.split(),
-                              coords={'parameter': self.ps.names}, attrs={'ndim': self.de.n_par, 'npop': self.de.n_pop})
+                              coords={'parameter': self.ps.names}, attrs={'ndim': npar, 'npop': self.sampler.nwalkers})
         else:
             mc = None
 
