@@ -30,6 +30,12 @@ where `k` is the planet-star radius ratio, `t0` is the zero epoch, `p` is the or
 semi-major axis, `i` is the inclination, `e` is the eccentricity, `w` is the argument of periastron, and
 `ldc` is an `ndarray` containing the model-specific limb darkening coefficients.
 
+The calling simplifies further if we assume a circular orbit, when we can leave `e` and `w` out
+
+.. code-block:: python
+
+    flux = tm.evaluate(k, ldc, t0, p, a, i)
+
 The radius ratio can either be a scalar, a 1D vector, or a 2D array, the limb darkening coefficients are given as a
 1D vector or a 2D array, and the orbital parameters (`t0`, `p`, `a`, `i`, `e`, and `w`) can be either scalars or vectors.
 
