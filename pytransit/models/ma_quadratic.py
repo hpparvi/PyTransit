@@ -62,23 +62,38 @@ class QuadraticModel(TransitModel):
             self.nk = nk
             self.nz = nz
 
-    def evaluate_ps(self, k: float, ldc: ndarray, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0., copy: bool = True) -> ndarray:
-        assert self.time is not None, "Need to set the data before calling the transit model."
-        ldc = atleast_2d(ldc)
-        assert ldc.shape[1] == 2*self.npb, "The quadratic model needs two limb darkening coefficients per passband"
-        pvp = array([[k, t0, p, a, i, e, w]])
+    def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
+                    e: float = None, w: float = None, copy: bool = True) -> ndarray:
+
+        ldc = asarray(ldc)
+        k = asarray(k)
+        if e is None:
+            e, w = 0., 0.
+
+        if self.time is None:
+            raise ValueError("Need to set the data before calling the transit model.")
+        if ldc.size != 2 * self.npb:
+            raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+
         if self.interpolate:
-            flux = quadratic_model_interpolated(self.time, pvp, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes,
-                                                self._es, self._ms, self._tae, self.ed, self.ld, self.le,
-                                                self.kt, self.zt)
+            flux = quadratic_model_interpolated_s(self.time, k, t0, p, a, i, e, w, ldc,
+                                                  self.lcids, self.pbids, self.nsamples, self.exptimes,
+                                                  self._es, self._ms, self._tae, self.ed, self.ld, self.le,
+                                                  self.kt, self.zt)
         else:
-            raise NotImplementedError
+            flux = quadratic_model_direct_s(self.time, k, t0, p, a, i, e, w, ldc,
+                                            self.lcids, self.pbids, self.nsamples, self.exptimes,
+                                            self._es, self._ms, self._tae)
         return squeeze(flux)
 
     def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
-        assert self.time is not None, "Need to set the data before calling the transit model."
         ldc = atleast_2d(ldc)
-        assert ldc.shape[1] == 2*self.npb, "The quadratic model needs two limb darkening coefficients per passband"
+
+        if self.time is None:
+            raise ValueError("Need to set the data before calling the transit model.")
+        if ldc.shape[1] != 2 * self.npb:
+            raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+
         if self.interpolate:
             flux = quadratic_model_interpolated(self.time, pvp, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes,
                                                 self._es, self._ms, self._tae, self.ed, self.ld, self.le,
@@ -120,36 +135,19 @@ class QuadraticModel(TransitModel):
 
         Returns
         -------
-
+        Transit model
         """
-
-        ldc = atleast_2d(ldc)
-        npv = ldc.shape[0]
 
         # Scalar parameters branch
         # ------------------------
         if isinstance(t0, float):
-            k = asarray(k)
-            if e is None:
-                e, w = 0., 0.
-
-            if not (isinstance(p, float) and isinstance(a, float) and isinstance(i, float)
-                    and isinstance(e, float) and isinstance(w, float)):
-                raise ValueError("All the orbital parameters need to be scalar if `t0` is scalar.")
-
-            if self.interpolate:
-                flux = quadratic_model_interpolated_s(self.time, k, t0, p, a, i, e, w, ldc,
-                                                      self.lcids, self.pbids, self.nsamples, self.exptimes,
-                                                      self._es, self._ms, self._tae, self.ed, self.ld, self.le,
-                                                      self.kt, self.zt)
-            else:
-                flux = quadratic_model_direct_s(self.time, k, t0, p, a, i, e, w, ldc,
-                                                self.lcids, self.pbids, self.nsamples, self.exptimes,
-                                                self._es, self._ms, self._tae)
+            return self.evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
 
         # Parameter population branch
         # ---------------------------
         else:
+            ldc = atleast_2d(ldc)
+            npv = ldc.shape[0]
             if e is None:
                 e, w = zeros(npv), zeros(npv)
             if self.interpolate:

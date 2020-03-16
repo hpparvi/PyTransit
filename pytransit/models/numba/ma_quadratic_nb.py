@@ -610,7 +610,7 @@ def quadratic_model_direct_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
 @njit(parallel=True, fastmath=True)
 def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes,
                                    es, ms, tae):
-    ldc = atleast_2d(ldc)
+    ldc = atleast_1d(ldc)
     k = atleast_1d(k)
     npt = t.size
     flux = zeros(npt)
@@ -632,7 +632,7 @@ def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
                 if z > 1.0 + _k:
                     flux[j] += 1.
                 else:
-                    flux[j] += quadratic_z_s(z, _k, ldc[0, 2 * ipb:2 * (ipb + 1)])
+                    flux[j] += quadratic_z_s(z, _k, ldc[2 * ipb:2 * (ipb + 1)])
             flux[j] /= nsamples[ilc]
     return flux
 
