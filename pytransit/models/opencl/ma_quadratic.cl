@@ -181,29 +181,42 @@ __kernel void ma_eccentric_pop(__global const float *times, __global const uint 
          uint pv_length, uint nlc, uint npb,
          __global float *flux){
 
-      uint i_tm = get_global_id(1);    // time vector index
-      uint n_tm = get_global_size(1);  // time vector size
-      uint i_pv = get_global_id(0);    // parameter vector index
-      uint n_pv = get_global_size(0);  // parameter vector population size
-      uint gid  = i_pv*n_tm + i_tm;    // global linear index
-      uint lcid = lcids[i_tm];         // light curve index
-      uint pbid = pbids[lcid];         // passband index
+    uint i_tm = get_global_id(1);    // time vector index
+    uint n_tm = get_global_size(1);  // time vector size
+    uint i_pv = get_global_id(0);    // parameter vector index
+    uint n_pv = get_global_size(0);  // parameter vector population size
+    uint gid  = i_pv*n_tm + i_tm;    // global linear index
+    uint lcid = lcids[i_tm];         // light curve index
+    uint pbid = pbids[lcid];         // passband index
+    uint nks = pv_length - 6;
 
-      __global const float *pv  = &pv_pop[i_pv*pv_length];
-      __global const float *ldc = &ldc_pop[2*npb*i_pv + 2*pbid];
+    __global const float *ks  = &pv_pop[i_pv*pv_length];
+    __global const float *pv  = &pv_pop[i_pv*pv_length + nks];
+    __global const float *ldc = &ldc_pop[2*npb*i_pv + 2*pbid];
 
-      uint ns = nss[lcid];
-      float exptime = exptimes[lcid];
-      float toffset, z;
-      float ma_offset = mean_anomaly_offset(pv[5], pv[6]);
+    uint ns = nss[lcid];
+    float exptime = exptimes[lcid];
+    float toffset, z;
+    float ma_offset = mean_anomaly_offset(pv[4], pv[5]);
+    float k = ks[0];
 
-      flux[gid] = 0.0f;
-      for(int i=1; i<ns+1; i++){
+    if (nks > 1){
+        if (pbid < nks){
+            k = ks[pbid];
+          }
+          else{
+              flux[gid] = NAN;
+              return;
+          }
+    }
+
+    flux[gid] = 0.0f;
+    for(int i=1; i<ns+1; i++){
         toffset = exptime * (((float) i - 0.5f)/ (float) ns - 0.5f);
-        z = z_iter(times[i_tm]+toffset, pv[1], pv[2], pv[3], pv[4], pv[5], pv[6], ma_offset, 1.0f);
-        flux[gid] += eval_ma_ip(z, ldc, edt, let, ldt, pv[0], k0, k1, nk, nz, dk, dz);
-      }
-      flux[gid] /= (float) ns;
+        z = z_iter(times[i_tm]+toffset, pv[0], pv[1], pv[2], pv[3], pv[4], pv[5], ma_offset, 1.0f);
+        flux[gid] += eval_ma_ip(z, ldc, edt, let, ldt, k, k0, k1, nk, nz, dk, dz);
+    }
+    flux[gid] /= (float) ns;
 }
 
 
@@ -234,8 +247,6 @@ __kernel void ma_eccentric_pop_ttv(__global const float *times, __global const u
       float tc = pv[1 + lcids[i_tm]];
 
       flux[gid] = 0.0f;
-
-
       for(int i=1; i<ns+1; i++){
         toffset = exptime * (((float) i - 0.5f)/ (float) ns - 0.5f);
         z = z_circular(times[i_tm]+toffset, tc, pvo[0], pvo[1], pvo[2], 1.0f);

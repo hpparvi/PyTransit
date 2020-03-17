@@ -30,6 +30,7 @@
 
 """Mandel-Agol transit model
 """
+from typing import Union
 
 import numpy as np
 import pyopencl as cl
@@ -38,7 +39,7 @@ from os.path import dirname, join
 import warnings
 from pyopencl import CompilerWarning
 
-from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze
+from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, empty
 
 from .numba.ma_quadratic_nb import calculate_interpolation_tables
 from .transitmodel import TransitModel
@@ -47,7 +48,7 @@ warnings.filterwarnings('ignore', category=CompilerWarning)
 
 class QuadraticModelCL(TransitModel):
     """
-    Exoplanet transit light curve model by Mandel and Agol (2001).
+    Exoplanet transit light curve model with quadratic stellar limb darkening by Mandel and Agol (2001).
     """
 
     def __init__(self, method: str = 'pars', is_secondary: bool = False, klims: tuple = (0.05, 0.25), nk: int = 256, nz: int = 256, cl_ctx=None, cl_queue=None) -> None:
@@ -90,14 +91,13 @@ class QuadraticModelCL(TransitModel):
         # array sizes change.
         #
         self._b_u = None       # Limb darkening coefficient buffer
-        self._b_time = None       # Time buffer
+        self._b_time = None    # Time buffer
         self._b_f = None       # Flux buffer
         self._b_p = None       # Parameter vector buffer
 
         self._time_id = None   # Time array ID
 
         self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'opencl','ma_quadratic.cl'),'r').read()).build()
-
 
     def set_data(self, time, lcids=None, pbids=None, nsamples=None, exptimes=None):
         mf = cl.mem_flags
@@ -126,14 +126,83 @@ class QuadraticModelCL(TransitModel):
         self._b_nsamples = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.nsamples)
         self._b_etimes = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.exptimes)
 
-
-    def evaluate_ps(self, k, ldc, t0, p, a, i, e=0., w=0., copy=True):
-        ldc = asarray(ldc, float32)
-        pvp = array([[k, t0, p, a, i, e, w]], float32)
-        return self.evaluate_pv(pvp, ldc, copy)
+    def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
+                    e: float = None, w: float = None, copy = True):
+        return self.evaluate_pv(k, ldc, t0, p, a, i, e, w, copy)
 
     def evaluate_pv(self, pvp, ldc, copy=True):
         pvp = atleast_2d(pvp)
+        ldc = atleast_2d(ldc).astype(float32)
+        self.npv = uint32(pvp.shape[0])
+        self.spv = uint32(pvp.shape[1])
+
+        if pvp.shape[0] != ldc.shape[0]:
+            raise ValueError("The parameter array and the ldc array have incompatible dimensions.")
+
+        # Release and reinitialise the GPU buffers if the sizes of the time or
+        # limb darkening coefficient arrays change.
+        if (ldc.size != self.u.size) or (pvp.size != self.pv.size):
+            assert self.npb == ldc.shape[1] // 2
+
+            if self._b_f is not None:
+                self._b_f.release()
+                self._b_u.release()
+                self._b_p.release()
+
+            self.pv = zeros(pvp.shape, float32)
+            self.u = zeros((self.npv, 2 * self.npb), float32)
+            self.f = zeros((self.npv, self.nptb), float32)
+
+            mf = cl.mem_flags
+            self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * self.npv)
+            self._b_u = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.u)
+            self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
+
+        # Copy the limb darkening coefficient array to the GPU
+        cl.enqueue_copy(self.queue, self._b_u, ldc)
+
+        # Copy the parameter vector to the GPU
+        self.pv[:] = pvp
+        cl.enqueue_copy(self.queue, self._b_p, self.pv)
+
+        self.prg.ma_eccentric_pop(self.queue, (self.npv, self.nptb), None, self._b_time, self._b_lcids, self._b_pbids,
+                                  self._b_p, self._b_u,
+                                  self._b_ed, self._b_le, self._b_ld, self._b_nsamples, self._b_etimes,
+                                  self.k0, self.k1, self.nk, self.nz, self.dk, self.dz,
+                                  self.spv, self.nlc, self.npb, self._b_f)
+
+        if copy:
+            cl.enqueue_copy(self.queue, self.f, self._b_f)
+            return squeeze(self.f)
+        else:
+            return None
+
+    def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
+                 a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = None,
+                 w: Union[float, ndarray] = None, copy: bool = True) -> ndarray:
+
+        npv = 1 if isinstance(t0, float) else len(t0)
+        k = asarray(k)
+
+        if k.size == 1:
+            nk = 1
+        elif npv == 1:
+            nk = k.size
+        else:
+            nk = k.shape[1]
+
+        if e is None:
+            e, w = 0.0, 0.0
+
+        pvp = empty((npv, nk + 6), dtype=float32)
+        pvp[:, :nk] = k
+        pvp[:, nk] = t0
+        pvp[:, nk + 1] = p
+        pvp[:, nk + 2] = a
+        pvp[:, nk + 3] = i
+        pvp[:, nk + 4] = e
+        pvp[:, nk + 5] = w
+
         ldc = atleast_2d(ldc).astype(float32)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
@@ -175,7 +244,6 @@ class QuadraticModelCL(TransitModel):
             return squeeze(self.f)
         else:
             return None
-
 
     def evaluate_pv_ttv(self, pvp, ldc, copy=True, tdv=False):
         pvp = atleast_2d(pvp)
