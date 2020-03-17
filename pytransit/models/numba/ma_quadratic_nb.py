@@ -39,9 +39,10 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+from typing import Tuple
 
 from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, linspace, array, atleast_2d, floor, full, \
-    inf, isnan, cos, sign, sin, atleast_1d
+    inf, isnan, cos, sign, sin, atleast_1d, ndarray
 from numba import njit, prange
 
 from ...orbits.orbits_py import z_ip_s
@@ -49,6 +50,7 @@ from ...orbits.orbits_py import z_ip_s
 HALF_PI = 0.5 * pi
 FOUR_PI = 4.0 * pi
 INV_PI = 1 / pi
+
 
 @njit(cache=False)
 def ellpicb(n, k):
@@ -124,18 +126,43 @@ def ellk(k):
     return ek1 - ek2
 
 
+def calculate_interpolation_tables(kmin: float = 0.05, kmax: float = 0.2, nk: int = 512, nz:int = 512) -> Tuple:
+    zs = linspace(0, 1 + 1.001 * kmax, nz)
+    ks = linspace(kmin, kmax, nk)
+
+    ld = zeros((nk, nz))
+    le = zeros((nk, nz))
+    ed = zeros((nk, nz))
+
+    for ik, k in enumerate(ks):
+        _, ld[ik, :], le[ik, :], ed[ik, :] = eval_quad_z_v(zs, k, array([[0.0, 0.0]]))
+
+    return ed, le, ld, ks, zs
+
+
 @njit(cache=False, parallel=False)
-def eval_quad(z0, k, u, c):
+def eval_quad_z_v(zs, k, u: ndarray):
+    """Evaluates the transit model for an array of normalized distances.
+
+    Parameters
+    ----------
+    z: 1D array
+        Normalized distances
+    k: float
+        Planet-star radius ratio
+    u: 1D array
+        Limb darkening coefficients
+
+    Returns
+    -------
+    Transit model evaluated at `z`.
+
+    """
     if abs(k - 0.5) < 1.0e-4:
         k = 0.5
 
-    npt = len(z0)
+    npt = len(zs)
     npb = u.shape[0]
-
-    if c.size == 1 and npb > 1:
-        cs = full(npb, c[0])
-    else:
-        cs = c
 
     k2 = k ** 2
     omega = zeros(npb)
@@ -148,7 +175,7 @@ def eval_quad(z0, k, u, c):
         omega[i] = 1.0 - u[i,0] / 3.0 - u[i,1] / 6.0
 
     for i in prange(npt):
-        z = z0[i]
+        z = zs[i]
 
         if abs(z - k) < 1e-6:
             z += 1e-6
@@ -243,13 +270,28 @@ def eval_quad(z0, k, u, c):
 
         for j in range(npb):
             flux[i, j] = 1.0 - ((1.0 - u[j,0] - 2.0 * u[j,1]) * le[i] + (u[j,0] + 2.0 * u[j,1]) * ld[i] + u[j,1] * ed[i]) / omega[j]
-        flux[i, :] = cs + (1.0 - cs) * flux[i, :]
 
     return flux, ld, le, ed
 
 
 @njit(cache=False, parallel=False, fastmath=True)
-def quadratic_z_s(z, k, u):
+def eval_quad_z_s(z, k, u):
+    """Evaluates the transit model for scalar normalized distance.
+
+    Parameters
+    ----------
+    z: float
+        Normalized distance
+    k: float
+        Planet-star radius ratio
+    u: 1D array
+        Limb darkening coefficients
+
+    Returns
+    -------
+    Transit model evaluated at `z`.
+
+    """
     if abs(k - 0.5) < 1.0e-4:
         k = 0.5
 
@@ -346,19 +388,6 @@ def quadratic_z_s(z, k, u):
     flux = 1.0 - ((1.0 - u[0] - 2.0 * u[1]) * le + (u[0] + 2.0 * u[1]) * ld + u[1] * ed) / omega
     return flux
 
-def calculate_interpolation_tables(kmin=0.05, kmax=0.2, nk=512, nz=512):
-    zs = linspace(0, 1 + 1.001 * kmax, nz)
-    ks = linspace(kmin, kmax, nk)
-
-    ld = zeros((nk, nz))
-    le = zeros((nk, nz))
-    ed = zeros((nk, nz))
-
-    for ik, k in enumerate(ks):
-        _, ld[ik, :], le[ik, :], ed[ik, :] = eval_quad(zs, k, array([[0.0, 0.0]]), array([0.0]))
-
-    return ed, le, ld, ks, zs
-
 
 @njit(cache=False, parallel=False, fastmath=True)
 def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
@@ -411,7 +440,7 @@ def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
 
 
 @njit(cache=False, parallel=False, fastmath=True)
-def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
+def eval_quad_ip(zs, k, u, edt, ldt, let, kt, zt):
     npb = u.shape[0]
     flux = zeros((len(zs), npb))
     omega = zeros(npb)
@@ -455,13 +484,12 @@ def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
 
             for j in range(npb):
                 flux[i, j] = 1.0 - ((1.0 - u[j, 0] - 2.0 * u[j, 1]) * le + (u[j, 0] + 2.0 * u[j, 1]) * ld + u[j, 1] * ed) / omega[j]
-                flux[i, j] = c[j] + (1.0 - c[j]) * flux[i, j]
 
     return flux
 
 
 @njit(cache=False, parallel=False, fastmath=True)
-def eval_quad_ip_mp(zs, pbi, ks, u, c, edt, ldt, let, kt, zt):
+def eval_quad_ip_mp(zs, pbi, ks, u, edt, ldt, let, kt, zt):
     npb = u.shape[0]
     flux = zeros(zs.size)
     omega = zeros(npb)
@@ -509,7 +537,6 @@ def eval_quad_ip_mp(zs, pbi, ks, u, c, edt, ldt, let, kt, zt):
                   + le2[1, iz + 1] * ak1 * az1)
 
             flux[i] = 1.0 - ((1.0 - u[j, 0] - 2.0 * u[j, 1]) * le + (u[j, 0] + 2.0 * u[j, 1]) * ld + u[j, 1] * ed) / omega[j]
-            flux[i] = c[j] + (1.0 - c[j]) * flux[i]
     return flux
 
 
@@ -549,33 +576,8 @@ def quadratic_interpolated_z_s(z, k, u, edt, ldt, let, kt, zt):
 
     return flux
 
-
-@njit(parallel=True, fastmath=False)
-def quadratic_model_interpolated(t, pvp, ldc, lcids, pbids, nsamples, exptimes,
-                                 es, ms, tae, edt, ldt, let, kt, zt):
-    pvp = atleast_2d(pvp)
-    ldc = atleast_2d(ldc)
-    npv = pvp.shape[0]
-    npt = t.size
-    flux = zeros((npv, npt))
-    for ipv in range(npv):
-        k, t0, p, a, i, e, w = pvp[ipv,:]
-        if k < kt[0] or k > kt[-1] or isnan(k) or isnan(a) or isnan(i):
-            flux[ipv, :] = inf
-            continue
-        for j in prange(npt):
-            ilc = lcids[j]
-            ipb = pbids[ilc]
-            for isample in range(1,nsamples[ilc]+1):
-                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = z_ip_s(t[j]+time_offset, t0, p, a, i, e, w, es, ms, tae)
-                if z > 1.0+k:
-                    flux[ipv, j] += 1.
-                else:
-                    flux[ipv, j] += quadratic_interpolated_z_s(z, k, ldc[ipv, 2*ipb:2*(ipb+1)], edt, ldt, let, kt, zt)
-            flux[ipv, j] /= nsamples[ilc]
-    return flux
-
+# Direct models
+# -------------
 
 @njit(parallel=True, fastmath=False)
 def quadratic_model_direct_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, es, ms, tae):
@@ -603,9 +605,10 @@ def quadratic_model_direct_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
                     if z > 1.0 + _k:
                         flux[ipv, j] += 1.
                     else:
-                        flux[ipv, j] += quadratic_z_s(z, _k, ldc[ipv, 2 * ipb:2 * (ipb + 1)])
+                        flux[ipv, j] += eval_quad_z_s(z, _k, ldc[ipv, 2 * ipb:2 * (ipb + 1)])
                 flux[ipv, j] /= nsamples[ilc]
     return flux
+
 
 @njit(parallel=True, fastmath=True)
 def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes,
@@ -632,9 +635,12 @@ def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
                 if z > 1.0 + _k:
                     flux[j] += 1.
                 else:
-                    flux[j] += quadratic_z_s(z, _k, ldc[2 * ipb:2 * (ipb + 1)])
+                    flux[j] += eval_quad_z_s(z, _k, ldc[2 * ipb:2 * (ipb + 1)])
             flux[j] /= nsamples[ilc]
     return flux
+
+# Interpolated models
+# -------------------
 
 @njit(parallel=True, fastmath=True)
 def quadratic_model_interpolated_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes,
@@ -696,4 +702,31 @@ def quadratic_model_interpolated_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, n
                 else:
                     flux[j] += quadratic_interpolated_z_s(z, _k, ldc[0, 2 * ipb:2 * (ipb + 1)], edt, ldt, let, kt, zt)
             flux[j] /= nsamples[ilc]
+    return flux
+
+
+@njit(parallel=True, fastmath=False)
+def quadratic_model_interpolated_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes,
+                                    es, ms, tae, edt, ldt, let, kt, zt):
+    pvp = atleast_2d(pvp)
+    ldc = atleast_2d(ldc)
+    npv = pvp.shape[0]
+    npt = t.size
+    flux = zeros((npv, npt))
+    for ipv in range(npv):
+        k, t0, p, a, i, e, w = pvp[ipv,:]
+        if k < kt[0] or k > kt[-1] or isnan(k) or isnan(a) or isnan(i):
+            flux[ipv, :] = inf
+            continue
+        for j in prange(npt):
+            ilc = lcids[j]
+            ipb = pbids[ilc]
+            for isample in range(1,nsamples[ilc]+1):
+                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                z = z_ip_s(t[j]+time_offset, t0, p, a, i, e, w, es, ms, tae)
+                if z > 1.0+k:
+                    flux[ipv, j] += 1.
+                else:
+                    flux[ipv, j] += quadratic_interpolated_z_s(z, k, ldc[ipv, 2*ipb:2*(ipb+1)], edt, ldt, let, kt, zt)
+            flux[ipv, j] /= nsamples[ilc]
     return flux

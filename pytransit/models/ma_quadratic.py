@@ -30,7 +30,7 @@ from typing import Union
 
 from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray
 
-from .numba.ma_quadratic_nb import quadratic_model_interpolated, calculate_interpolation_tables, \
+from .numba.ma_quadratic_nb import quadratic_model_interpolated_pv, calculate_interpolation_tables, \
     quadratic_model_interpolated_v, quadratic_model_interpolated_s, quadratic_model_direct_v, quadratic_model_direct_s
 from .transitmodel import TransitModel
 
@@ -95,9 +95,9 @@ class QuadraticModel(TransitModel):
             raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
         if self.interpolate:
-            flux = quadratic_model_interpolated(self.time, pvp, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes,
-                                                self._es, self._ms, self._tae, self.ed, self.ld, self.le,
-                                                self.kt, self.zt)
+            flux = quadratic_model_interpolated_pv(self.time, pvp, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes,
+                                                   self._es, self._ms, self._tae, self.ed, self.ld, self.le,
+                                                   self.kt, self.zt)
         else:
             raise NotImplementedError
         return squeeze(flux)
