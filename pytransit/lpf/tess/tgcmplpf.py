@@ -42,7 +42,7 @@ def map_pv(pv, istart, ipl):
     pvt[:, 3] = as_from_rhop(pv[:, 0], pp[:, 2])  # 3 - scaled semi-major axis
     pvt[:, 4] = i_from_ba(pp[:, 3], pvt[:, 3])    # 4 - inclination
     pvt[:, 5] = pp[:,4]**2 + pp[:,5]**2           # 5 - eccentricity
-    pvt[:, 6] = arctan2(pp[:,5], pp[:,4])        # 6 - argument of periastron
+    pvt[:, 6] = arctan2(pp[:,5], pp[:,4])         # 6 - argument of periastron
     return pvt
 
 class TGCMPLPF(BaseTGCLPF):

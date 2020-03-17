@@ -52,6 +52,9 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         pbids = pd.Categorical(pbs, categories=pbnames).codes
         wnids = arange(len(times))
 
+        self._tref = floor(concatenate(times).min())
+        times = [t-self._tref for t in times]
+
         self.wns = wns
         PhysContLPF.__init__(self, name, passbands=pbnames, times=times, fluxes=fluxes, pbids=pbids, wnids=wnids,
                              covariates=covs)
@@ -112,6 +115,7 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         pvp = atleast_2d(pvp)
         cnt = zeros((pvp.shape[0], self.npb))
         pvt = map_pv_pclpf(pvp)
+        pvt[:,1] -= self._tref
         ldc = map_ldc(pvp[:, self._sl_ld])
         flux = self.tm.evaluate_pv(pvt, ldc)
         cnt[:, 0] = 1 - pvp[:, 8] / pvp[:, 5]
@@ -123,16 +127,19 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
                 cnt[i, 1:] = -inf
         return contaminate(flux, cnt, self.lcids, self.pbids)
 
-    def plot_folded_tess_transit(self, method: str = 'de', pv: ndarray = None, binwidth: float = 1,
+    def plot_folded_tess_transit(self, solution: str = 'de', pv: ndarray = None, binwidth: float = 1,
                                  plot_model: bool = True, plot_unbinned: bool = True, plot_binned: bool = True,
                                  xlim: tuple = None, ylim: tuple = None, ax=None, figsize: tuple = None):
-        assert method in ('de', 'mc')
+
         if pv is None:
-            if method == 'de':
+            if solution.lower() == 'local':
+                pv = self._local_minimization.x
+            elif solution.lower() in ('de', 'global'):
                 pv = self.de.minimum_location
+            elif solution.lower() in ('mcmc', 'mc'):
+                pv = self.posterior_samples().median().values
             else:
-                df = self.posterior_samples(derived_parameters=False)
-                pv = df.median().values
+                raise NotImplementedError("'solution' should be either 'local', 'global', or 'mcmc'")
 
         if ax is None:
             fig, ax = subplots(figsize=figsize)
@@ -142,7 +149,7 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         ax.autoscale(enable=True, axis='x', tight=True)
 
         etess = self._ntess
-        t = self.timea[:etess]
+        t = self.timea[:etess] + self._tref
         fo = self.ofluxa[:etess]
         fm = squeeze(self.transit_model(pv))[:etess]
         bl = squeeze(self.baseline(pv))[:etess]
@@ -161,10 +168,9 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
 
         if fig is not None:
             fig.tight_layout()
-
         return fig
 
-    def plot_gb_transits(self, solution='de', pv: ndarray = None, figsize: tuple = None, axes=None, ncol: int = 4,
+    def plot_gb_transits(self, solution: str = 'de', pv: ndarray = None, figsize: tuple = None, axes=None, ncol: int = 4,
                          xlim: tuple = None, ylim: tuple = None):
 
         if pv is None:
@@ -193,7 +199,7 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
 
         for i in range(nlc):
             ax = axs.flat[i]
-            t = self.times[etess + i]
+            t = self.times[etess + i] + self._tref
             e = epoch(t.mean(), t0, p)
             tc = t0 + e * p
             tt = 24 * (t - tc)
@@ -203,5 +209,7 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         setp(axs, xlim=xlim, ylim=ylim)
         setp(axs[-1, :], xlabel='Time - T$_c$ [h]')
         setp(axs[:, 0], ylabel='Normalised flux')
-        fig.tight_layout()
+
+        if fig is not None:
+            fig.tight_layout()
         return fig
