@@ -64,8 +64,9 @@ extendable.
 
 **Transit models**
   - Series-expansion based transit model by [A. Gimenez (A&A 450, 1231--1237, 2006)](http://adsabs.harvard.edu/abs/2006A&A...450.1231G).
-  - Quadratic limb-darkening and uniform disk transit models by [Mandel & Agol (ApJ 580, L171–L175, 2002)](http://adsabs.harvard.edu/abs/2002ApJ...580L.171M).
-  - Power-2 transit model by [Maxted & Gill](ArXiv:1812.01606)
+  - Quadratic limb-darkening transit model by [Mandel & Agol (ApJ 580, L171–L175, 2002)](http://adsabs.harvard.edu/abs/2002ApJ...580L.171M).
+  - Uniform disk transit model by [Mandel & Agol (ApJ 580, L171–L175, 2002)](http://adsabs.harvard.edu/abs/2002ApJ...580L.171M).
+  - Power-2 transit model by [Maxted & Gill](ArXiv:1812.01606).
   - Optically thin shell model by [Schlawin et al. (ApJL 722, 75--79, 2010)](http://adsabs.harvard.edu/abs/2010ApJ...722L..75S) to model narrow-band transits observations of chromospheric emission lines.
 
 **Common features**
@@ -122,7 +123,8 @@ Notes
 Examples
 --------
 ### Basics
-Basic usage is simple, and the API is the same for all the models (with very minor model-specific exceptions). The transit model is first initialised and given the array containing the mid-exposure times
+Basic usage is simple, and the API is the same for all the models (with minor model-specific exceptions). The transit model 
+is initialised with an array of mid-exposure times
 
 ```Python
 from pytransit import QuadraticModel
@@ -158,11 +160,7 @@ told to not to copy the model from the GPU memory. If the context and queue are 
 context using `cl.create_some_context()`.
 
 ```Python
-import pyopencl as cl
-from src import QuadraticModelCL
-
-ctx = cl.create_some_context()
-queue = cl.CommandQueue(ctx)
+from pytransit import QuadraticModelCL
 
 tm = QuadraticModelCL(cl_ctx=ctx, cl_queue=queue)
 ```
