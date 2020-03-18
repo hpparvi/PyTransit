@@ -41,7 +41,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numba import njit, prange
-from numpy import pi, sqrt, arccos, abs, zeros_like, sign, sin, cos, abs, atleast_2d, zeros
+from numpy import pi, sqrt, arccos, abs, zeros_like, sign, sin, cos, abs, atleast_2d, zeros, atleast_1d, isnan, inf
 from ...orbits.orbits_py import z_ip_s
 
 TWO_PI = 2.0 * pi
@@ -95,7 +95,51 @@ def uniform_z_s(z, k):
 
 
 @njit(parallel=True, fastmath=True)
-def uniform_model(t, pvp, lcids, nsamples, exptimes, es, ms, tae):
+def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, es, ms, tae):
+    t0, p, a, i, e, w = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w)
+    npv = k.shape[0]
+    npt = t.size
+    flux = zeros((npv, npt))
+    for j in prange(npt):
+        for ipv in range(npv):
+            ilc = lcids[j]
+            ipb = pbids[ilc]
+            _k = k[0] if k.size == 1 else k[ipb]
+
+            for isample in range(1, nsamples[ilc] + 1):
+                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                z = z_ip_s(t[j] + time_offset, t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], es, ms, tae)
+                if z > 1.0 + _k:
+                    flux[ipv, j] += 1.
+                else:
+                    flux[ipv, j] += uniform_z_s(z, _k)
+            flux[ipv, j] /= nsamples[ilc]
+    return flux
+
+
+@njit(parallel=True, fastmath=True)
+def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, es, ms, tae):
+    k = atleast_1d(k)
+    npt = t.size
+    flux = zeros(npt)
+    for j in prange(npt):
+        ilc = lcids[j]
+        ipb = pbids[ilc]
+        _k = k[0] if k.size == 1 else k[ipb]
+
+        for isample in range(1, nsamples[ilc] + 1):
+            time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+            z = z_ip_s(t[j] + time_offset, t0, p, a, i, e, w, es, ms, tae)
+            if z > 1.0 + _k:
+                flux[j] += 1.
+            else:
+                flux[j] += uniform_z_s(z, _k)
+        flux[j] /= nsamples[ilc]
+    return flux
+
+
+@njit(parallel=True, fastmath=True)
+def uniform_model_pv(t, pvp, lcids, nsamples, exptimes, es, ms, tae):
     pvp = atleast_2d(pvp)
     npv = pvp.shape[0]
     npt = t.size
