@@ -42,7 +42,7 @@
 from typing import Tuple
 
 from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, linspace, array, atleast_2d, floor, full, \
-    inf, isnan, cos, sign, sin, atleast_1d, ndarray
+    inf, isnan, cos, sign, sin, atleast_1d, ndarray, nan
 from numba import njit, prange
 
 from ...orbits.orbits_py import z_ip_s
@@ -580,8 +580,12 @@ def quadratic_interpolated_z_s(z, k, u, edt, ldt, let, kt, zt):
 # -------------
 
 @njit(parallel=True, fastmath=False)
-def quadratic_model_direct_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, es, ms, tae):
+def quadratic_model_direct_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
     ldc = atleast_2d(ldc)
+
+    if ldc.shape[1] != 2*npb:
+        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+
     t0, p, a, i = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i)
     npv = k.shape[0]
     npt = t.size
@@ -611,10 +615,13 @@ def quadratic_model_direct_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
 
 
 @njit(parallel=True, fastmath=True)
-def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes,
-                                   es, ms, tae):
+def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
     ldc = atleast_1d(ldc)
     k = atleast_1d(k)
+
+    if ldc.shape[1] != 2*npb:
+        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+
     npt = t.size
     flux = zeros(npt)
     for j in prange(npt):
@@ -639,14 +646,63 @@ def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
             flux[j] /= nsamples[ilc]
     return flux
 
+@njit(parallel=True, fastmath=False)
+def quadratic_model_direct_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
+    pvp = atleast_2d(pvp)
+    ldc = atleast_2d(ldc)
+
+    if ldc.shape[1] != 2*npb:
+        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+    if ldc.shape[0] != pvp.shape[0]:
+        raise ValueError(
+            'The parameter array and the limb darkening coefficient array have mismatching shapes. The first dimension must match.')
+
+    npv = pvp.shape[0]
+    nk = pvp.shape[1] - 6
+    npt = t.size
+    flux = zeros((npv, npt))
+
+    for j in prange(npt):
+        ilc = lcids[j]
+        ipb = pbids[ilc]
+
+        for ipv in range(npv):
+            t0, p, a, i, e, w = pvp[ipv,nk:]
+
+            if nk == 1:
+                k = pvp[ipv, 0]
+            else:
+                if ipb < nk:
+                    k = pvp[ipv, ipb]
+                else:
+                    k = nan
+
+            if isnan(k) or isnan(a) or isnan(i):
+                flux[ipv, j] = inf
+                continue
+
+            for isample in range(1,nsamples[ilc]+1):
+                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                z = z_ip_s(t[j]+time_offset, t0, p, a, i, e, w, es, ms, tae)
+                if z > 1.0+k:
+                    flux[ipv, j] += 1.
+                else:
+                    flux[j] += eval_quad_z_s(z, k, ldc[2 * ipb:2 * (ipb + 1)])
+            flux[ipv, j] /= nsamples[ilc]
+    return flux
+
 # Interpolated models
 # -------------------
 
 @njit(parallel=True, fastmath=True)
-def quadratic_model_interpolated_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes,
+def quadratic_model_interpolated_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb,
                                    es, ms, tae, edt, ldt, let, kt, zt):
     t0, p, a, i, e, w = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w)
     ldc = atleast_2d(ldc)
+
+    if ldc.shape[1] != 2*npb:
+        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+
     npv = k.shape[0]
     npt = t.size
     flux = zeros((npv, npt))
@@ -676,10 +732,14 @@ def quadratic_model_interpolated_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, n
 
 
 @njit(parallel=True, fastmath=True)
-def quadratic_model_interpolated_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes,
+def quadratic_model_interpolated_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb,
                                    es, ms, tae, edt, ldt, let, kt, zt):
     ldc = atleast_2d(ldc)
     k = atleast_1d(k)
+
+    if ldc.shape[1] != 2*npb:
+        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+
     npt = t.size
     flux = zeros(npt)
     for j in prange(npt):
@@ -706,21 +766,41 @@ def quadratic_model_interpolated_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, n
 
 
 @njit(parallel=True, fastmath=False)
-def quadratic_model_interpolated_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes,
+def quadratic_model_interpolated_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes, npb,
                                     es, ms, tae, edt, ldt, let, kt, zt):
     pvp = atleast_2d(pvp)
     ldc = atleast_2d(ldc)
+
+    if ldc.shape[1] != 2*npb:
+        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+    if ldc.shape[0] != pvp.shape[0]:
+        raise ValueError(
+            'The parameter array and the limb darkening coefficient array have mismatching shapes. The first dimension must match.')
+
     npv = pvp.shape[0]
+    nk = pvp.shape[1] - 6
     npt = t.size
     flux = zeros((npv, npt))
-    for ipv in range(npv):
-        k, t0, p, a, i, e, w = pvp[ipv,:]
-        if k < kt[0] or k > kt[-1] or isnan(k) or isnan(a) or isnan(i):
-            flux[ipv, :] = inf
-            continue
-        for j in prange(npt):
-            ilc = lcids[j]
-            ipb = pbids[ilc]
+
+    for j in prange(npt):
+        ilc = lcids[j]
+        ipb = pbids[ilc]
+
+        for ipv in range(npv):
+            t0, p, a, i, e, w = pvp[ipv,nk:]
+
+            if nk == 1:
+                k = pvp[ipv, 0]
+            else:
+                if ipb < nk:
+                    k = pvp[ipv, ipb]
+                else:
+                    k = nan
+
+            if k < kt[0] or k > kt[-1] or isnan(k) or isnan(a) or isnan(i):
+                flux[ipv, j] = inf
+                continue
+
             for isample in range(1,nsamples[ilc]+1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
                 z = z_ip_s(t[j]+time_offset, t0, p, a, i, e, w, es, ms, tae)
