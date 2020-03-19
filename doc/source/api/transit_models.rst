@@ -16,6 +16,7 @@ Quadratic model
 .. autoclass:: pytransit.QuadraticModel
 
    .. automethod:: set_data
+   .. automethod:: evaluate
    .. automethod:: evaluate_ps
    .. automethod:: evaluate_pv
 

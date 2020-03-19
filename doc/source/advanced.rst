@@ -23,11 +23,15 @@ one value per light curve.
 
 For example, a set of three light curves, two observed in one passband and the third in another passband
 
+.. code-block:: python
+
     times_1 (lc = 0, pb = 0, sc) = [1, 2, 3, 4]
     times_2 (lc = 1, pb = 0, lc) = [3, 4]
     times_3 (lc = 2, pb = 1, sc) = [1, 5, 6]
 
 Would be set up as
+
+.. code-block:: python
 
     tm.set_data(time  = [1, 2, 3, 4, 3, 4, 1, 5, 6],
                 lcids = [0, 0, 0, 0, 1, 1, 2, 2, 2],
