@@ -106,7 +106,8 @@ class QuadraticModel(TransitModel):
         # ---------------------------
         else:
             ldc = atleast_2d(ldc)
-            npv = ldc.shape[0]
+            ldc, k, t0, p, a, i = asarray(ldc), asarray(k), asarray(t0), asarray(p), asarray(a), asarray(i)
+            npv = t0.size
             if e is None:
                 e, w = zeros(npv), zeros(npv)
             if self.interpolate:
