@@ -687,7 +687,7 @@ def quadratic_model_direct_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes, npb
                 if z > 1.0+k:
                     flux[ipv, j] += 1.
                 else:
-                    flux[j] += eval_quad_z_s(z, k, ldc[2 * ipb:2 * (ipb + 1)])
+                    flux[ipv, j] += eval_quad_z_s(z, k, ldc[ipv, 2 * ipb:2 * (ipb + 1)])
             flux[ipv, j] /= nsamples[ilc]
     return flux
 
