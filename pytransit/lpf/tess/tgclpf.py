@@ -119,12 +119,8 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         ldc = map_ldc(pvp[:, self._sl_ld])
         flux = self.tm.evaluate_pv(pvt, ldc)
         cnt[:, 0] = 1 - pvp[:, 8] / pvp[:, 5]
-        for i, pv in enumerate(pvp):
-            if (2500 < pv[6] < 12000) and (2500 < pv[7] < 12000):
-                cnref = 1. - pv[4] / pv[5]
-                cnt[i, 1:] = self.cm.contamination(cnref, pv[6], pv[7])
-            else:
-                cnt[i, 1:] = -inf
+        cnref = 1. - pvp[:, 4] / pvp[:, 5]
+        cnt[:, 1:] = self.cm.contamination(cnref, pvp[:, 6], pvp[:, 7])
         return contaminate(flux, cnt, self.lcids, self.pbids)
 
     def plot_folded_tess_transit(self, solution: str = 'de', pv: ndarray = None, binwidth: float = 1,
