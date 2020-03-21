@@ -19,8 +19,8 @@ from pathlib import Path
 import pandas as pd
 from matplotlib.pyplot import subplots, setp
 from numpy import arange, concatenate, zeros, inf, atleast_2d, where, repeat, squeeze, argsort, isfinite, ndarray, \
-    floor, ceil
-from numpy.random import uniform
+    floor, ceil, percentile, median
+from numpy.random import uniform, permutation
 
 from pytransit import LinearModelBaseline
 from pytransit.contamination import SMContamination, Instrument
@@ -167,15 +167,21 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         return fig
 
     def plot_gb_transits(self, solution: str = 'de', pv: ndarray = None, figsize: tuple = None, axes=None, ncol: int = 4,
-                         xlim: tuple = None, ylim: tuple = None):
+                         xlim: tuple = None, ylim: tuple = None, remove_baseline: bool = True):
+
+        solution = solution.lower()
+        samples = None
 
         if pv is None:
-            if solution.lower() == 'local':
+            if solution == 'local':
                 pv = self._local_minimization.x
-            elif solution.lower() in ('de', 'global'):
+            elif solution in ('de', 'global'):
+                solution = 'global'
                 pv = self.de.minimum_location
-            elif solution.lower() in ('mcmc', 'mc'):
-                pv = self.posterior_samples().median().values
+            elif solution in ('mcmc', 'mc'):
+                solution = 'mcmc'
+                samples = permutation(self.posterior_samples().values)[:500]
+                pv = median(samples, 0)
             else:
                 raise NotImplementedError("'solution' should be either 'local', 'global', or 'mcmc'")
 
@@ -189,18 +195,40 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
 
         [ax.autoscale(enable=True, axis='x', tight=True) for ax in axs.flat]
 
-        fmodel = squeeze(self.flux_model(pv))
+        if remove_baseline:
+            if solution == 'mcmc':
+                fbasel = median(self.baseline(samples), axis=0)
+                fmodel, fmodm, fmodp = percentile(self.transit_model(samples), [50, 1, 99], axis=0)
+            else:
+                fbasel = squeeze(self.baseline(pv))
+                fmodel, fmodm, fmodp = squeeze(self.transit_model(pv)), None, None
+            fobs = self.ofluxa / fbasel
+        else:
+            if solution == 'mcmc':
+                fmodel, fmodm, fmodp = percentile(self.flux_model(samples), [50, 1, 99], axis=0)
+            else:
+                fmodel, fmodm, fmodp = squeeze(self.flux_model(pv)), None, None
+            fbasel = None
+            fobs = self.ofluxa
+
         etess = self._stess
         t0, p = pv[[0, 1]]
 
         for i in range(nlc):
             ax = axs.flat[i]
+            sl = self.lcslices[etess + i]
             t = self.times[etess + i] + self._tref
             e = epoch(t.mean(), t0, p)
             tc = t0 + e * p
             tt = 24 * (t - tc)
-            ax.plot(tt, self.fluxes[etess + i], 'k.', alpha=0.2)
-            ax.plot(tt, fmodel[self.lcslices[etess + i]], 'k')
+            ax.plot(tt, fobs[sl], 'k.', alpha=0.2)
+            ax.plot(tt, fmodel[sl], 'k')
+
+            if solution == 'mcmc':
+                ax.fill_between(tt, fmodm[sl], fmodp[sl], zorder=-100, alpha=0.2, fc='k')
+
+            if not remove_baseline:
+                ax.plot(tt, fbasel[sl], 'k--', alpha=0.2)
 
         setp(axs, xlim=xlim, ylim=ylim)
         setp(axs[-1, :], xlabel='Time - T$_c$ [h]')
