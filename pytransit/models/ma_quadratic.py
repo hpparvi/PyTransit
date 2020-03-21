@@ -38,21 +38,24 @@ from .transitmodel import TransitModel
 __all__ = ['QuadraticModel']
 
 class QuadraticModel(TransitModel):
-    """Transit model with quadratic limb darkening (ApJ 580, L171-L175 2002).
+    """Transit model with quadratic limb darkening (Mandel & Agol, ApJ 580, L171-L175 2002).
     """
 
-    def __init__(self, method: str = 'pars', is_secondary: bool = False,
-                 interpolate: bool = True, klims: tuple = (0.005, 0.5), nk: int = 256, nz: int = 256):
-        """Initialise the model.
+    def __init__(self, interpolate: bool = True, klims: tuple = (0.005, 0.5), nk: int = 256, nz: int = 256):
+        """Transit model with quadratic limb darkening (Mandel & Agol, ApJ 580, L171-L175 2002).
 
-        Args:
-            is_secondary: If True, evaluates the model for eclipses. If false, eclipses are filtered out (default = False).
-            interpolate: If True, evaluates the model using interpolation (default = True).
-            klims: Minimum and maximum radius ratio if interpolation is used as (kmin,kmax).
-            nk: Interpolation table resolution in k.
-            nz: Interpolation table resolution in z.
+        Parameters
+        ----------
+        interpolate : bool, optional
+            Use the interpolation method presented in Parviainen (2015) if true.
+        klims : tuple, optional
+            Radius ratio limits (kmin, kmax) for the interpolated model.
+        nk : int, optional
+            Radius ratio grid size for the interpolated model.
+        nz : int, optional
+            Normalized distance grid size for the interpolated model.
         """
-        super().__init__(method, is_secondary)
+        super().__init__()
         self.interpolate = interpolate
 
         # Interpolation tables for the model components
@@ -62,6 +65,9 @@ class QuadraticModel(TransitModel):
             self.klims = klims
             self.nk = nk
             self.nz = nz
+        else:
+            self.ed, self.le, self.ld, self.kt, self.zt = None, None, None, None, None
+            self.klims, self.nk, self.nz = None, None, None
 
     def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Optional[Union[float, ndarray]] = None,
@@ -82,19 +88,21 @@ class QuadraticModel(TransitModel):
             Orbital semi-major axis (axes) divided by the stellar radius as a float or a 1D vector.
         i
             Orbital inclination(s) as a float or a 1D vector.
-        e
+        e : optional
             Orbital eccentricity as a float or a 1D vector.
-        w
+        w : optional
             Argument of periastron as a float or a 1D vector.
 
         Notes
         -----
-        The model can be evaluated either for one set of parameters or for many sets of parameters simultaneously.
-        The orbital parameters can be given either as a float or a 1D array-like (preferably ndarray for optimal speed.)
+        The model can be evaluated either for one set of parameters or for many sets of parameters simultaneously. In
+        the first case, the orbital parameters should all be given as floats. In the second case, the orbital parameters
+        should be given as a 1D array-like.
 
         Returns
         -------
-        Transit model
+        ndarray
+            Modelled flux either as a 1D or 2D ndarray.
         """
 
         # Scalar parameters branch
@@ -127,21 +135,21 @@ class QuadraticModel(TransitModel):
 
         Parameters
         ----------
-        k
+        k : array-like
             Radius ratio(s) either as a single float or an 1D array.
-        ldc
+        ldc : array-like
             Limb darkening coefficients as a 1D array.
-        t0
+        t0 : float
             Transit center as a float.
-        p
+        p : float
             Orbital period as a float.
-        a
+        a : float
             Orbital semi-major axis divided by the stellar radius as a float.
-        i
+        i : float
             Orbital inclination(s) as a float.
-        e
+        e : float, optional
             Orbital eccentricity as a float.
-        w
+        w : float, optional
             Argument of periastron as a float.
 
         Notes
@@ -152,7 +160,8 @@ class QuadraticModel(TransitModel):
 
         Returns
         -------
-        Model flux
+        ndarray
+            Modelled flux as a 1D ndarray.
         """
 
         ldc = asarray(ldc)
@@ -196,7 +205,8 @@ class QuadraticModel(TransitModel):
 
         Returns
         -------
-
+        ndarray
+            Modelled flux either as a 1D or 2D ndarray.
         """
 
         ldc = asarray(ldc)

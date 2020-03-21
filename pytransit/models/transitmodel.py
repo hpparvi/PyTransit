@@ -37,19 +37,7 @@ class TransitModel(object):
     """Exoplanet transit light curve model 
     """
 
-    methods = 'pars', 'pv'
-
-    def __init__(self, method: str = 'pars', is_secondary: bool = False) -> None:
-        """
-
-        Parameters
-        ----------
-        method
-        is_secondary
-        """
-        assert method in self.methods, f"Unknown TM evaluation method {method}."
-        self.method = method
-        self.is_secondary = is_secondary
+    def __init__(self) -> None:
 
         # Declare the basic arrays
         # ------------------------
@@ -67,6 +55,7 @@ class TransitModel(object):
     def set_data(self, time: ndarray,
                  lcids: ndarray = None, pbids: ndarray = None,
                  nsamples: ndarray = None, exptimes: ndarray = None):
+
         # Time samples
         # ------------
         self.time     = asarray(time)
@@ -96,10 +85,7 @@ class TransitModel(object):
         self._tae, self._es, self._ms = ta_ip_calculate_table(ne, nm)
 
     def __call__(self, *nargs, **kwargs):
-        if self.method == 'pars':
-            return self.evaluate_ps(*nargs, **kwargs)
-        else:
-            return self.evaluate_pv(*nargs, **kwargs)
+        raise NotImplementedError
 
     # Default evaluation methods
     # --------------------------

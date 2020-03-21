@@ -51,8 +51,24 @@ class QuadraticModelCL(TransitModel):
     Exoplanet transit light curve model with quadratic stellar limb darkening by Mandel and Agol (2001).
     """
 
-    def __init__(self, method: str = 'pars', is_secondary: bool = False, klims: tuple = (0.05, 0.25), nk: int = 256, nz: int = 256, cl_ctx=None, cl_queue=None) -> None:
-        super().__init__(method, is_secondary)
+    def __init__(self, klims: tuple = (0.05, 0.25), nk: int = 256, nz: int = 256, cl_ctx=None, cl_queue=None) -> None:
+        """
+
+        Parameters
+        ----------
+        klims : tuple, optional
+            Radius ratio limits (kmin, kmax) for the interpolated model.
+        nk : int, optional
+            Radius ratio grid size for the interpolated model.
+        nz : int, optional
+            Normalized distance grid size for the interpolated model.
+        cl_ctx: optional
+            OpenCL context.
+        cl_queue: optional
+            OpenCL queue
+
+        """
+        super().__init__()
 
         self.ctx = cl_ctx or cl.create_some_context()
         self.queue = cl_queue or cl.CommandQueue(self.ctx)
@@ -126,18 +142,66 @@ class QuadraticModelCL(TransitModel):
         self._b_nsamples = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.nsamples)
         self._b_etimes = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.exptimes)
 
-    def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
-                    e: float = None, w: float = None, copy = True):
-        return self.evaluate_pv(k, ldc, t0, p, a, i, e, w, copy)
+    def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
+                 a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = None,
+                 w: Union[float, ndarray] = None, copy: bool = True) -> ndarray:
+        """Evaluate the transit model for a set of scalar or vector parameters.
 
-    def evaluate_pv(self, pvp, ldc, copy=True):
-        pvp = atleast_2d(pvp)
+        Parameters
+        ----------
+        k
+            Radius ratio(s) either as a single float, 1D vector, or 2D array.
+        ldc
+            Limb darkening coefficients as a 1D or 2D array.
+        t0
+            Transit center(s) as a float or a 1D vector.
+        p
+            Orbital period(s) as a float or a 1D vector.
+        a
+            Orbital semi-major axis (axes) divided by the stellar radius as a float or a 1D vector.
+        i
+            Orbital inclination(s) as a float or a 1D vector.
+        e : optional
+            Orbital eccentricity as a float or a 1D vector.
+        w : optional
+            Argument of periastron as a float or a 1D vector.
+
+        Notes
+        -----
+        The model can be evaluated either for one set of parameters or for many sets of parameters simultaneously. In
+        the first case, the orbital parameters should all be given as floats. In the second case, the orbital parameters
+        should be given as a 1D array-like.
+
+        Returns
+        -------
+        ndarray
+            Modelled flux either as a 1D or 2D ndarray.
+        """
+        npv = 1 if isinstance(t0, float) else len(t0)
+        k = asarray(k)
+
+        if k.size == 1:
+            nk = 1
+        elif npv == 1:
+            nk = k.size
+        else:
+            nk = k.shape[1]
+
+        if e is None:
+            e, w = 0.0, 0.0
+
+        pvp = empty((npv, nk + 6), dtype=float32)
+        pvp[:, :nk] = k
+        pvp[:, nk] = t0
+        pvp[:, nk + 1] = p
+        pvp[:, nk + 2] = a
+        pvp[:, nk + 3] = i
+        pvp[:, nk + 4] = e
+        pvp[:, nk + 5] = w
+
         ldc = atleast_2d(ldc).astype(float32)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
-
-        if pvp.shape[0] != ldc.shape[0]:
-            raise ValueError("The parameter array and the ldc array have incompatible dimensions.")
 
         # Release and reinitialise the GPU buffers if the sizes of the time or
         # limb darkening coefficient arrays change.
@@ -177,35 +241,44 @@ class QuadraticModelCL(TransitModel):
         else:
             return None
 
-    def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
-                 a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = None,
-                 w: Union[float, ndarray] = None, copy: bool = True) -> ndarray:
+    def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
+                    e: float = None, w: float = None, copy = True):
+        """Evaluate the transit model for a set of scalar parameters.
 
-        npv = 1 if isinstance(t0, float) else len(t0)
-        k = asarray(k)
+        Parameters
+        ----------
+        k : array-like
+            Radius ratio(s) either as a single float or an 1D array.
+        ldc : array-like
+            Limb darkening coefficients as a 1D array.
+        t0 : float
+            Transit center as a float.
+        p : float
+            Orbital period as a float.
+        a : float
+            Orbital semi-major axis divided by the stellar radius as a float.
+        i : float
+            Orbital inclination(s) as a float.
+        e : float, optional
+            Orbital eccentricity as a float.
+        w : float, optional
+            Argument of periastron as a float.
 
-        if k.size == 1:
-            nk = 1
-        elif npv == 1:
-            nk = k.size
-        else:
-            nk = k.shape[1]
+        Returns
+        -------
+        ndarray
+            Modelled flux as a 1D ndarray.
+        """
+        return self.evaluate_pv(k, ldc, t0, p, a, i, e, w, copy)
 
-        if e is None:
-            e, w = 0.0, 0.0
-
-        pvp = empty((npv, nk + 6), dtype=float32)
-        pvp[:, :nk] = k
-        pvp[:, nk] = t0
-        pvp[:, nk + 1] = p
-        pvp[:, nk + 2] = a
-        pvp[:, nk + 3] = i
-        pvp[:, nk + 4] = e
-        pvp[:, nk + 5] = w
-
+    def evaluate_pv(self, pvp, ldc, copy=True):
+        pvp = atleast_2d(pvp)
         ldc = atleast_2d(ldc).astype(float32)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
+
+        if pvp.shape[0] != ldc.shape[0]:
+            raise ValueError("The parameter array and the ldc array have incompatible dimensions.")
 
         # Release and reinitialise the GPU buffers if the sizes of the time or
         # limb darkening coefficient arrays change.
@@ -279,11 +352,11 @@ class QuadraticModelCL(TransitModel):
 
         if tdv:
             self.prg.ma_eccentric_pop_tdv(self.queue, (self.npv, self.nptb), None, self._b_time, self._b_lcids,
-                                      self._b_pbids,
-                                      self._b_p, self._b_u,
-                                      self._b_ed, self._b_le, self._b_ld, self._b_nsamples, self._b_etimes,
-                                      self.k0, self.k1, self.nk, self.nz, self.dk, self.dz,
-                                      self.spv, self.nlc, self.npb, self._b_f)
+                                          self._b_pbids,
+                                          self._b_p, self._b_u,
+                                          self._b_ed, self._b_le, self._b_ld, self._b_nsamples, self._b_etimes,
+                                          self.k0, self.k1, self.nk, self.nz, self.dk, self.dz,
+                                          self.spv, self.nlc, self.npb, self._b_f)
         else:
             self.prg.ma_eccentric_pop_ttv(self.queue, (self.npv, self.nptb), None,
                                           self._b_time, self._b_lcids, self._b_pbids,

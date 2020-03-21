@@ -32,8 +32,8 @@ class QPower2ModelCL(TransitModel):
     """
     """
 
-    def __init__(self, method: str = 'pars', is_secondary: bool = False, cl_ctx=None, cl_queue=None) -> None:
-        super().__init__(method, is_secondary)
+    def __init__(self, cl_ctx=None, cl_queue=None) -> None:
+        super().__init__()
 
         self.ctx = cl_ctx or cl.create_some_context()
         self.queue = cl_queue or cl.CommandQueue(self.ctx)

@@ -23,8 +23,6 @@ from .transitmodel import TransitModel
 __all__ = ['ChromosphereModel']
 
 class ChromosphereModel(TransitModel):
-    def __init__(self, method: str = 'pars'):
-        super().__init__(method, False)
 
     def evaluate_ps(self, k: float, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0.) -> ndarray:
         pvp = array([[k, t0, p, a, i, e, w]])
