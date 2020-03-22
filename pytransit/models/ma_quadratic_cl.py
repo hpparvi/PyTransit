@@ -48,11 +48,22 @@ warnings.filterwarnings('ignore', category=CompilerWarning)
 
 class QuadraticModelCL(TransitModel):
     """
-    Exoplanet transit light curve model with quadratic stellar limb darkening by Mandel and Agol (2001).
+    OpenCL implementation of the transit light curve model with quadratic limb darkening by Mandel and Agol (2002).
+
+    This class implements the quadratic transit model by Mandel & Agol (ApJ 580, L171-L175, 2002) in OpenCL. The class
+    can replace `pytransit.QuadraticModel` directly, and offers in most cases a significant performance boost with some
+    drawbacks (see the notes below).
+
+    Notes
+    ----
+    - All the calculations are done in **single precision**. This can affect the results when modelling extremely shallow
+      transits, and will certainly affect the model if the times are given in JD. The times should be given relative to
+      some constant epoch that maximises the precision (see `pytransit.lpf.lpf.BaseLPF` for an example).
+
     """
 
     def __init__(self, klims: tuple = (0.05, 0.25), nk: int = 256, nz: int = 256, cl_ctx=None, cl_queue=None) -> None:
-        """
+        """Transit model with quadratic limb darkening (Mandel & Agol, ApJ 580, L171-L175, 2002).
 
         Parameters
         ----------
@@ -271,7 +282,29 @@ class QuadraticModelCL(TransitModel):
         """
         return self.evaluate_pv(k, ldc, t0, p, a, i, e, w, copy)
 
-    def evaluate_pv(self, pvp, ldc, copy=True):
+    def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True):
+        """Evaluate the transit model for 2D parameter array.
+
+         Parameters
+         ----------
+         pvp
+             Parameter array with a shape `(npv, npar)` where `npv` is the number of parameter vectors, and each row
+             contains a set of parameters `[k, t0, p, a, i, e, w]`. The radius ratios can also be given per passband,
+             in which case the row should be structured as `[k_0, k_1, k_2, ..., k_npb, t0, p, a, i, e, w]`.
+         ldc
+             Limb darkening coefficient array with shape `(npv, 2*npb)`, where `npv` is the number of parameter vectors
+             and `npb` is the number of passbands.
+
+         Notes
+         -----
+         This version of the `evaluate` method is optimized for calculating several models in parallel, such as when
+         using *emcee* for MCMC sampling.
+
+         Returns
+         -------
+         ndarray
+             Modelled flux either as a 1D or 2D ndarray.
+         """
         pvp = atleast_2d(pvp)
         ldc = atleast_2d(ldc).astype(float32)
         self.npv = uint32(pvp.shape[0])
@@ -318,7 +351,7 @@ class QuadraticModelCL(TransitModel):
         else:
             return None
 
-    def evaluate_pv_ttv(self, pvp, ldc, copy=True, tdv=False):
+    def evaluate_pv_ttv(self, pvp: ndarray, ldc: ndarray, copy: bool = True, tdv: bool = False):
         pvp = atleast_2d(pvp)
         ldc = atleast_2d(ldc).astype(float32)
         self.npv = uint32(pvp.shape[0])
