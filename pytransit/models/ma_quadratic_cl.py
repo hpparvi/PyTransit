@@ -27,9 +27,6 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
-"""Mandel-Agol transit model
-"""
 from typing import Union
 
 import numpy as np
@@ -253,7 +250,7 @@ class QuadraticModelCL(TransitModel):
             return None
 
     def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
-                    e: float = None, w: float = None, copy = True):
+                    e: float = 0.0, w: float = 0.0, copy: bool = True):
         """Evaluate the transit model for a set of scalar parameters.
 
         Parameters

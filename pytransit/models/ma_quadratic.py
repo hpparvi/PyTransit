@@ -71,7 +71,7 @@ class QuadraticModel(TransitModel):
 
     def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Optional[Union[float, ndarray]] = None,
-                 w: Optional[Union[float, ndarray]] = None, copy: Optional[bool] = True) -> ndarray:
+                 w: Optional[Union[float, ndarray]] = None, copy: bool = True) -> ndarray:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
         Parameters
@@ -130,7 +130,7 @@ class QuadraticModel(TransitModel):
         return squeeze(flux)
 
     def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
-                    e: Optional[float] = None, w: Optional[float] = None, copy: Optional[bool] = True) -> ndarray:
+                    e: float = 0.0, w: float = 0.0, copy: bool = True) -> ndarray:
         """Evaluate the transit model for a set of scalar parameters.
 
         Parameters
@@ -166,8 +166,6 @@ class QuadraticModel(TransitModel):
 
         ldc = asarray(ldc)
         k = asarray(k)
-        if e is None:
-            e, w = 0., 0.
 
         if self.time is None:
             raise ValueError("Need to set the data before calling the transit model.")
@@ -185,16 +183,16 @@ class QuadraticModel(TransitModel):
                                             self._es, self._ms, self._tae)
         return squeeze(flux)
 
-    def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: Optional[bool] = True) -> ndarray:
-        """Evaluate the transit model for 2D parameter array.
+    def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
+        """Evaluate the transit model for a 2D parameter array.
 
         Parameters
         ----------
-        pvp
+        pvp: ndarray
             Parameter array with a shape `(npv, npar)` where `npv` is the number of parameter vectors, and each row
             contains a set of parameters `[k, t0, p, a, i, e, w]`. The radius ratios can also be given per passband,
             in which case the row should be structured as `[k_0, k_1, k_2, ..., k_npb, t0, p, a, i, e, w]`.
-        ldc
+        ldc: ndarray
             Limb darkening coefficient array with shape `(npv, 2*npb)`, where `npv` is the number of parameter vectors
             and `npb` is the number of passbands.
 
