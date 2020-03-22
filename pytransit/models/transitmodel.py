@@ -52,9 +52,25 @@ class TransitModel(object):
         self._tae, self._es, self._ms = None, None, None
         self.init_orbit_table()
 
-    def set_data(self, time: ndarray,
-                 lcids: ndarray = None, pbids: ndarray = None,
-                 nsamples: ndarray = None, exptimes: ndarray = None):
+    def set_data(self, time: ndarray, lcids: ndarray = None, pbids: ndarray = None,
+                 nsamples: ndarray = None, exptimes: ndarray = None) -> None:
+        """Set the data for the transit model.
+
+        Parameters
+        ----------
+        time : array-like
+            Array of mid-exposure times for which the model will be evaluated.
+        lcids : array-like, optional
+            Array of integer light curve indices. Must have the same size as the time array.
+        pbids : array-like, optional
+            Array of passband indices, one per light curve. Must satisfy `pbids.size == unique(lcids).size`.
+        nsamples : int or array-like, optional
+            Number of samples per exposure. Can either be an integer, in which case all the light curves will have the
+            same supersampling rate, or an array of integers, in which case each light curve can have a different rate.
+        exptimes : float or array-like, optional
+            Exposure times, again either for all the modelled data, or one value per light curve.
+
+        """
 
         # Time samples
         # ------------
