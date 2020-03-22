@@ -37,7 +37,7 @@ from typing import Union, Optional
 
 import pyopencl as cl
 from pyopencl import CompilerWarning
-from numpy import array, uint32, float32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, empty
+from numpy import array, uint32, float32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, empty, concatenate
 from .transitmodel import TransitModel
 
 warnings.filterwarnings('ignore', category=CompilerWarning)
@@ -195,8 +195,11 @@ class UniformModelCL(TransitModel):
         ndarray
           Modelled flux as a 1D ndarray.
         """
-        pvp = array([[k, t0, p, a, i, e, w]], float32)
-        return self.evaluate_pv(pvp, copy)
+        if isinstance(k, float):
+            pv = array([[k, t0, p, a, i, e, w]], float32)
+        else:
+            pv = concatenate([k, [t0, p, a, i, e, w]]).astype(float32)
+        return self.evaluate_pv(pv, copy)
 
     def evaluate_pv(self, pvp, copy=True):
         """Evaluate the transit model for 2D parameter array.

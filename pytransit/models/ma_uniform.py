@@ -113,7 +113,7 @@ class UniformModel(TransitModel):
             raise ValueError("Need to set the data before calling the transit model.")
 
         k = asarray(k)
-        flux = uniform_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
+        flux = uniform_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
         return squeeze(flux)
 
     def evaluate_pv(self, pvp: ndarray) -> ndarray:
@@ -137,5 +137,5 @@ class UniformModel(TransitModel):
              Modelled flux either as a 1D or 2D ndarray.
          """
         assert self.time is not None, "Need to set the data before calling the transit model."
-        flux = uniform_model_pv(self.time, pvp, self.lcids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
+        flux = uniform_model_pv(self.time, pvp, self.lcids, self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
         return squeeze(flux)

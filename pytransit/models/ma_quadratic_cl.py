@@ -36,7 +36,8 @@ from os.path import dirname, join
 import warnings
 from pyopencl import CompilerWarning
 
-from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, empty
+from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, empty, \
+    concatenate
 
 from .numba.ma_quadratic_nb import calculate_interpolation_tables
 from .transitmodel import TransitModel
@@ -277,7 +278,11 @@ class QuadraticModelCL(TransitModel):
         ndarray
             Modelled flux as a 1D ndarray.
         """
-        return self.evaluate_pv(k, ldc, t0, p, a, i, e, w, copy)
+        if isinstance(k, float):
+            pv = array([[k, t0, p, a, i, e, w]])
+        else:
+            pv = concatenate([k, [t0, p, a, i, e, w]])
+        return self.evaluate_pv(pv, ldc, copy)
 
     def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True):
         """Evaluate the transit model for 2D parameter array.

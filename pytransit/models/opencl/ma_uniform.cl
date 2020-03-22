@@ -80,12 +80,12 @@ __kernel void uniform_eccentric_pop(__global const float *times, __global const 
       uint nks = pv_length - 6;
 
       __global const float *ks  = &pv_pop[i_pv*pv_length];
-      __global const float *pv  = &pv_pop[i_pv*pv_length];
+      __global const float *pv  = &pv_pop[i_pv*pv_length + nks];
 
       uint ns = nss[lcid];
       float exptime = exptimes[lcid];
       float toffset, z;
-      float ma_offset = mean_anomaly_offset(pv[5], pv[6]);
+      float ma_offset = mean_anomaly_offset(pv[4], pv[5]);
       float k = ks[0];
 
       if (nks > 1){
@@ -101,7 +101,7 @@ __kernel void uniform_eccentric_pop(__global const float *times, __global const 
       flux[gid] = 0.0f;
       for(int i=1; i<ns+1; i++){
         toffset = exptime * (((float) i - 0.5f)/ (float) ns - 0.5f);
-        z = z_iter(times[i_tm]+toffset, pv[1], pv[2], pv[3], pv[4], pv[5], pv[6], ma_offset, 1.0f);
+        z = z_iter(times[i_tm]+toffset, pv[0], pv[1], pv[2], pv[3], pv[4], pv[5], ma_offset, 1.0f);
         flux[gid] += ma_uniform(z, k);
       }
       flux[gid] /= (float) ns;

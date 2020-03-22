@@ -619,7 +619,7 @@ def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
     ldc = atleast_1d(ldc)
     k = atleast_1d(k)
 
-    if ldc.shape[1] != 2*npb:
+    if ldc.size != 2*npb:
         raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
     npt = t.size
@@ -734,10 +734,10 @@ def quadratic_model_interpolated_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, n
 @njit(parallel=True, fastmath=True)
 def quadratic_model_interpolated_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb,
                                    es, ms, tae, edt, ldt, let, kt, zt):
-    ldc = atleast_2d(ldc)
+    ldc = atleast_1d(ldc)
     k = atleast_1d(k)
 
-    if ldc.shape[1] != 2*npb:
+    if ldc.size != 2*npb:
         raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
     npt = t.size
@@ -760,7 +760,7 @@ def quadratic_model_interpolated_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, n
                 if z > 1.0 + _k:
                     flux[j] += 1.
                 else:
-                    flux[j] += quadratic_interpolated_z_s(z, _k, ldc[0, 2 * ipb:2 * (ipb + 1)], edt, ldt, let, kt, zt)
+                    flux[j] += quadratic_interpolated_z_s(z, _k, ldc[2 * ipb:2 * (ipb + 1)], edt, ldt, let, kt, zt)
             flux[j] /= nsamples[ilc]
     return flux
 

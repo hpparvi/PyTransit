@@ -108,6 +108,8 @@ class QuadraticModel(TransitModel):
         # Scalar parameters branch
         # ------------------------
         if isinstance(t0, float):
+            if e is None:
+                e, w = 0.0, 0.0
             return self.evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
 
         # Parameter population branch
