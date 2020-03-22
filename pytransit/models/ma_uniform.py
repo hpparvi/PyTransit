@@ -13,7 +13,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Union
+from typing import Union, Optional
 
 from numpy import ndarray, array, squeeze, zeros, atleast_2d, asarray
 
@@ -79,12 +79,63 @@ class UniformModel(TransitModel):
         return squeeze(flux)
 
     def evaluate_ps(self, k: float, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0.) -> ndarray:
-        assert self.time is not None, "Need to set the data before calling the transit model."
-        pvp = array([[k, t0, p, a, i, e, w]])
-        flux = uniform_model_pv(self.time, pvp, self.lcids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
+        """Evaluate the transit model for a set of scalar parameters.
+
+         Parameters
+         ----------
+         k : array-like
+             Radius ratio(s) either as a single float or an 1D array.
+         t0 : float
+             Transit center as a float.
+         p : float
+             Orbital period as a float.
+         a : float
+             Orbital semi-major axis divided by the stellar radius as a float.
+         i : float
+             Orbital inclination(s) as a float.
+         e : float, optional
+             Orbital eccentricity as a float.
+         w : float, optional
+             Argument of periastron as a float.
+
+         Notes
+         -----
+         This version of the `evaluate` method is optimized for calculating a single transit model (such as when using a
+         local optimizer). If you want to evaluate the model for a large number of parameters simultaneously, use either
+         `evaluate` or `evaluate_pv`.
+
+         Returns
+         -------
+         ndarray
+             Modelled flux as a 1D ndarray.
+         """
+        if self.time is None:
+            raise ValueError("Need to set the data before calling the transit model.")
+
+        k = asarray(k)
+        flux = uniform_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
         return squeeze(flux)
 
     def evaluate_pv(self, pvp: ndarray) -> ndarray:
+        """Evaluate the transit model for a 2D parameter array.
+
+         Parameters
+         ----------
+         pvp
+             Parameter array with a shape `(npv, npar)` where `npv` is the number of parameter vectors, and each row
+             contains a set of parameters `[k, t0, p, a, i, e, w]`. The radius ratios can also be given per passband,
+             in which case the row should be structured as `[k_0, k_1, k_2, ..., k_npb, t0, p, a, i, e, w]`.
+
+         Notes
+         -----
+         This version of the `evaluate` method is optimized for calculating several models in parallel, such as when
+         using *emcee* for MCMC sampling.
+
+         Returns
+         -------
+         ndarray
+             Modelled flux either as a 1D or 2D ndarray.
+         """
         assert self.time is not None, "Need to set the data before calling the transit model."
         flux = uniform_model_pv(self.time, pvp, self.lcids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
         return squeeze(flux)
