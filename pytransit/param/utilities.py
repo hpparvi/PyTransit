@@ -37,6 +37,12 @@ def derive_qois(data: DataFrame, rstar: tuple = None, teff: tuple = None, distan
     if 'k2_true' in df and 'k2_app' in df:
         df['cnt'] = 1. - df.k2_app / df.k2_true
 
+    if 'g' in df:
+        if 'k' in df:
+            df['b'] = df.g * (1 + df.k)
+        elif 'k_true' in df:
+            df['b'] = df.g * (1 + df.k_true)
+
     df['a'] = as_from_rhop(df.rho.values, period)
     df['inc'] = i_from_ba(df.b.values, df.a.values)
     df['t14'] = d_from_pkaiews(period, df.k_true.values, df.a.values, df.inc.values, 0.0, 0.0, 1)
