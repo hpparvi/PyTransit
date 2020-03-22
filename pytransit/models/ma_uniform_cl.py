@@ -28,22 +28,23 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-"""OpenCL implementation of the transit over a uniform disk.
+"""OpenCL implementation of the transit over a uniform disk (Mandel & Agol, ApJ 580, L171-L175 2002).
 """
 
 import warnings
 from os.path import dirname, join
+from typing import Union, Optional
+
 import pyopencl as cl
 from pyopencl import CompilerWarning
-from numpy import array, uint32, float32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray
+from numpy import array, uint32, float32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, empty
 from .transitmodel import TransitModel
 
 warnings.filterwarnings('ignore', category=CompilerWarning)
 
 
 class UniformModelCL(TransitModel):
-    """
-    Exoplanet transit over a uniform disk.
+    """Exoplanet transit over a uniform disk (Mandel & Agol, ApJ 580, L171-L175 2002).
     """
 
     def __init__(self, cl_ctx=None, cl_queue=None) -> None:
@@ -107,12 +108,119 @@ class UniformModelCL(TransitModel):
         self._b_nsamples = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.nsamples)
         self._b_etimes = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.exptimes)
 
+    def evaluate(self, k: Union[float, ndarray], t0: Union[float, ndarray], p: Union[float, ndarray],
+                 a: Union[float, ndarray], i: Union[float, ndarray], e: Optional[Union[float, ndarray]] = None,
+                 w: Optional[Union[float, ndarray]] = None, copy: bool = True) -> ndarray:
+        """Evaluate the transit model for a set of scalar or vector parameters.
+
+        Parameters
+        ----------
+        k
+            Radius ratio(s) either as a single float, 1D vector, or 2D array.
+        t0
+            Transit center(s) as a float or a 1D vector.
+        p
+            Orbital period(s) as a float or a 1D vector.
+        a
+            Orbital semi-major axis (axes) divided by the stellar radius as a float or a 1D vector.
+        i
+            Orbital inclination(s) as a float or a 1D vector.
+        e : optional
+            Orbital eccentricity as a float or a 1D vector.
+        w : optional
+            Argument of periastron as a float or a 1D vector.
+
+        Notes
+        -----
+        The model can be evaluated either for one set of parameters or for many sets of parameters simultaneously. In
+        the first case, the orbital parameters should all be given as floats. In the second case, the orbital parameters
+        should be given as a 1D array-like.
+
+        Returns
+        -------
+        ndarray
+            Modelled flux either as a 1D or 2D ndarray.
+        """
+        npv = 1 if isinstance(t0, float) else len(t0)
+        k = asarray(k)
+
+        if k.size == 1:
+            nk = 1
+        elif npv == 1:
+            nk = k.size
+        else:
+            nk = k.shape[1]
+
+        if e is None:
+            e, w = 0.0, 0.0
+
+        pvp = empty((npv, nk + 6), dtype=float32)
+        pvp[:, :nk] = k
+        pvp[:, nk] = t0
+        pvp[:, nk + 1] = p
+        pvp[:, nk + 2] = a
+        pvp[:, nk + 3] = i
+        pvp[:, nk + 4] = e
+        pvp[:, nk + 5] = w
+        return self.evaluate_pv(pvp, copy)
 
     def evaluate_ps(self, k, t0, p, a, i, e=0., w=0., copy=True):
+        """Evaluate the transit model for a set of scalar parameters.
+
+        Parameters
+        ----------
+        k : array-like
+            Radius ratio(s) either as a single float or an 1D array.
+        t0 : float
+            Transit center as a float.
+        p : float
+            Orbital period as a float.
+        a : float
+            Orbital semi-major axis divided by the stellar radius as a float.
+        i : float
+            Orbital inclination(s) as a float.
+        e : float, optional
+            Orbital eccentricity as a float.
+        w : float, optional
+            Argument of periastron as a float.
+
+        Notes
+        -----
+        This version of the `evaluate` method is optimized for calculating a single transit model (such as when using a
+        local optimizer). If you want to evaluate the model for a large number of parameters simultaneously, use either
+        `evaluate` or `evaluate_pv`.
+
+        Returns
+        -------
+        ndarray
+          Modelled flux as a 1D ndarray.
+        """
         pvp = array([[k, t0, p, a, i, e, w]], float32)
         return self.evaluate_pv(pvp, copy)
 
     def evaluate_pv(self, pvp, copy=True):
+        """Evaluate the transit model for 2D parameter array.
+
+        Parameters
+        ----------
+        pvp
+            Parameter array with a shape `(npv, npar)` where `npv` is the number of parameter vectors, and each row
+            contains a set of parameters `[k, t0, p, a, i, e, w]`. The radius ratios can also be given per passband,
+            in which case the row should be structured as `[k_0, k_1, k_2, ..., k_npb, t0, p, a, i, e, w]`.
+        ldc
+            Limb darkening coefficient array with shape `(npv, 2*npb)`, where `npv` is the number of parameter vectors
+            and `npb` is the number of passbands.
+
+        Notes
+        -----
+        This version of the `evaluate` method is optimized for calculating several models in parallel, such as when
+        using *emcee* for MCMC sampling.
+
+        Returns
+        -------
+        ndarray
+            Modelled flux either as a 1D or 2D ndarray.
+        """
         pvp = atleast_2d(pvp)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])

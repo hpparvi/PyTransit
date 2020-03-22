@@ -13,14 +13,14 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Union, Optional
 
-from numpy import ndarray, array, squeeze, zeros, atleast_2d, asarray
-
-from .transitmodel import TransitModel
+from typing import Union
+from numpy import ndarray, squeeze, zeros, asarray
 from .numba.ma_uniform_nb import uniform_model_v, uniform_model_s, uniform_model_pv
+from .transitmodel import TransitModel
 
 __all__ = ['UniformModel']
+
 
 class UniformModel(TransitModel):
 
