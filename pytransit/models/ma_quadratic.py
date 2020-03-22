@@ -223,3 +223,14 @@ class QuadraticModel(TransitModel):
             flux = quadratic_model_direct_pv(self.time, pvp, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes,
                                                    self.npb, self._es, self._ms, self._tae)
         return squeeze(flux)
+
+    def to_opencl(self):
+        """Creates an OpenCL clone (`QuadraticModelCL`) of the transit model.
+
+        Returns
+        -------
+        QuadraticModelCL
+        """
+        from .ma_quadratic_cl import QuadraticModelCL
+        tm = QuadraticModelCL(klims=self.klims)
+        tm.set_data(self.time, self.lcids, self.pbids, self.nsamples, self.exptimes)
