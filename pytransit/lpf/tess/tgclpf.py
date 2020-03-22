@@ -167,7 +167,7 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         return fig
 
     def plot_gb_transits(self, solution: str = 'de', pv: ndarray = None, figsize: tuple = None, axes=None, ncol: int = 4,
-                         xlim: tuple = None, ylim: tuple = None, remove_baseline: bool = True):
+                         xlim: tuple = None, ylim: tuple = None, remove_baseline: bool = True, n_samples: int = 1500):
 
         solution = solution.lower()
         samples = None
@@ -180,7 +180,8 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
                 pv = self.de.minimum_location
             elif solution in ('mcmc', 'mc'):
                 solution = 'mcmc'
-                samples = permutation(self.posterior_samples().values)[:500]
+                samples = self.posterior_samples(derived_parameters=False)
+                samples = permutation(samples.values)[:n_samples]
                 pv = median(samples, 0)
             else:
                 raise NotImplementedError("'solution' should be either 'local', 'global', or 'mcmc'")
@@ -198,17 +199,18 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         if remove_baseline:
             if solution == 'mcmc':
                 fbasel = median(self.baseline(samples), axis=0)
-                fmodel, fmodm, fmodp = percentile(self.transit_model(samples), [50, 1, 99], axis=0)
+                fmodel, fmodm, fmodp = percentile(self.transit_model(samples), [50, 0.5, 99.5], axis=0)
             else:
                 fbasel = squeeze(self.baseline(pv))
                 fmodel, fmodm, fmodp = squeeze(self.transit_model(pv)), None, None
             fobs = self.ofluxa / fbasel
         else:
             if solution == 'mcmc':
+                fbasel = median(self.baseline(samples), axis=0)
                 fmodel, fmodm, fmodp = percentile(self.flux_model(samples), [50, 1, 99], axis=0)
             else:
+                fbasel = squeeze(self.baseline(pv))
                 fmodel, fmodm, fmodp = squeeze(self.flux_model(pv)), None, None
-            fbasel = None
             fobs = self.ofluxa
 
         etess = self._stess
@@ -237,3 +239,4 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         if fig is not None:
             fig.tight_layout()
         return fig
+
