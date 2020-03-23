@@ -90,7 +90,7 @@ class BaseLPF(LogPosteriorFunction):
 
     def __init__(self, name: str, passbands: list, times: list = None, fluxes: Iterable = None, errors: list = None,
                  pbids: list = None, covariates: list = None, wnids: list = None, tm: TransitModel = None,
-                 nsamples: tuple = 1, exptimes: tuple = 0., init_data=True, result_dir: Path = None):
+                 nsamples: tuple = 1, exptimes: tuple = 0., init_data=True, result_dir: Path = None, tref: float = 0.0):
         """The base Log Posterior Function class.
 
         The `BaseLPF` class creates the basis for transit light curve analyses using `PyTransit`. This class can be
@@ -101,25 +101,25 @@ class BaseLPF(LogPosteriorFunction):
         name: str
             Name of the log posterior function instance.
 
-        passbands: iterable
+        passbands: Iterable
             List of unique passband names (filters) that the light curves have been observed in.
 
-        times: iterable
+        times: Iterable
             List of 1d ndarrays each containing the mid-observation times for a single light curve.
 
-        fluxes: iterable
+        fluxes: Iterable
             List of 1d ndarrays each containing the normalized fluxes for a single light curve.
 
-        errors: iterable
+        errors: Iterable
             List of 1d ndarrays each containing the flux measurement uncertainties for a single light curvel.
 
-        pbids: iterable of ints
+        pbids: Iterable of ints
             List of passband indices mapping each light curve to a single passband.
 
-        covariates: iterable
+        covariates: Iterable
             List of covariates one 2d narray per light curve.
 
-        wnids: iterable of ints
+        wnids: Iterable of ints
             List of noise set indices mapping each light curve to a single noise set.
 
         tm: TransitModel
@@ -134,8 +134,11 @@ class BaseLPF(LogPosteriorFunction):
         init_data: bool
             Set to `False` to allow the LPF to be initialized without data. This is mainly for debugging.
 
-        result_dir: Path
+        result_dir: Path, optional
             Default saving directory
+
+        tref: float, optional
+            Reference time
         """
 
         self._pre_initialisation()
@@ -143,6 +146,7 @@ class BaseLPF(LogPosteriorFunction):
         super().__init__(name=name, result_dir=result_dir)
 
         self.tm = tm or QuadraticModel(klims=(0.01, 0.75), nk=512, nz=512)
+        self._tref = tref
 
         # Passbands
         # ---------
@@ -246,7 +250,7 @@ class BaseLPF(LogPosteriorFunction):
             self.nsamples = asarray(nsamples, 'int')
             self.exptimes = asarray(exptimes)
 
-        self.tm.set_data(self.timea, self.lcids, self.pbids, self.nsamples, self.exptimes)
+        self.tm.set_data(self.timea-self._tref, self.lcids, self.pbids, self.nsamples, self.exptimes)
 
         if errors is None:
             self.errors = array([full(t.size, nan) for t in self.times])
@@ -297,7 +301,7 @@ class BaseLPF(LogPosteriorFunction):
     def _init_p_planet(self):
         """Planet parameter initialisation.
         """
-        pk2 = [PParameter('k2', 'area_ratio', 'A_s', GM(0.1), (0.01**2, 0.75**2))]
+        pk2 = [PParameter('k2', 'area_ratio', 'A_s', U(0.05**2, 0.2**2), (0, inf))]
         self.ps.add_passband_block('k2', 1, 1, pk2)
         self._pid_k2 = repeat(self.ps.blocks[-1].start, self.npb)
         self._start_k2 = self.ps.blocks[-1].start
@@ -338,8 +342,6 @@ class BaseLPF(LogPosteriorFunction):
 
     def create_pv_population(self, npop=50):
         pvp = self.ps.sample_from_prior(npop)
-        for sl in self.ps.blocks[1].slices:
-            pvp[:,sl] = uniform(0.01**2, 0.25**2, size=(npop, 1))
 
         # With LDTk
         # ---------
@@ -385,10 +387,13 @@ class BaseLPF(LogPosteriorFunction):
 
     def transit_model(self, pv, copy=True):
         pv = atleast_2d(pv)
-        pvp = map_pv(pv)
         ldc = map_ldc(pv[:,self._sl_ld])
-        flux = self.tm.evaluate_pv(pvp, ldc, copy)
-        return flux
+        zero_epoch = pv[:,0] - self._tref
+        period = pv[:,1]
+        smaxis = as_from_rhop(pv[:,2], period)
+        inclination  = i_from_ba(pv[:,3], smaxis)
+        radius_ratio = sqrt(pv[:,4:5])
+        return self.tm.evaluate(radius_ratio, ldc, zero_epoch, period, smaxis, inclination)
 
     def flux_model(self, pv):
         baseline    = self.baseline(pv)
@@ -416,11 +421,9 @@ class BaseLPF(LogPosteriorFunction):
         return lnlike_normal_v(self.ofluxa, flux_m, wn, self.noise_ids, self.lcids)
 
     def set_radius_ratio_prior(self, kmin, kmax):
+        """Set a uniform prior on all radius ratios."""
         for p in self.ps[self._sl_k2]:
             p.prior = U(kmin ** 2, kmax ** 2)
-            p.bounds = [kmin ** 2, kmax ** 2]
-        self.ps.thaw()
-        self.ps.freeze()
 
     def add_t14_prior(self, mean: float, std: float) -> None:
         """Add a normal prior on the transit duration.
