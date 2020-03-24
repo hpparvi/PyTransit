@@ -26,9 +26,9 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Union
+from typing import Union, Optional
 
-from numpy import ones, ndarray, asarray, zeros, unique, atleast_1d
+from numpy import ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype, integer, float64
 
 from ..orbits.orbits_py import ta_ip_calculate_table
 
@@ -52,8 +52,9 @@ class TransitModel(object):
         self._tae, self._es, self._ms = None, None, None
         self.init_orbit_table()
 
-    def set_data(self, time: ndarray, lcids: ndarray = None, pbids: ndarray = None,
-                 nsamples: ndarray = None, exptimes: ndarray = None) -> None:
+    def set_data(self, time: ndarray, lcids: Optional[ndarray] = None, pbids: Optional[ndarray] = None,
+                 nsamples: Optional[ndarray]  = None, exptimes: Optional[ndarray] = None,
+                 epids: Optional[ndarray] = None) -> None:
         """Set the data for the transit model.
 
         Parameters
@@ -69,27 +70,45 @@ class TransitModel(object):
             same supersampling rate, or an array of integers, in which case each light curve can have a different rate.
         exptimes : float or array-like, optional
             Exposure times, again either for all the modelled data, or one value per light curve.
-
+        epids : array-like, optional
+            Epoch indices that can be used to link a light curve to a specific zero epoch and period (for TTV calculations).
         """
 
         # Time samples
         # ------------
-        self.time     = asarray(time)
+        self.time     = asarray(time, float64)
         self.npt      = self.time.size
 
         # Light curve indices
         # -------------------
         # The light curve a datapoint belongs to.
         self.lcids    = asarray(lcids) if lcids is not None else zeros(self.npt, 'int')
-        assert self.lcids.size == self.npt
         self.nlc = unique(self.lcids).size
+
+        if not issubdtype(self.lcids.dtype, integer):
+            raise ValueError(f"The light curve indices must be given as integers instead of {self.lcids.dtype}.")
+
+        if self.lcids.size != self.npt:
+            raise ValueError(f"Light curve index array size ({self.lcids.size}) should equal to the number of datapoints ({self.npt}).")
 
         # Passband indices
         # ----------------
         # The passband a light curve belongs to.
         self.pbids    = asarray(pbids) if pbids is not None else zeros(self.nlc, 'int')
-        assert self.pbids.size == self.nlc
         self.npb = unique(self.pbids).size
+
+        if not issubdtype(self.pbids.dtype, integer):
+            raise ValueError(f"The passband indices must be given as integers instead of {self.pbids.dtype}.")
+
+        if self.pbids.size != self.nlc:
+            raise ValueError(f"Passband index array size ({self.pbids.size}) should equal to the number of ligt curves ({self.nlc}).")
+
+        if not (pbids.max() == (self.npb-1) and pbids.min() == 0):
+            raise ValueError(f"Passband indices (`pbids`) for {self.npb} unique passbands should be given as integers between 0 and {self.npb - 1}.")
+
+        # Epoch indices
+        # -------------
+        self.epids = asarray(epids) if epids is not None else zeros(self.nlc, 'int')
 
         # Supersampling
         # -------------
