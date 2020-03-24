@@ -279,9 +279,9 @@ class QuadraticModelCL(TransitModel):
             Modelled flux as a 1D ndarray.
         """
         if isinstance(k, float):
-            pv = array([[k, t0, p, a, i, e, w]])
+            pv = array([[k, t0, p, a, i, e, w]], float32)
         else:
-            pv = concatenate([k, [t0, p, a, i, e, w]])
+            pv = concatenate([k, [t0, p, a, i, e, w]]).astype(float32)
         return self.evaluate_pv(pv, ldc, copy)
 
     def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True):
