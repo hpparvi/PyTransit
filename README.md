@@ -11,11 +11,32 @@ PyTransit
 
 Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. PyTransit offers optimised CPU and 
 GPU implementations of popular exoplanet transit models with a unified interface, and thrives to be *the fastest and the 
-most versatile* tool for transit modelling in Python. The Mandel & Agol and Gimenez models 
-come with specialised optimisations for transmission spectroscopy that allow a transit model to be calculated in multiple 
-passbands with only a minor additional computational cost to a single passband.
+most versatile* tool for transit modelling in Python. 
 
-![](notebooks/model_example_1.png)
+PyTransit makes transit model evaluation trivial whether modelling straightforward single-passband transit light curves or
+more complex science-cases, such as transmission spectroscopy. Further, the model can be evaluated for a large set of
+parameter sets simultaneously in parallel to optimize the evaluation speed with population-based MCMC samplers and 
+optimization methods, such as emcee and  DE-MCMC.
+
+```Python
+from pytransit import QuadraticModel
+
+tm = QuadraticModel()
+tm.set_data(times)
+
+tm.evaluate(k=0.1, ldc=[0.2, 0.1], t0=0.0, p=1.0, a=3.0, i=0.5*pi)
+
+tm.evaluate(k=[0.10, 0.12], ldc=[[0.2, 0.1, 0.5, 0.1]], t0=0.0, p=1.0, a=3.0, i=0.5*pi)
+
+tm.evaluate(k=[[0.10, 0.12], [0.11, 0.13]],
+                ldc=[[0.2, 0.1, 0.5, 0.1],[0.4, 0.2, 0.75, 0.1]],
+                t0=[0.0, 0.01], p=[1, 1], a=[3.0, 2.9], i=[.5*pi, .5*pi])
+```
+
+![](doc/source/basic_example_1.svg)
+![](doc/source/basic_example_2.svg)
+![](doc/source/basic_example_3.svg)
+
 
 The package has been used in research since 2010, and is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433), which also details the model-specific optimisations and model performance.
 
