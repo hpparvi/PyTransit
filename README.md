@@ -32,10 +32,13 @@ tm.evaluate(k=[[0.10, 0.12], [0.11, 0.13]], ldc=[[0.2, 0.1, 0.5, 0.1],[0.4, 0.2,
             t0=[0.0, 0.01], p=[1, 1], a=[3.0, 2.9], i=[.5*pi, .5*pi])
 ```
 
+<center>
+
 ![](doc/source/basic_example_1.svg)
 ![](doc/source/basic_example_2.svg)
 ![](doc/source/basic_example_3.svg)
 
+</center>
 
 The package has been used in research since 2010, and is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433), which also details the model-specific optimisations and model performance.
 
