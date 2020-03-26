@@ -11,7 +11,7 @@ dist: bionic
 cache: pip
 
 install:
-  - if [ $TRAVIS_OS_NAME = linux ]; then sudo apt-get install libpocl-dev libpocl1 pocl-opencl-icd; fi
+  - if [ $TRAVIS_OS_NAME = linux ]; then sudo apt-get install libpocl-dev pocl-opencl-icd; fi
   - pip install numpy scipy numba pyopencl pandas xarray tables astropy matplotlib tqdm seaborn emcee corner uncertainties semantic_version
   - python setup.py install
 
