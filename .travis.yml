@@ -6,6 +6,8 @@ os:
   - linux
   - osx
 
+dist: bionic
+
 cache: pip
 
 install:
