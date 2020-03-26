@@ -26,7 +26,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Union, Optional
+from typing import Union, Optional, List
 
 from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray
 
@@ -69,7 +69,7 @@ class QuadraticModel(TransitModel):
             self.ed, self.le, self.ld, self.kt, self.zt = None, None, None, None, None
             self.klims, self.nk, self.nz = None, None, None
 
-    def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
+    def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List], t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Optional[Union[float, ndarray]] = None,
                  w: Optional[Union[float, ndarray]] = None, copy: bool = True) -> ndarray:
         """Evaluate the transit model for a set of scalar or vector parameters.
