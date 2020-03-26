@@ -51,13 +51,11 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         times, fluxes, pbnames, pbs, wns, covs = self.read_data()
         pbids = pd.Categorical(pbs, categories=pbnames).codes
         wnids = arange(len(times))
-
-        self._tref = floor(concatenate(times).min())
-        times = [t-self._tref for t in times]
+        tref = floor(concatenate(times).min())
 
         self.wns = wns
         PhysContLPF.__init__(self, name, passbands=pbnames, times=times, fluxes=fluxes, pbids=pbids, wnids=wnids,
-                             covariates=covs)
+                             covariates=covs, tref=tref)
 
     def read_data(self):
         """Read in the TESS light curve and the ground-based data.
@@ -145,7 +143,7 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         ax.autoscale(enable=True, axis='x', tight=True)
 
         etess = self._ntess
-        t = self.timea[:etess] + self._tref
+        t = self.timea[:etess]
         fo = self.ofluxa[:etess]
         fm = squeeze(self.transit_model(pv))[:etess]
         bl = squeeze(self.baseline(pv))[:etess]
@@ -219,7 +217,7 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         for i in range(nlc):
             ax = axs.flat[i]
             sl = self.lcslices[etess + i]
-            t = self.times[etess + i] + self._tref
+            t = self.times[etess + i]
             e = epoch(t.mean(), t0, p)
             tc = t0 + e * p
             tt = 24 * (t - tc)
