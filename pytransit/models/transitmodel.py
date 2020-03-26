@@ -26,7 +26,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Union, Optional
+from typing import Union, Optional, List
 
 from numpy import ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype, integer, float64
 
@@ -52,9 +52,12 @@ class TransitModel(object):
         self._tae, self._es, self._ms = None, None, None
         self.init_orbit_table()
 
-    def set_data(self, time: ndarray, lcids: Optional[ndarray] = None, pbids: Optional[ndarray] = None,
-                 nsamples: Optional[ndarray]  = None, exptimes: Optional[ndarray] = None,
-                 epids: Optional[ndarray] = None) -> None:
+    def set_data(self, time: Union[ndarray, List],
+                 lcids: Optional[Union[ndarray, List]] = None,
+                 pbids: Optional[Union[ndarray, List]] = None,
+                 nsamples: Optional[Union[ndarray, List]]  = None,
+                 exptimes: Optional[Union[ndarray, List]] = None,
+                 epids: Optional[Union[ndarray, List]] = None) -> None:
         """Set the data for the transit model.
 
         Parameters
