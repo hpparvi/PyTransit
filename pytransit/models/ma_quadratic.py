@@ -234,3 +234,4 @@ class QuadraticModel(TransitModel):
         from .ma_quadratic_cl import QuadraticModelCL
         tm = QuadraticModelCL(klims=self.klims)
         tm.set_data(self.time, self.lcids, self.pbids, self.nsamples, self.exptimes)
+        return tm
