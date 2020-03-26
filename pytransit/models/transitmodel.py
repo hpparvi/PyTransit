@@ -41,11 +41,17 @@ class TransitModel(object):
 
         # Declare the basic arrays
         # ------------------------
-        self.time: ndarray = None
-        self.lcids: ndarray = None
-        self.pbids: ndarray = None
-        self.nsamples: ndarray = None
-        self.exptimes: ndarray = None
+        self.time: Optional[ndarray] = None
+        self.lcids: Optional[ndarray] = None
+        self.pbids: Optional[ndarray] = None
+        self.nsamples: Optional[ndarray] = None
+        self.exptimes: Optional[ndarray] = None
+        self.epids: Optional[ndarray] = None
+
+        self.nlc: int = 0
+        self.npt: int = 0
+        self.npb: int = 0
+
 
         # Interpolation table for eccentric orbits
         # ----------------------------------------
@@ -136,14 +142,6 @@ class TransitModel(object):
         raise NotImplementedError
 
     def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
-        raise NotImplementedError
-
-    # Evaluation given an array of times
-    # ----------------------------------
-    def evaluate_t_ps(self, t: ndarray, k: float, ldc: ndarray, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0.) -> ndarray:
-        raise NotImplementedError
-
-    def evaluate_t_pv(self, t: ndarray, pvp: ndarray) -> ndarray:
         raise NotImplementedError
 
     # Evaluation given an array of normalised distances
