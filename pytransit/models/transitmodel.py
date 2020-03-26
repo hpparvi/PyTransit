@@ -103,7 +103,7 @@ class TransitModel(object):
         if self.pbids.size != self.nlc:
             raise ValueError(f"Passband index array size ({self.pbids.size}) should equal to the number of ligt curves ({self.nlc}).")
 
-        if not (pbids.max() == (self.npb-1) and pbids.min() == 0):
+        if not (self.pbids.max() == (self.npb-1) and self.pbids.min() == 0):
             raise ValueError(f"Passband indices (`pbids`) for {self.npb} unique passbands should be given as integers between 0 and {self.npb - 1}.")
 
         # Epoch indices
