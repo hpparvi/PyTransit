@@ -2,7 +2,17 @@ language: python
 python:
   - "3.6"
 
+os:
+  - linux
+  - osx
+
 cache: pip
+
+before_install:
+  - if [ $TRAVIS_OS_NAME = "linux" ]; then
+      sudo apt-get -qq update
+      sudo apt-get install pocl
+    fi;
 
 install:
   - pip install numpy scipy numba pyopencl pandas xarray tables astropy matplotlib tqdm seaborn emcee corner uncertainties semantic_version
