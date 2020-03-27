@@ -301,3 +301,40 @@ def general_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptim
                     general_model_z(z, _k, ldc[nldc * ipb: nldc * (ipb + 1)], npol, nldc, npb, anm, avl, ajd, aje)[0]
             flux[j] /= nsamples[ilc]
     return flux
+
+
+@njit(parallel=True, fastmath=False)
+def general_model_s2(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae,
+                     npol, nldc, anm, avl, ajd, aje):
+    ldc = atleast_1d(ldc)
+    k = atleast_1d(k)
+    npt = t.size
+
+    ulcs = unique(lcids)
+    nlcs = ulcs.size
+
+    flux = zeros(npt)
+
+    if any(isnan(k)) or isnan(a) or isnan(i):
+        flux[:] = inf
+        return flux
+
+    for ilc in prange(nlcs):
+        ipb = pbids[ilc]
+
+        if k.size == 1:
+            _k = k[0]
+        else:
+            _k = k[ipb]
+
+        msk = lcids == ilc
+
+        tlc = t[msk]
+        z = zeros(tlc.size)
+        for isample in range(1, nsamples[ilc] + 1):
+            time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+            z = z_ip_v(tlc + time_offset, t0, p, a, i, e, w, es, ms, tae)
+            flux[msk] += general_model_vz(z, _k, ldc[nldc * ipb: nldc * (ipb + 1)], npol, nldc, 1, anm, avl, ajd, aje)[
+                0]
+        flux[msk] /= nsamples[ilc]
+    return flux
