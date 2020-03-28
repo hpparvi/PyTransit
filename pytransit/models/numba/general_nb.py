@@ -14,7 +14,16 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from numba import njit, prange
-from numpy import ndarray, zeros, array, exp, log, atleast_2d, ones, arange, atleast_1d, isnan, inf
+from numpy import any, all, sum, ndarray, zeros, array, exp, log, atleast_2d, ones, arange, atleast_1d, isnan, inf, unique
+
+from ...orbits.orbits_py import z_ip_s, z_ip_v
+
+
+MODE_NORMAL = 0
+MODE_TRSPEC = 1
+
+# Gamma and log gamma
+# -------------------
 
 lanczos_g = 6.024680040776729583740234375
 lanczos_g_minus_half = 5.524680040776729583740234375
@@ -268,11 +277,185 @@ def general_model_pz(z, k, u, npol, nldc, npb, anm, avl, ajd, aje):
     return flux
 
 
-from pytransit.orbits.orbits_py import z_ip_s, z_ip_v
+@njit(parallel=True, fastmath=True)
+def general_model_v(t: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray, ldc: ndarray,
+                    mode: int, lcids: ndarray, pbids: ndarray, nsamples: ndarray, exptimes: ndarray,
+                    npb: int, npol: int, nldc: int, es: ndarray, ms: ndarray, tae: ndarray,
+                    anm: ndarray, avl: ndarray, ajd: ndarray, aje: ndarray):
+
+    k = atleast_2d(k)
+    t0, p, a, i, e, w = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w)
+
+    ldc = atleast_2d(ldc)
+    if ldc.shape[1] != nldc*npb:
+        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+
+    npv = k.shape[0]
+    npt = t.size
+
+    if mode == MODE_NORMAL:
+        flux = zeros((npv, 1, npt))
+        npc = 1
+    elif mode == MODE_TRSPEC:
+        flux = zeros((npv, npb, npt))
+        npc = npb
+    else:
+        raise NotImplementedError
+
+    ulcs = unique(lcids)
+    nlcs = ulcs.size
+    for ipv in prange(npv):
+
+        fpv = zeros((flux.shape[1], flux.shape[2]))
+
+        if isnan(a[ipv]) or isnan(i[ipv]):
+            flux[ipv, :, :] = inf
+            continue
+
+        for ilc in range(nlcs):
+            ipb = pbids[ilc]
+
+            if k.shape[1] == 1:
+                _k = k[ipv, 0]
+            else:
+                _k = k[ipv, ipb]
+
+            if mode == MODE_NORMAL:
+                lldc = ldc[ipv, nldc * ipb: nldc * (ipb + 1)].reshape((1, nldc))
+            else:
+                lldc = ldc[ipv, :].reshape((npb, nldc))
+
+            msk = lcids == ilc
+
+            tlc = t[msk]
+            for isample in range(1, nsamples[ilc] + 1):
+                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                z = z_ip_v(tlc + time_offset, t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], es, ms, tae)
+                fpv[:, msk] += general_model_vz(z, _k, lldc, npol, nldc, npc, anm, avl, ajd, aje)
+            fpv[:, msk] /= nsamples[ilc]
+        flux[ipv, :, :] = fpv
+
+    return flux
+
+
+
+@njit(parallel=True, fastmath=False)
+def general_model_s(t: ndarray, k: ndarray, t0: float, p: float, a: float, i: float, e: float, w: float, ldc: ndarray,
+                    mode: int, lcids: ndarray, pbids: ndarray, nsamples: ndarray, exptimes: ndarray,
+                    npb: int, npol: int, nldc: int, es: ndarray, ms: ndarray, tae: ndarray,
+                    anm: ndarray, avl: ndarray, ajd: ndarray, aje: ndarray):
+    """
+
+    Parameters
+    ----------
+    t: ndarray
+        Mid-exposure times
+    k: ndarray
+        Planet-star radius ratio(s)
+    t0: float
+        Zero epoch
+    p: float
+        Orbital period
+    a: float
+        Semi-major axis divided by the stellar radius
+    i: float
+        inclination [rad]
+    e: float
+        Eccentricity
+    w: float
+        Argument of peri-astron [rad]
+    ldc: ndarray
+        Limb darkening coefficients, should have a size of npb*nldc.
+    mode: int
+        Either `0` for normal behaviour or `1` for transmission spectroscopy. The transmission spectroscopy mode
+        ignores the passband indices (`pbids`) and evaluates the model over all the passbands for all the exposures.
+        The evaluation is done using optimizations presented in Parviainen (2015) and is much faster than evaluating
+        the model in normal mode for transmission spectroscopy. However, the approach assumes that the photometry
+        has been created from a spectroscopic time series so that all the passbands are observed simultaneously.
+    lcids: ndarray
+        Light curve indices
+    pbids: ndarray
+        Passband indices
+    nsamples: ndarray
+        Number of samples per exposure
+    exptimes: ndarray
+        Exposure times
+    npb: int
+        Number of passbands
+    npol: int
+        Number of polynomials
+    nldc: int
+        Number of limb darkening coefficients
+    es
+    ms
+    tae
+    anm
+    avl
+    ajd
+    aje
+
+    Returns
+    -------
+
+    """
+    ldc = atleast_1d(ldc)
+    k = atleast_1d(k)
+    npt = t.size
+
+    if mode == MODE_NORMAL:
+        flux = zeros((1, npt))
+        npc = 1
+    elif mode == MODE_TRSPEC:
+        flux = zeros((npb, npt))
+        npc = npb
+    else:
+        raise NotImplementedError
+
+    ulcs = unique(lcids)
+    nlcs = ulcs.size
+
+    if any(isnan(k)) or isnan(a) or isnan(i):
+        flux[:, :] = inf
+        return flux
+
+    for ilc in prange(nlcs):
+        ipb = pbids[ilc]
+
+        if k.size == 1:
+            _k = k[0]
+        else:
+            _k = k[ipb]
+
+        if mode == MODE_NORMAL:
+            lldc = ldc[nldc * ipb: nldc * (ipb + 1)].reshape((1, nldc))
+        else:
+            lldc = ldc.reshape((npb, nldc))
+
+        msk = lcids == ilc
+
+        tlc = t[msk]
+        for isample in range(1, nsamples[ilc] + 1):
+            time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+            z = z_ip_v(tlc + time_offset, t0, p, a, i, e, w, es, ms, tae)
+            flux[:, msk] += general_model_vz(z, _k, lldc, npol, nldc, npc, anm, avl, ajd, aje)
+        flux[:, msk] /= nsamples[ilc]
+    return flux
+
+@njit(parallel=True, fastmath=False)
+def general_model_pv(t: ndarray, pvp: ndarray, ldc: ndarray,
+                    mode: int, lcids: ndarray, pbids: ndarray, nsamples: ndarray, exptimes: ndarray,
+                    npb: int, npol: int, nldc: int, es: ndarray, ms: ndarray, tae: ndarray,
+                    anm: ndarray, avl: ndarray, ajd: ndarray, aje: ndarray):
+
+    pvp = atleast_2d(pvp)
+    nk = pvp.shape[1] - 6
+    return general_model_v(t, pvp[:,:nk], t0=pvp[:,nk], p=pvp[:,nk+1], a=pvp[:,nk+2], i=pvp[:,nk+3], e=pvp[:,nk+4], w=pvp[:,nk+5],
+                        ldc=ldc, mode=mode, lcids=lcids, pbids=pbids, nsamples=nsamples, exptimes=exptimes,
+                        npb=npb, npol=npol, nldc=nldc, es=es, ms=ms, tae=tae, anm=anm, avl=avl, ajd=ajd, aje=aje)
 
 
 @njit(parallel=True, fastmath=True)
-def general_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae,
+def general_model_s_slow(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae,
                     npol, nldc, anm, avl, ajd, aje):
     ldc = atleast_1d(ldc)
     k = atleast_1d(k)
@@ -297,44 +480,6 @@ def general_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptim
                 if z > 1.0 + _k:
                     flux[j] += 1.
                 else:
-                    flux[j] += \
-                    general_model_z(z, _k, ldc[nldc * ipb: nldc * (ipb + 1)], npol, nldc, npb, anm, avl, ajd, aje)[0]
+                    flux[j] += general_model_z(z, _k, ldc[nldc * ipb: nldc * (ipb + 1)], npol, nldc, npb, anm, avl, ajd, aje)[0]
             flux[j] /= nsamples[ilc]
-    return flux
-
-
-@njit(parallel=True, fastmath=False)
-def general_model_s2(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae,
-                     npol, nldc, anm, avl, ajd, aje):
-    ldc = atleast_1d(ldc)
-    k = atleast_1d(k)
-    npt = t.size
-
-    ulcs = unique(lcids)
-    nlcs = ulcs.size
-
-    flux = zeros(npt)
-
-    if any(isnan(k)) or isnan(a) or isnan(i):
-        flux[:] = inf
-        return flux
-
-    for ilc in prange(nlcs):
-        ipb = pbids[ilc]
-
-        if k.size == 1:
-            _k = k[0]
-        else:
-            _k = k[ipb]
-
-        msk = lcids == ilc
-
-        tlc = t[msk]
-        z = zeros(tlc.size)
-        for isample in range(1, nsamples[ilc] + 1):
-            time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-            z = z_ip_v(tlc + time_offset, t0, p, a, i, e, w, es, ms, tae)
-            flux[msk] += general_model_vz(z, _k, ldc[nldc * ipb: nldc * (ipb + 1)], npol, nldc, 1, anm, avl, ajd, aje)[
-                0]
-        flux[msk] /= nsamples[ilc]
     return flux
