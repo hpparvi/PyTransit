@@ -16,4 +16,4 @@
 
 from semantic_version import Version
 
-version = Version('2.0.0-beta')
+version = Version('2.0.0-beta1')
