@@ -39,11 +39,13 @@ __all__ = ['GeneralModel']
 class GeneralModel(TransitModel):
     """Transit model with general limb darkening (Giménez, A&A 450, 1231–1237, 2006).
 
-       Transit model with general limb darkening (Giménez, A&A 450, 1231–1237, 2006) with optimizations described in
-       Parviainen (MNRAS 450, 3233–3238, 2015).
+    Transit model with general limb darkening (Giménez, A&A 450, 1231–1237, 2006) with optimizations described in
+    Parviainen (MNRAS 450, 3233–3238, 2015).
 
-       The general limb darkening law is
-       $I(\mu) = I(2) \left|1 - \Sum_{n=1}^N u_n(1-\mu^n) \right]$
+    The general limb darkening law is
+
+    .. math:: I(\mu) = I(1) (1 - \sum_{n=1}^N u_n(1-\mu^n) )
+
     """
 
     def __init__(self, npol: int = 50, nldc: int = 2, mode: int = 0):
