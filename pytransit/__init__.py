@@ -47,6 +47,7 @@ from .models.qpower2 import QPower2Model
 from .models.ma_quadratic import QuadraticModel
 from .models.ma_uniform import UniformModel
 from .models.ma_chromosphere import ChromosphereModel
+from .models.general import GeneralModel
 
 # OpenCL models
 # -------------
