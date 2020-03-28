@@ -116,10 +116,15 @@ class QuadraticModel(TransitModel):
         # ---------------------------
         else:
             ldc = atleast_2d(ldc)
-            ldc, k, t0, p, a, i = asarray(ldc), asarray(k), asarray(t0), asarray(p), asarray(a), asarray(i)
+            k, t0, p, a, i = asarray(k), asarray(t0), asarray(p), asarray(a), asarray(i)
+
+            if k.ndim == 1:
+                k = k.reshape((k.size,1))
+
             npv = t0.size
             if e is None:
                 e, w = zeros(npv), zeros(npv)
+
             if self.interpolate:
                 flux = quadratic_model_interpolated_v(self.time, k, t0, p, a, i, e, w, ldc,
                                                       self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb,

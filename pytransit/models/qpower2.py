@@ -98,6 +98,9 @@ class QPower2Model(TransitModel):
             if e is None:
                 e, w = zeros(npv), zeros(npv)
 
+            if k.ndim == 1:
+                k = k.reshape((k.size,1))
+
             flux = qpower2_model_v(self.time, k, ldc, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples,
                                    self.exptimes, self._es, self._ms, self._tae)
         return squeeze(flux)
