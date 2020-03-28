@@ -7,5 +7,6 @@ Transit models
    models/uniformcl
    models/quadratic
    models/quadraticcl
+   models/general
    models/qpower2
    models/chromosphere
