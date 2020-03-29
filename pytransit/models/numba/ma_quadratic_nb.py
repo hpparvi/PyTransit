@@ -253,7 +253,7 @@ def eval_quad_z_v(zs, k, u: ndarray):
 
         # The occulting star transits the source:
         # Table 3, Case IV.:
-        if k <= 1.0 and z <= (1.0 - k):
+        if k <= 1.0 and z < (1.0 - k):
             q = sqrt((x2 - x1) / (1.0 - x1))
             Kk = ellk(q)
             Ek = ellec(q)
@@ -275,7 +275,7 @@ def eval_quad_z_v(zs, k, u: ndarray):
 
 
 @njit(cache=False, parallel=False, fastmath=True)
-def eval_quad_z_s(z, k, u):
+def eval_quad_z_s(z: float, k: float, u: ndarray):
     """Evaluates the transit model for scalar normalized distance.
 
     Parameters
@@ -330,7 +330,7 @@ def eval_quad_z_s(z, k, u):
     # LD and ED
     # ---------
     is_edge_at_origin = abs(z - k) < 1.e-4 * (z + k)
-    is_full_transit = k <= 1.0 and z <= (1.0 - k)
+    is_full_transit = k <= 1.0 and z < (1.0 - k)
 
     # Case 0: The edge of the occulting object lies at the origin
     if is_edge_at_origin:
