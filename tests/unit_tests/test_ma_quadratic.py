@@ -15,19 +15,30 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import unittest
 
-from numpy import linspace, pi, array, zeros
-from numpy.random import randint, seed
+from numpy import linspace, pi, array, zeros, tile
+from numpy.random import randint, seed, uniform, normal
 
-from pytransit import QuadraticModel, QuadraticModelCL
+from pytransit import QuadraticModel
 
 class TestQuadraticModel(unittest.TestCase):
 
     def setUp(self) -> None:
         seed(0)
         self.npt = 20
+        self.npv = npv = 5
         self.time = linspace(-0.1, 0.1, self.npt)
         self.lcids = randint(0, 3, size=self.npt)
         self.pbids = [0, 1, 1]
+
+        self.ldc = tile([[0.01, 0.3]], (npv, 2))
+
+        self.radius_ratios = uniform(0.09, 0.11, size=(npv, 2))
+        self.zero_epochs = normal(0.0, 0.01, size=npv)
+        self.periods = normal(1.0, 0.01, size=npv)
+        self.smas = normal(3.0, 0.01, size=npv)
+        self.inclinations = uniform(0.49 * pi, 0.5 * pi, size=npv)
+        self.eccentricities = uniform(0.0, 0.9, size=npv)
+        self.omegas = uniform(0, 2*pi, size=npv)
 
     def test_init(self):
         QuadraticModel()
@@ -55,13 +66,26 @@ class TestQuadraticModel(unittest.TestCase):
         tm.set_data(self.time, lcids=self.lcids, pbids=self.pbids)
         assert tm.npb == 2
 
-    def test_evaluate(self):
+    def test_evaluate_1(self):
         tm = QuadraticModel()
         tm.set_data(self.time)
-        flux = tm.evaluate(k=0.1, ldc=[0.2, 0.1], t0=0.0, p=1.0, a=3.0, i=0.5 * pi)
+        flux = tm.evaluate(self.radius_ratios[0, 0], self.ldc[0,:2], self.zero_epochs[0], self.periods[0], self.smas[0], self.inclinations[0])
         assert flux.ndim == 1
         assert flux.size == self.time.size
-        #tm.evaluate(0.1, [0.2, 0.3], 0.0, 1.0, 3.0, 0.5*pi)
+
+    def test_evaluate_2(self):
+        tm = QuadraticModel()
+        tm.set_data(self.time, self.lcids, self.pbids)
+        flux = tm.evaluate(self.radius_ratios[0, 0], self.ldc[0], self.zero_epochs[0], self.periods[0], self.smas[0], self.inclinations[0])
+        assert flux.ndim == 1
+        assert flux.size == self.time.size
+
+    def test_evaluate_3(self):
+        tm = QuadraticModel()
+        tm.set_data(self.time, self.lcids, self.pbids)
+        flux = tm.evaluate(self.radius_ratios[0], self.ldc[0], self.zero_epochs[0], self.periods[0], self.smas[0], self.inclinations[0])
+        assert flux.ndim == 1
+        assert flux.size == self.time.size
 
     def test_evaluate_ps(self):
         tm = QuadraticModel()
