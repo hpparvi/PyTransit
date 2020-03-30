@@ -600,7 +600,8 @@ def quadratic_model_direct_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
             else:
                 _k = k[ipv, ipb]
 
-            if isnan(_k) or isnan(a[ipv]) or isnan(i[ipv]):
+            ld = ldc[ipv, 2 * ipb:2 * (ipb + 1)]
+            if isnan(_k) or isnan(a[ipv]) or isnan(i[ipv]) or isnan(ld[0]) or isnan(ld[1]):
                 flux[ipv, j] = inf
             else:
                 for isample in range(1, nsamples[ilc] + 1):
@@ -609,7 +610,7 @@ def quadratic_model_direct_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
                     if z > 1.0 + _k:
                         flux[ipv, j] += 1.
                     else:
-                        flux[ipv, j] += eval_quad_z_s(z, _k, ldc[ipv, 2 * ipb:2 * (ipb + 1)])
+                        flux[ipv, j] += eval_quad_z_s(z, _k, ld)
                 flux[ipv, j] /= nsamples[ilc]
     return flux
 
@@ -633,7 +634,8 @@ def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
         else:
             _k = k[ipb]
 
-        if isnan(_k) or isnan(a) or isnan(i):
+        ld = ldc[2 * ipb:2 * (ipb + 1)]
+        if isnan(k) or isnan(a) or isnan(i) or isnan(ld[0]) or isnan(ld[1]):
             flux[j] = inf
         else:
             for isample in range(1, nsamples[ilc] + 1):
@@ -642,7 +644,7 @@ def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
                 if z > 1.0 + _k:
                     flux[j] += 1.
                 else:
-                    flux[j] += eval_quad_z_s(z, _k, ldc[2 * ipb:2 * (ipb + 1)])
+                    flux[j] += eval_quad_z_s(z, _k, ld)
             flux[j] /= nsamples[ilc]
     return flux
 
@@ -677,7 +679,8 @@ def quadratic_model_direct_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes, npb
                 else:
                     k = nan
 
-            if isnan(k) or isnan(a) or isnan(i):
+            ld = ldc[ipv, 2 * ipb:2 * (ipb + 1)]
+            if isnan(k) or isnan(a) or isnan(i) or isnan(ld[0]) or isnan(ld[1]):
                 flux[ipv, j] = inf
                 continue
 
@@ -687,8 +690,9 @@ def quadratic_model_direct_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes, npb
                 if z > 1.0+k:
                     flux[ipv, j] += 1.
                 else:
-                    flux[ipv, j] += eval_quad_z_s(z, k, ldc[ipv, 2 * ipb:2 * (ipb + 1)])
+                    flux[ipv, j] += eval_quad_z_s(z, k, ld)
             flux[ipv, j] /= nsamples[ilc]
+
     return flux
 
 # Interpolated models
@@ -716,7 +720,8 @@ def quadratic_model_interpolated_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, n
             else:
                 _k = k[ipv, ipb]
 
-            if _k < kt[0] or _k > kt[-1] or isnan(_k) or isnan(a[ipv]) or isnan(i[ipv]):
+            ld = ldc[ipv, 2 * ipb:2 * (ipb + 1)]
+            if _k < kt[0] or _k > kt[-1] or isnan(_k) or isnan(a[ipv]) or isnan(i[ipv]) or isnan(ld[0]) or isnan(ld[1]):
                 flux[ipv, j] = inf
             else:
                 for isample in range(1, nsamples[ilc] + 1):
@@ -725,8 +730,7 @@ def quadratic_model_interpolated_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, n
                     if z > 1.0 + _k:
                         flux[ipv, j] += 1.
                     else:
-                        flux[ipv, j] += quadratic_interpolated_z_s(z, _k, ldc[ipv, 2 * ipb:2 * (ipb + 1)], edt, ldt,
-                                                                   let, kt, zt)
+                        flux[ipv, j] += quadratic_interpolated_z_s(z, _k, ld, edt, ldt, let, kt, zt)
                 flux[ipv, j] /= nsamples[ilc]
     return flux
 
@@ -751,7 +755,8 @@ def quadratic_model_interpolated_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, n
         else:
             _k = k[ipb]
 
-        if _k < kt[0] or _k > kt[-1] or isnan(_k) or isnan(a) or isnan(i):
+        ld = ldc[2 * ipb:2 * (ipb + 1)]
+        if _k < kt[0] or _k > kt[-1] or isnan(_k) or isnan(a) or isnan(i) or isnan(ld[0]) or isnan(ld[1]):
             flux[j] = inf
         else:
             for isample in range(1, nsamples[ilc] + 1):
@@ -760,7 +765,7 @@ def quadratic_model_interpolated_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, n
                 if z > 1.0 + _k:
                     flux[j] += 1.
                 else:
-                    flux[j] += quadratic_interpolated_z_s(z, _k, ldc[2 * ipb:2 * (ipb + 1)], edt, ldt, let, kt, zt)
+                    flux[j] += quadratic_interpolated_z_s(z, _k, ld, edt, ldt, let, kt, zt)
             flux[j] /= nsamples[ilc]
     return flux
 
@@ -797,7 +802,8 @@ def quadratic_model_interpolated_pv(t, pvp, ldc, lcids, pbids, nsamples, exptime
                 else:
                     k = nan
 
-            if k < kt[0] or k > kt[-1] or isnan(k) or isnan(a) or isnan(i):
+            ld = ldc[ipv, 2 * ipb:2 * (ipb + 1)]
+            if k < kt[0] or k > kt[-1] or isnan(k) or isnan(a) or isnan(i) or isnan(ld[0]) or isnan(ld[1]):
                 flux[ipv, j] = inf
                 continue
 
@@ -807,6 +813,6 @@ def quadratic_model_interpolated_pv(t, pvp, ldc, lcids, pbids, nsamples, exptime
                 if z > 1.0+k:
                     flux[ipv, j] += 1.
                 else:
-                    flux[ipv, j] += quadratic_interpolated_z_s(z, k, ldc[ipv, 2*ipb:2*(ipb+1)], edt, ldt, let, kt, zt)
+                    flux[ipv, j] += quadratic_interpolated_z_s(z, k, ld, edt, ldt, let, kt, zt)
             flux[ipv, j] /= nsamples[ilc]
     return flux
