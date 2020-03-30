@@ -63,3 +63,4 @@ from .lpf.baselines.legendrebaseline import LegendreBaseline
 from .lpf.baselines.linearbaseline import LinearModelBaseline
 
 from .param.parameter import UniformPrior, NormalPrior
+from .utils import md_rs_from_rho
