@@ -42,21 +42,25 @@ The model is fast to evaluate and aims to model the limb darkening accurately fo
 - Accurate limb darkening model for cool stars.
 - Fast to evaluate.
 
-Giménez model
+General model
 -------------
 
-.. warning::
-
-    The Giménez model is currently being rewritten from the original Fortran implementation described in Parviainen (2015) and not functional.
-
-The Giménez model (`pytransit.GimenezModel`) implements the flexible transit model presented in
+The general model (`pytransit.GeneralModel`) implements the flexible transit model presented by
 `Giménez (A&A 450, 2006) <https://www.aanda.org/articles/aa/abs/2006/18/aa4445-05/aa4445-05.html>`_. The stellar limb
-darkening follows a "generic" limb darkening model, and the accuracy of limb darkening can be increased as needed.
+darkening follows a "general" limb darkening model, and the accuracy of limb darkening can be increased as needed.
+
+The model is calculated using a polynomial series and both the number of polynomials `npoly` and the number of limb
+darkening coefficients `nldc` can be set in the initialisation. Higher `npoly` leads to a more accurate transit model,
+but also increases computation time. Increasing the number of limb darkening coefficients doesn't significantly increase
+computation time, but
 
 **Notes:**
 
 - A flexible model that can model limb darkening accurately.
 - Somewhat slower to evaluate than the specialized models.
+- PyTransit implements a special "transmission spectroscopy mode" for the general model that accelerates the transit model
+  evaluation significantly for transmission spectroscopy where the light curves are computed from a spectroscopic time
+  series.
 - The four-coefficient model presented in `Mandel & Agol (ApJ 580, 2001)`_ is not implemented in PyTransit since the
   Giménez model offers the same functionality with higher flexibility.
 
