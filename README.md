@@ -42,13 +42,17 @@ The package has been used in research since 2010, and is described in [Parviaine
 
 Read the docs at [pytransit.readthedocs.io](https://pytransit.readthedocs.io).
 
-## News
+## Examples and tutorials
 
-- *15.7.2019:* Added a new TESS transit modelling example that reproduces the WASP-4b analysis by [Bouma et al. (2019)](http://adsabs.harvard.edu/abs/2019AJ....157..217B).
-- *15.7.2019:* Added a set of notebooks that illustrate the use of the contamination module in transiting planet candidate 
-validation with multicolour photometry, as detailed in Parviainen et al. (2019, submitted).
+- [TESS transit modelling example](https://github.com/hpparvi/PyTransit/blob/master/notebooks/tess_examples/WASP-4b.ipynb) 
+  that reproduces the WASP-4b analysis by [Bouma et al. (2019)](http://adsabs.harvard.edu/abs/2019AJ....157..217B).
 
-## What's new in PyTransit v2.0 beta (2019)
+- [Third light contamination analysis examples](https://github.com/hpparvi/PyTransit/tree/master/notebooks/contamination)
+  illustrate the use of the contamination module in transiting planet candidate validation with multicolour photometry, 
+  as detailed in [Parviainen et al. (A&A, 2019)](https://www.aanda.org/articles/aa/pdf/2019/10/aa35709-19.pdf), and used 
+  in [Parviainen et al. (A&A, 2020)](https://www.aanda.org/articles/aa/pdf/2020/01/aa35958-19.pdf).
+
+## What's new in PyTransit v2.0 beta (2020)
 
 **Freedom from Fortran**
 - PyTransit v2.0 replaces all the old Fortran code with numba-accelerated Python versions!
