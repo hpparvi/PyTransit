@@ -58,6 +58,9 @@ class TESSLPF(BaseLPF):
                  nsamples: int = 2, trdur: float = 0.125, bldur: float = 0.3, use_pdc=False,
                  split_transits=True, separate_noise=False):
 
+        self.zero_epoch = zero_epoch
+        self.period = period
+
         if tic is not None:
             from lightkurve import search_lightcurvefile
             lcf = search_lightcurvefile(tic, mission='TESS')
@@ -67,17 +70,18 @@ class TESSLPF(BaseLPF):
             else:
                 lc = lc.SAP_FLUX.stitch().normalize()
             time, flux = lc.time.astype('d'), lc.flux.astype('d')
-
         elif dfile is not None:
             tb = Table.read(dfile)
-            self.zero_epoch = zero_epoch - self.bjdrefi
             df = tb.to_pandas().dropna(subset=['TIME', 'SAP_FLUX', 'PDCSAP_FLUX'])
             time, flux = df.TIME.values, df.PDCSAP_FLUX.values if use_pdc else df.SAP_FLUX.values
+        else:
+            raise NotImplementedError("Need to give either a TIC or a SPOC light curve file")
 
         time += self.bjdrefi
+        tref = floor(time.min())
 
         if split_transits:
-            self.zero_epoch = zero_epoch - self.bjdrefi
+            self.zero_epoch = zero_epoch
             self.period = period
             self.transit_duration = trdur
             self.baseline_duration = bldur
@@ -95,7 +99,7 @@ class TESSLPF(BaseLPF):
         wnids = arange(len(times)) if separate_noise else None
 
         BaseLPF.__init__(self, name, ['TESS'], times=times, fluxes=fluxes, pbids=pbids,
-                         nsamples=nsamples, exptimes=[0.00139], wnids=wnids)
+                         nsamples=nsamples, exptimes=[0.00139], wnids=wnids, tref=tref)
 
 
     def plot_individual_transits(self, ncols: int = 2, figsize=(14, 8)):
@@ -142,5 +146,5 @@ class TESSLPF(BaseLPF):
 
     def plot_basic_posteriors(self):
         df = self.posterior_samples()
-        corner(df['tc pr rho b k'.split()],
+        corner(df['tc p rho b k'.split()],
                labels='Zero epoch, Period, Stellar density, impact parameter, radius ratio'.split(', '))
