@@ -80,9 +80,10 @@ class TESSLPF(BaseLPF):
         time += self.bjdrefi
         tref = floor(time.min())
 
+        self.zero_epoch = zero_epoch
+        self.period = period
+
         if split_transits:
-            self.zero_epoch = zero_epoch
-            self.period = period
             self.transit_duration = trdur
             self.baseline_duration = bldur
             self.lc = lc = KeplerLC(time, flux, zeros(time.size), zero_epoch, period, trdur, bldur)
@@ -91,8 +92,6 @@ class TESSLPF(BaseLPF):
         else:
             times, fluxes = [time], [flux]
             pbids = [0]
-            self.zero_epoch = None
-            self.period = None
             self.transit_duration = None
             self.baseline_duration = None
 
