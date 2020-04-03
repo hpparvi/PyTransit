@@ -22,13 +22,21 @@ from matplotlib.pyplot import setp
 from matplotlib.pyplot import subplots
 from numba import njit
 from numpy import zeros, squeeze, ceil, arange, digitize, full, nan, \
-    sqrt, percentile, isfinite, floor, argsort
+    sqrt, percentile, isfinite, floor, argsort, ones_like, atleast_2d, median, ndarray
 from numpy.random import permutation
 
+from .loglikelihood import CeleriteLogLikelihood
 from .lpf import BaseLPF
+from .. import TransitModel
+from ..orbits import epoch
 from ..utils.keplerlc import KeplerLC
 from ..utils.misc import fold
 
+try:
+    from ldtk import tess
+    with_ldtk = True
+except ImportError:
+    with_ldtk = False
 
 @njit
 def downsample_time(time, vals, inttime=1.):
@@ -56,7 +64,7 @@ class TESSLPF(BaseLPF):
 
     def __init__(self, name: str, dfile: Path = None, tic: int = None, zero_epoch: float = None, period: float = None,
                  nsamples: int = 2, trdur: float = 0.125, bldur: float = 0.3, use_pdc=False,
-                 split_transits=True, separate_noise=False):
+                 split_transits=True, separate_noise=False, tm: TransitModel = None):
 
         self.zero_epoch = zero_epoch
         self.period = period
@@ -98,28 +106,96 @@ class TESSLPF(BaseLPF):
         wnids = arange(len(times)) if separate_noise else None
 
         BaseLPF.__init__(self, name, ['TESS'], times=times, fluxes=fluxes, pbids=pbids,
-                         nsamples=nsamples, exptimes=[0.00139], wnids=wnids, tref=tref)
+                         nsamples=nsamples, exptimes=[0.00139], wnids=wnids, tref=tref, tm=tm)
 
+    def _init_lnlikelihood(self):
+        self._add_lnlikelihood_model(CeleriteLogLikelihood(self))
 
-    def plot_individual_transits(self, ncols: int = 2, figsize=(14, 8)):
-        df = self.posterior_samples(derived_parameters=False)
-        pvp = permutation(df.values)[:5000]
-        pv = df.median()
-        tmodels = self.flux_model(pvp)
-        mm = percentile(tmodels, [50, 16, 84, 0.5, 99.5], 0)
+    def add_ldtk_prior(teff, logg, z):
+        if with_ldtk:
+            super().add_ldtk_prior(teff, logg, z, passbands=(tess,))
+        else:
+            raise ImportError('Could not import LDTk, cannot add an LDTk prior.')
+
+    def plot_individual_transits(self, solution: str = 'de', pv: ndarray = None, ncols: int = 2, n_samples: int = 100,
+                                 xlim: tuple = None, ylim: tuple = None, axs=None, figsize: tuple = None,
+                                 remove_baseline: bool = False):
+
+        solution = solution.lower()
+        samples = None
+
+        if pv is None:
+            if solution == 'local':
+                pv = self._local_minimization.x
+            elif solution in ('de', 'global'):
+                solution = 'global'
+                pv = self.de.minimum_location
+            elif solution in ('mcmc', 'mc'):
+                solution = 'mcmc'
+                samples = self.posterior_samples(derived_parameters=False)
+                samples = permutation(samples.values)[:n_samples]
+                pv = median(samples, 0)
+            else:
+                raise NotImplementedError("'solution' should be either 'local', 'global', or 'mcmc'")
 
         t0 = floor(self.times[0].min())
         nrows = int(ceil(self.nlc / ncols))
-        fig, axs = subplots(nrows, ncols, figsize=figsize, sharey=True, constrained_layout=True)
+
+        if axs is None:
+            fig, axs = subplots(nrows, ncols, figsize=figsize, sharey=True, constrained_layout=True)
+        else:
+            fig, axs = None, axs
+
+        [ax.autoscale(enable=True, axis='x', tight=True) for ax in axs.flat]
+
+        def baseline(pvp):
+            pvp = atleast_2d(pvp)
+            bl = zeros((pvp.shape[0], self.ofluxa.size))
+            for i, pv in enumerate(pvp):
+                bl[i] = self._lnlikelihood_models[0].predict_baseline(pv)
+            return bl
+
+        if remove_baseline:
+            if solution == 'mcmc':
+                fbasel = median(baseline(samples), axis=0)
+                fmodel, fmodm, fmodp = percentile(self.transit_model(samples), [50, 0.5, 99.5], axis=0)
+            else:
+                fbasel = squeeze(baseline(pv))
+                fmodel, fmodm, fmodp = squeeze(self.transit_model(pv)), None, None
+            fobs = self.ofluxa / fbasel
+        else:
+            if solution == 'mcmc':
+                fbasel = median(baseline(samples), axis=0)
+                fmodel, fmodm, fmodp = percentile(self.flux_model(samples), [50, 1, 99], axis=0)
+            else:
+                fbasel = squeeze(baseline(pv))
+                fmodel, fmodm, fmodp = squeeze(self.flux_model(pv)), None, None
+            fobs = self.ofluxa
+
+        t0, p = pv[[0, 1]]
+
         for i, sl in enumerate(self.lcslices):
-            axs.flat[i].plot(self.times[i] - t0, self.fluxes[i], drawstyle='steps-mid', alpha=0.5)
-            axs.flat[i].plot(self.times[i] - t0, mm[0][sl], 'k')
-            axs.flat[i].fill_between(self.times[i] - t0, mm[1][sl], mm[2][sl], alpha=0.75, facecolor='orangered')
-            setp(axs[:, 0], ylabel='Normalized flux')
-            setp(axs[-1, :], xlabel=f'Time - {self.bjdrefi + t0:.0f} [days]')
+            ax = axs.flat[i]
+            t = self.times[i]
+            e = epoch(t.mean(), t0, p)
+            tc = t0 + e * p
+            tt = 24 * (t - tc)
+            ax.plot(tt, fobs[sl], 'k.', alpha=0.2)
+            ax.plot(tt, fmodel[sl], 'k')
+
+            if solution == 'mcmc':
+                ax.fill_between(tt, fmodm[sl], fmodp[sl], zorder=-100, alpha=0.2, fc='k')
+
+            if not remove_baseline:
+                ax.plot(tt, fbasel[sl], 'k--', alpha=0.2)
+
+        setp(axs, xlim=xlim, ylim=ylim)
+        setp(axs[-1, :], xlabel='Time - T$_c$ [h]')
+        setp(axs[:, 0], ylabel='Normalised flux')
         return fig
 
-    def plot_folded_transit(self, method='de', figsize=(13, 6), ylim=(0.9975, 1.002), xlim=None, binwidth=8):
+    def plot_folded_transit(self, method='de', figsize=(13, 6), ylim=(0.9975, 1.002), xlim=None, binwidth=8,
+                            remove_baseline: bool = False):
         if method == 'de':
             pv = self.de.minimum_location
             tc, p = pv[[0, 1]]
@@ -131,7 +207,12 @@ class TESSLPF(BaseLPF):
         sids = argsort(phase)
 
         tm = self.transit_model(pv)
-        bl = squeeze(self.baseline(pv))
+
+        if remove_baseline:
+            gp = self._lnlikelihood_models[0]
+            bl = squeeze(gp.predict_baseline(pv))
+        else:
+            bl = ones_like(self.ofluxa)
 
         bp, bfo, beo = downsample_time(phase[sids], (self.ofluxa / bl)[sids], binwidth)
 
