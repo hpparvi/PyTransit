@@ -27,6 +27,8 @@ from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_lik
 from numpy.random import uniform, normal, permutation, multivariate_normal
 from scipy.stats import norm
 
+from .loglikelihood import WNLogLikelihood, CeleriteLogLikelihood
+
 try:
     from ldtk import LDPSetCreator
     with_ldtk = True
@@ -90,7 +92,8 @@ class BaseLPF(LogPosteriorFunction):
 
     def __init__(self, name: str, passbands: list, times: list = None, fluxes: Iterable = None, errors: list = None,
                  pbids: list = None, covariates: list = None, wnids: list = None, tm: TransitModel = None,
-                 nsamples: tuple = 1, exptimes: tuple = 0., init_data=True, result_dir: Path = None, tref: float = 0.0):
+                 nsamples: tuple = 1, exptimes: tuple = 0., init_data=True, result_dir: Path = None, tref: float = 0.0,
+                 lnlikelihood: str = 'wn'):
         """The base Log Posterior Function class.
 
         The `BaseLPF` class creates the basis for transit light curve analyses using `PyTransit`. This class can be
@@ -159,9 +162,11 @@ class BaseLPF(LogPosteriorFunction):
 
         self.nsamples = None
         self.exptimes = None
+        self.lnlikelihood_type = lnlikelihood.lower()
 
         # Declare high-level objects
         # --------------------------
+        self._lnlikelihood_models = []
         self.ps = None          # Parametrisation
         self.de = None          # Differential evolution optimiser
         self.sampler = None     # MCMC sampler
@@ -203,6 +208,7 @@ class BaseLPF(LogPosteriorFunction):
             # --------------------------
             self._init_instrument()
 
+        self._init_lnlikelihood()
         self._post_initialisation()
 
 
@@ -278,6 +284,8 @@ class BaseLPF(LogPosteriorFunction):
             #self.covstart = concatenate([[0], self.covsize.cumsum()[:-1]])
             #self.cova = concatenate(self.covariates)
 
+    def _add_lnlikelihood_model(self, lnl):
+        self._lnlikelihood_models.append(lnl)
 
     def _init_parameters(self):
         self.ps = ParameterSet()
@@ -285,7 +293,6 @@ class BaseLPF(LogPosteriorFunction):
         self._init_p_planet()
         self._init_p_limb_darkening()
         self._init_p_baseline()
-        self._init_p_noise()
         self.ps.freeze()
 
     def _init_p_orbit(self):
@@ -324,12 +331,7 @@ class BaseLPF(LogPosteriorFunction):
         self._sl_bl = None
 
     def _init_p_noise(self):
-        """Noise parameter initialisation.
-        """
-        pns = [LParameter('loge_{:d}'.format(i), 'log10_error_{:d}'.format(i), '', U(-4, 0), bounds=(-4, 0)) for i in range(self.n_noise_blocks)]
-        self.ps.add_lightcurve_block('log_err', 1, self.n_noise_blocks, pns)
-        self._sl_err = self.ps.blocks[-1].slice
-        self._start_err = self.ps.blocks[-1].start
+        pass
 
     def _init_instrument(self):
         pass
@@ -339,6 +341,14 @@ class BaseLPF(LogPosteriorFunction):
 
     def _post_initialisation(self):
         pass
+
+    def _init_lnlikelihood(self):
+        if self.lnlikelihood_type == 'wn':
+            self._add_lnlikelihood_model(WNLogLikelihood(self))
+        elif self.lnlikelihood_type == 'celerite':
+            self._add_lnlikelihood_model(CeleriteLogLikelihood(self))
+        else:
+            raise NotImplementedError
 
     def create_pv_population(self, npop=50):
         pvp = self.ps.sample_from_prior(npop)
@@ -367,11 +377,6 @@ class BaseLPF(LogPosteriorFunction):
                 pvp[i, ldsl][::2] = pvp[i, ldsl][::2][pid]
                 pvp[i, ldsl][1::2] = pvp[i, ldsl][1::2][pid]
 
-        # Estimate white noise from the data
-        # ----------------------------------
-        for i in range(self.nlc):
-            wn = diff(self.ofluxa).std() / sqrt(2)
-            pvp[:, self._start_err] = log10(uniform(0.5*wn, 2*wn, size=npop))
         return pvp
 
     def add_prior(self, prior):
@@ -404,21 +409,24 @@ class BaseLPF(LogPosteriorFunction):
     def residuals(self, pv):
         return self.ofluxa - self.flux_model(pv)
 
-    def lnlikelihood(self, pv):
+    def lnlikelihood(self, pvp):
         """Log likelihood for a 1D or 2D array of model parameters.
 
         Parameters
         ----------
-        pv: ndarray
+        pvp: ndarray
             Either a 1D parameter vector or a 2D parameter array.
 
         Returns
         -------
             Log likelihood for the given parameter vector(s).
         """
-        flux_m = self.flux_model(pv)
-        wn = 10**(atleast_2d(pv)[:,self._sl_err])
-        return lnlike_normal_v(self.ofluxa, flux_m, wn, self.noise_ids, self.lcids)
+        pvp = atleast_2d(pvp)
+        lnl = zeros(pvp.shape[0])
+        fmodel = self.flux_model(pvp)
+        for lnlikelihood in self._lnlikelihood_models:
+            lnl += lnlikelihood(pvp, fmodel)
+        return lnl
 
     def set_radius_ratio_prior(self, kmin, kmax):
         """Set a uniform prior on all radius ratios."""
