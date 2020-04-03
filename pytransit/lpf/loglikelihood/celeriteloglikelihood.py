@@ -13,15 +13,15 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
+from astropy.stats import mad_std
 from celerite import GP
 from celerite.terms import Matern32Term
-from numpy import asarray, unique, zeros, inf, squeeze, zeros_like, isfinite
+from numpy import asarray, unique, zeros, inf, squeeze, zeros_like, isfinite, log10, diff, sqrt
 
-from ...param import  LParameter, NormalPrior as NP,UniformPrior as UP
+from ...param import  LParameter, NormalPrior as NP, UniformPrior as UP
 
-class GPLogLikelihood:
-    def __init__(self, lpf, name: str = 'gp', lcids=None, fixed_hps=None):
+class CeleriteLogLikelihood:
+    def __init__(self, lpf, name: str = 'gp', noise_ids=None, fixed_hps=None):
         self.name = name
         self.lpf = lpf
 
@@ -32,12 +32,13 @@ class GPLogLikelihood:
             self.free = False
 
         if lpf.lcids is None:
-            raise ValueError('The LPF data needs to be initialised before initialising GPLogLikelihood.')
-        self.lcids = lcids if lcids is not None else unique(lpf.lcids)
+            raise ValueError('The LPF data needs to be initialised before initialising CeleriteLogLikelihood.')
+        self.noise_ids = noise_ids if noise_ids is not None else unique(lpf.noise_ids)
 
         self.mask = m = zeros(lpf.lcids.size, bool)
-        for lcid in self.lcids:
-            m[lcid == lpf.lcids] = 1
+        for lcid,nid in enumerate(lpf.noise_ids):
+            if nid in self.noise_ids:
+                m[lcid == lpf.lcids] = 1
 
         if m.sum() == lpf.lcids.size:
             self.times = lpf.timea
@@ -55,9 +56,10 @@ class GPLogLikelihood:
 
     def init_parameters(self):
         name = self.name
+        wns = log10(mad_std(diff(self.fluxes)) / sqrt(2))
         pgp = [LParameter(f'{name}_ln_out', f'{name} ln output scale', '', NP(-6, 1.5), bounds=(-inf, inf)),
                LParameter(f'{name}_ln_in', f'{name} ln input scale', '', UP(-8, 8), bounds=(-inf, inf)),
-               LParameter(f'{name}_log10_wn', f'{name} log10 white noise sigma', '', NP(-3, 0.2), bounds=(-inf, inf))]
+               LParameter(f'{name}_log10_wn', f'{name} log10 white noise sigma', '', NP(wns, 0.025), bounds=(-inf, inf))]
         self.lpf.ps.thaw()
         self.lpf.ps.add_global_block(self.name, pgp)
         self.lpf.ps.freeze()
@@ -78,12 +80,12 @@ class GPLogLikelihood:
 
     def predict_baseline(self, pv):
         self.compute_gp(pv)
-        residuals = self.fluxes - squeeze(self.lpf.transit_model(pv, copy=True))[self.mask]
+        residuals = self.fluxes - squeeze(self.lpf.transit_model(pv))[self.mask]
         bl = zeros_like(self.lpf.timea)
         bl[self.mask] = self.gp.predict(residuals, self.times, return_cov=False)
         return 1. + bl
 
-    def lnlikelihood(self, pvp, model):
+    def __call__(self, pvp, model):
         if pvp.ndim == 1:
             lnlike = self.compute_gp_lnlikelihood(pvp, model)
         else:
