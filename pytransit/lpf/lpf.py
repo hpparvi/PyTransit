@@ -421,9 +421,13 @@ class BaseLPF(LogPosteriorFunction):
         -------
             Log likelihood for the given parameter vector(s).
         """
-        pvp = atleast_2d(pvp)
-        lnl = zeros(pvp.shape[0])
         fmodel = self.flux_model(pvp)
+
+        if pvp.ndim == 1:
+            lnl = 0.
+        else:
+            lnl = zeros(pvp.shape[0])
+
         for lnlikelihood in self._lnlikelihood_models:
             lnl += lnlikelihood(pvp, fmodel)
         return lnl
