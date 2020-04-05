@@ -14,15 +14,23 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from astropy.stats import mad_std
-from celerite import GP
-from celerite.terms import Matern32Term
 from numpy import asarray, unique, zeros, inf, squeeze, zeros_like, isfinite, log10, diff, sqrt
+from astropy.stats import mad_std
+
+try:
+    from celerite import GP
+    from celerite.terms import Matern32Term
+    with_celerite = True
+except ImportError:
+    with_celerite = False
 
 from ...param import  LParameter, NormalPrior as NP, UniformPrior as UP
 
 class CeleriteLogLikelihood:
     def __init__(self, lpf, name: str = 'gp', noise_ids=None, fixed_hps=None):
+        if not with_celerite:
+            raise ImportError("CeleriteLogLikelihood requires celerite.")
+
         self.name = name
         self.lpf = lpf
 

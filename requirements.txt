@@ -13,3 +13,4 @@ astropy
 matplotlib
 tqdm
 semantic_version
+celerite
