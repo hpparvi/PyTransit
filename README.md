@@ -42,6 +42,13 @@ The package has been used in research since 2010, and is described in [Parviaine
 
 Read the docs at [pytransit.readthedocs.io](https://pytransit.readthedocs.io).
 
+## News
+
+- **5.4.2020:** The log likelihood and baseline computation has been changed completely for log posterior functions. 
+ The changes make creating complex models combining different noise models easy to implement, but also will break old
+ code... Please use the *old_lnlike_and_baseline* branch if your code is broken by the changes, and change to the new 
+ approach when feasible. The required changes are small and relatively painless.
+
 ## Examples and tutorials
 
 - [TESS transit modelling example](https://github.com/hpparvi/PyTransit/blob/master/notebooks/tess_examples/WASP-4b.ipynb) 
