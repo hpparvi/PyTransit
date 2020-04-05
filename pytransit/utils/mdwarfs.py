@@ -16,8 +16,7 @@
 from typing import Union
 
 from numpy import array, diag, zeros, log10
-from numpy.random.mtrand import normal
-from scipy.stats import multivariate_normal
+from numpy.random import normal, multivariate_normal
 from uncertainties import UFloat
 
 
