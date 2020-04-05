@@ -13,5 +13,3 @@ astropy
 matplotlib
 tqdm
 semantic_version
-celerite
-pybind11
