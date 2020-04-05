@@ -13,6 +13,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 from astropy.stats import mad_std
 from celerite import GP
 from celerite.terms import Matern32Term
