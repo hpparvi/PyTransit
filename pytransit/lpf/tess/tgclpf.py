@@ -32,7 +32,7 @@ from pytransit.param.parameter import NormalPrior as NP, UniformPrior as UP, GPa
 from pytransit.utils.misc import fold
 
 
-class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
+class BaseTGCLPF(PhysContLPF):
     """Log posterior function that combined TESS light curve with ground-based transit light curves.
 
     Example log posterior function to model a TESS light curve jointly with with ground-based light curves observed in
@@ -79,6 +79,9 @@ class BaseTGCLPF(LinearModelBaseline, PhysContLPF):
         ps.add_global_block('contamination', pcn)
         self._pid_cn = arange(ps.blocks[-1].start, ps.blocks[-1].stop)
         self._sl_cn = ps.blocks[-1].slice
+
+    def _init_baseline(self):
+        self._add_baseline_model(LinearModelBaseline(self))
 
     def create_pv_population(self, npop: int = 50) -> ndarray:
         pvp = zeros((0, len(self.ps)))

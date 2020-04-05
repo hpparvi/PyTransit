@@ -167,6 +167,7 @@ class BaseLPF(LogPosteriorFunction):
         # Declare high-level objects
         # --------------------------
         self._lnlikelihood_models = []
+        self._baseline_models = []
         self.ps = None          # Parametrisation
         self.de = None          # Differential evolution optimiser
         self.sampler = None     # MCMC sampler
@@ -209,6 +210,7 @@ class BaseLPF(LogPosteriorFunction):
             self._init_instrument()
 
         self._init_lnlikelihood()
+        self._init_baseline()
         self._post_initialisation()
 
 
@@ -287,6 +289,9 @@ class BaseLPF(LogPosteriorFunction):
     def _add_lnlikelihood_model(self, lnl):
         self._lnlikelihood_models.append(lnl)
 
+    def _add_baseline_model(self, blm):
+        self._baseline_models.append(blm)
+
     def _init_parameters(self):
         self.ps = ParameterSet()
         self._init_p_orbit()
@@ -326,9 +331,7 @@ class BaseLPF(LogPosteriorFunction):
         self._start_ld = self.ps.blocks[-1].start
 
     def _init_p_baseline(self):
-        """Baseline parameter initialisation.
-        """
-        self._sl_bl = None
+        pass
 
     def _init_p_noise(self):
         pass
@@ -349,6 +352,9 @@ class BaseLPF(LogPosteriorFunction):
             self._add_lnlikelihood_model(CeleriteLogLikelihood(self))
         else:
             raise NotImplementedError
+
+    def _init_baseline(self):
+        pass
 
     def create_pv_population(self, npop=50):
         pvp = self.ps.sample_from_prior(npop)
@@ -383,8 +389,16 @@ class BaseLPF(LogPosteriorFunction):
         self._additional_log_priors.append(prior)
 
     def baseline(self, pv):
-        """Multiplicative baseline"""
-        return 1.
+        if self._baseline_models:
+            if pv.ndim == 1:
+                bl = ones_like(self.timea)
+            else:
+                bl = ones((pv.shape[0], self.timea.size))
+            for blm in self._baseline_models:
+                bl = blm(pv, bl)
+            return bl
+        else:
+            return 1.
 
     def trends(self, pv):
         """Additive trends"""
