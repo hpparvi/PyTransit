@@ -14,15 +14,19 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import astropy.units as u
+
 from pathlib import Path
 
 from astropy.table import Table
+from astropy.time import Time
+from astropy.timeseries import TimeSeries
 from corner import corner
 from matplotlib.pyplot import setp
 from matplotlib.pyplot import subplots
 from numba import njit
 from numpy import zeros, squeeze, ceil, arange, digitize, full, nan, \
-    sqrt, percentile, isfinite, floor, argsort, ones_like, atleast_2d, median, ndarray
+    sqrt, percentile, isfinite, floor, argsort, ones_like, atleast_2d, median, ndarray, unique
 from numpy.random import permutation
 
 from .loglikelihood import CeleriteLogLikelihood
@@ -59,11 +63,11 @@ def downsample_time(time, vals, inttime=1.):
     return bt[m], bv[m], be[m]
 
 
-class TESSLPF(BaseLPF):
+class TESSLPFF(BaseLPF):
     bjdrefi = 2457000
 
     def __init__(self, name: str, dfile: Path = None, tic: int = None, zero_epoch: float = None, period: float = None,
-                 nsamples: int = 2, trdur: float = 0.125, bldur: float = 0.3, use_pdc=False,
+                 nsamples: int = 2, trdur: float = 0.125, bldur: float = 0.3, use_pdc=True,
                  split_transits=True, separate_noise=False, tm: TransitModel = None):
 
         self.zero_epoch = zero_epoch
@@ -71,40 +75,56 @@ class TESSLPF(BaseLPF):
 
         if tic is not None:
             from lightkurve import search_lightcurvefile
+            print("Searching for TESS light curves")
             lcf = search_lightcurvefile(tic, mission='TESS')
-            lc = lcf.download_all()
+            print(f"Found {len(lcf)} TESS light curves")
+            print(f"Downloading TESS light curves")
+            lcs = lcf.download_all()
             if use_pdc:
-                lc = lc.PDCSAP_FLUX.stitch().normalize()
+                ts = lcs.PDCSAP_FLUX.stitch().normalize().to_timeseries()
             else:
-                lc = lc.SAP_FLUX.stitch().normalize()
-            time, flux = lc.time.astype('d'), lc.flux.astype('d')
+                ts = lcs.SAP_FLUX.stitch().normalize().to_timeseries()
         elif dfile is not None:
-            tb = Table.read(dfile)
-            df = tb.to_pandas().dropna(subset=['TIME', 'SAP_FLUX', 'PDCSAP_FLUX'])
-            time, flux = df.TIME.values, df.PDCSAP_FLUX.values if use_pdc else df.SAP_FLUX.values
+            ts = TimeSeries.read(dfile, format='tess.fits')
+            if use_pdc:
+                ts = ts['time', 'pdcsap_flux', 'pdcsap_flux_err']
+            else:
+                ts = ts['time', 'sap_flux', 'sap_flux_err']
+            ts.rename_columns(ts.colnames, 'time flux flux_err'.split())
         else:
             raise NotImplementedError("Need to give either a TIC or a SPOC light curve file")
 
-        time += self.bjdrefi
-        tref = floor(time.min())
+        tref = floor(ts.time.jd.min())
 
-        self.zero_epoch = zero_epoch
-        self.period = period
+        self.period = period = period if isinstance(period, u.Quantity) else u.d * period
+        self.zero_epoch = zero_epoch = zero_epoch if isinstance(zero_epoch, Time) else Time(zero_epoch, format='jd',
+                                                                                            scale='tdb')
 
+        ts_folded = ts.fold(period, zero_epoch)
+        mwindow = abs(ts_folded.time.jd) < 0.5 * bldur
+        mint = abs(ts_folded.time.jd) < 0.5 * trdur
+        moot = mwindow & ~mint
+
+        self.transit_duration = trdur
+        self.baseline_duration = bldur
+
+        bm = ~ts['flux'].mask & mwindow
         if split_transits:
-            self.transit_duration = trdur
-            self.baseline_duration = bldur
-            self.lc = lc = KeplerLC(time, flux, zeros(time.size), zero_epoch, period, trdur, bldur)
-            times, fluxes = lc.time_per_transit, lc.normalized_flux_per_transit
-            pbids = lc.nt * [0]
+            ep = epoch(ts.time.jd, zero_epoch.jd, period)
+            ep -= ep.min()
+
+            times, fluxes = [], []
+            for e in unique(ep):
+                m = bm & (ep == e)
+                if m.sum() > 0:
+                    times.append(ts.time.jd[m].astype('d'))
+                    fluxes.append(ts['flux'].data.data[m].astype('d'))
+            pbids = len(times) * [0]
         else:
-            times, fluxes = [time], [flux]
+            times, fluxes = [ts.time.jd[bm]], [ts['flux'].data.data[bm].astype('d')]
             pbids = [0]
-            self.transit_duration = None
-            self.baseline_duration = None
 
         wnids = arange(len(times)) if separate_noise else None
-
         BaseLPF.__init__(self, name, ['TESS'], times=times, fluxes=fluxes, pbids=pbids,
                          nsamples=nsamples, exptimes=[0.00139], wnids=wnids, tref=tref, tm=tm)
 
