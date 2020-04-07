@@ -18,6 +18,7 @@ import astropy.units as u
 
 from pathlib import Path
 
+from astropy.stats import sigma_clipped_stats
 from astropy.table import Table
 from astropy.time import Time
 from astropy.timeseries import TimeSeries
@@ -26,7 +27,7 @@ from matplotlib.pyplot import setp
 from matplotlib.pyplot import subplots
 from numba import njit
 from numpy import zeros, squeeze, ceil, arange, digitize, full, nan, \
-    sqrt, percentile, isfinite, floor, argsort, ones_like, atleast_2d, median, ndarray, unique
+    sqrt, percentile, isfinite, floor, argsort, ones_like, atleast_2d, median, ndarray, unique, nanmedian
 from numpy.random import permutation
 
 from .loglikelihood import CeleriteLogLikelihood
@@ -63,12 +64,12 @@ def downsample_time(time, vals, inttime=1.):
     return bt[m], bv[m], be[m]
 
 
-class TESSLPFF(BaseLPF):
+class TESSLPF(BaseLPF):
     bjdrefi = 2457000
 
     def __init__(self, name: str, dfile: Path = None, tic: int = None, zero_epoch: float = None, period: float = None,
                  nsamples: int = 2, trdur: float = 0.125, bldur: float = 0.3, use_pdc=True,
-                 split_transits=True, separate_noise=False, tm: TransitModel = None):
+                 split_transits=True, separate_noise=False, tm: TransitModel = None, minpt=10):
 
         self.zero_epoch = zero_epoch
         self.period = period
@@ -91,6 +92,12 @@ class TESSLPFF(BaseLPF):
             else:
                 ts = ts['time', 'sap_flux', 'sap_flux_err']
             ts.rename_columns(ts.colnames, 'time flux flux_err'.split())
+            m = ~isfinite(ts['flux'])
+            self.normalization = (sigma_clipped_stats(ts['flux'], mask=m)[1]).value
+            ts['flux_err'] /= self.normalization
+            ts['flux'] /= self.normalization
+            ts['flux'].mask = m
+
         else:
             raise NotImplementedError("Need to give either a TIC or a SPOC light curve file")
 
@@ -109,6 +116,7 @@ class TESSLPFF(BaseLPF):
         self.baseline_duration = bldur
 
         bm = ~ts['flux'].mask & mwindow
+
         if split_transits:
             ep = epoch(ts.time.jd, zero_epoch.jd, period)
             ep -= ep.min()
@@ -116,9 +124,13 @@ class TESSLPFF(BaseLPF):
             times, fluxes = [], []
             for e in unique(ep):
                 m = bm & (ep == e)
-                if m.sum() > 0:
+                if m.sum() >= minpt:
                     times.append(ts.time.jd[m].astype('d'))
-                    fluxes.append(ts['flux'].data.data[m].astype('d'))
+                    try:
+                        fluxes.append(ts['flux'].data.data[m].astype('d'))
+                    except AttributeError:
+                        fluxes.append(ts['flux'].value[m].astype('d'))
+
             pbids = len(times) * [0]
         else:
             times, fluxes = [ts.time.jd[bm]], [ts['flux'].data.data[bm].astype('d')]
