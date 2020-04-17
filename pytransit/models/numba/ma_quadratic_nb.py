@@ -635,7 +635,7 @@ def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
             _k = k[ipb]
 
         ld = ldc[2 * ipb:2 * (ipb + 1)]
-        if isnan(k) or isnan(a) or isnan(i) or isnan(ld[0]) or isnan(ld[1]):
+        if isnan(_k) or isnan(a) or isnan(i) or isnan(ld[0]) or isnan(ld[1]):
             flux[j] = inf
         else:
             for isample in range(1, nsamples[ilc] + 1):
