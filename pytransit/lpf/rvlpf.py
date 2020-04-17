@@ -30,8 +30,8 @@ from typing import Iterable, Optional
 
 from matplotlib.pyplot import subplots
 from numba import njit
-from numpy import zeros, log, pi, inf, atleast_2d, zeros_like, arange, arctan2, cos, squeeze, median, linspace, \
-    percentile, argsort, sum, concatenate, full
+from numpy import zeros, log, pi, inf, atleast_2d, arange, arctan2, cos, squeeze, median, linspace, \
+    percentile, argsort, sum, concatenate, full, sqrt
 from numpy.random.mtrand import permutation
 
 from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
@@ -45,37 +45,29 @@ def lnlike_normal(o, m, e):
     npv = m.shape[0]
     lnl = zeros(npv)
     for ipv in range(npv):
-        lnl[ipv] = -sum(log(e)) -0.5*o.size*log(2.*pi) - 0.5*sum((o-m[ipv])**2/e**2)
+        lnl[ipv] = -sum(log(e[ipv])) - 0.5*o.size*log(2.*pi) - 0.5*sum((o-m[ipv])**2/e[ipv]**2)
     return lnl
 
 
 class RVModel:
-    """Radial velocity mixin class to allow for customised joint modelling of transits and RVs.
+    """Radial velocity model.
     """
 
-    def __init__(self, nplanets: int, times, rvs: Iterable, rves: Iterable, rvis: Iterable,
-                 tref: Optional[float] = None, lpf: Optional[LogPosteriorFunction] = None):
+    def __init__(self, lpf: LogPosteriorFunction, nplanets: int,
+                 times, rvs: Iterable, rves: Iterable, rvis: Iterable,
+                 tref: Optional[float] = None):
         self.lpf = lpf
 
-        if lpf is None:
-            if hasattr(self, 'nplanets'):
-                assert self.nplanets == nplanets
-            else:
-                self.nplanets = nplanets
+        if hasattr(lpf, 'nplanets'):
+            assert lpf.nplanets == nplanets
+        self.nplanets = nplanets
 
-            if not hasattr(self, 'ps') or self.ps is None:
-                self._init_parameters()
-
-        # Reference time setup
-        # --------------------
-        if lpf is None:
-            self.tref = tref if tref is not None else 0.0
-        else:
+        if hasattr(lpf, 'tref'):
             assert tref is None
-            self.tref = lpf.tref if hasattr(lpf, 'tref') else 0.0
+            self.tref = lpf.tref
+        else:
+            self.tref = lpf.tref = tref if tref is not None else 0.0
 
-        # Define the main data lists and arrays
-        # -------------------------------------
         self.times = None  # Mid-measurement times
         self.rvs = None  # RV values
         self.rves = None  # RV errors
@@ -87,6 +79,13 @@ class RVModel:
         self._rv_ids = None
 
         self.setup_data(times, rvs, rves, rvis)
+
+        if hasattr(lpf, 'ps') and lpf.ps is not None:
+            self.ps = lpf.ps
+        else:
+            self._init_parameters()
+            lpf.ps = self.ps
+
         self._init_p_rv()
 
     def setup_data(self, times: Iterable, rvs: Iterable, rves: Iterable, rvis: Iterable):
@@ -123,6 +122,12 @@ class RVModel:
         self._start_rvs = ps.blocks[-1].start
         self._sl_rvs = ps.blocks[-1].slice
 
+        prv = [GParameter(f'rv_err_{self.rvis[i]}', 'additional rv error', 'm/s', UP(0.0, 1.0), (-inf, inf)) for i in
+               range(len(self.times))]
+        ps.add_global_block('rv_errors', prv)
+        self._start_rv_err = ps.blocks[-1].start
+        self._sl_rv_err = ps.blocks[-1].slice
+
         prv = []
         for i in range(1, self.nplanets + 1):
             prv.append(GParameter(f'rv_k_{i}', f'rv_semiamplitude_{i}', 'm/s', UP(0.0, 1.0), (0, inf)))
@@ -143,14 +148,15 @@ class RVModel:
         return squeeze(pvp[:, self._sl_rvs][:, self._rv_ids])
 
     def rv_model(self, pvp, times=None, planets=None, add_sv=True):
-        times = self._timea if times is None else times
+        times = self._timea if times is None else times - self.tref
         pvp = atleast_2d(pvp)
         rvs = zeros((pvp.shape[0], times.size))
 
         planets = planets if planets is not None else arange(self.nplanets)
         for ipl in planets:
             pv = pvp[:, self.pids[ipl]]
-            tc, p = pv[:, 1] - self.tref, pv[:, 2]
+            tc = pv[:, 1] - self.tref
+            p = pv[:, 2]
             e = pv[:, 3] ** 2 + pv[:, 4] ** 2
             w = arctan2(pv[:, 4], pv[:, 3])
             for ipv in range(pv.shape[0]):
@@ -160,8 +166,10 @@ class RVModel:
             rvs += self.rv_shifts(pvp)
         return squeeze(rvs)
 
-    def lnlikelihood(self, pv):
-        return lnlike_normal(self._rva, self.rv_model(pv), self._rvea)
+    def lnlikelihood(self, pvp):
+        pvp = atleast_2d(pvp)
+        errors = sqrt(self._rvea ** 2 + pvp[:, self._sl_rv_err][:, self._rv_ids] ** 2)
+        return lnlike_normal(self._rva, self.rv_model(pvp), errors)
 
     def plot_rv_vs_time(self, method='de', pv=None, nsamples: int = 200, ntimes: int = 500, axs=None):
 
@@ -172,14 +180,14 @@ class RVModel:
 
         if pv is None:
             if method == 'de':
-                if self.de is None:
+                if self.lpf.de is None:
                     raise ValueError("The global optimizer hasn't been initialized.")
                 pvp = None
-                pv = self.de.minimum_location
+                pv = self.lpf.de.minimum_location
             elif method == 'mcmc':
-                if self.sampler is None:
+                if self.lpf.sampler is None:
                     raise ValueError("The sampler hasn't been initialized.")
-                df = self.posterior_samples(derived_parameters=False)
+                df = self.lpf.posterior_samples()
                 pvp = permutation(df.values)[:nsamples, :]
                 pv = median(pvp, 0)
         else:
@@ -190,7 +198,7 @@ class RVModel:
                 pvp = permutation(pv)[:nsamples, :]
                 pv = median(pvp, 0)
 
-        rv_time = linspace(self._timea.min() - 1, self._timea.max() + 1, num=ntimes)
+        rv_time = linspace(self._timea.min() - 1, self._timea.max() + 1, num=ntimes) + self.tref
 
         if pvp is None:
             rv_model = self.rv_model(pv, rv_time, add_sv=False)
@@ -205,12 +213,11 @@ class RVModel:
             axs[0].fill_between(rv_time, rv_model_limits[0], rv_model_limits[1], facecolor='darkblue', alpha=0.5)
 
         axs[0].plot(rv_time, rv_model, 'k', lw=1)
-        axs[0].errorbar(self._timea, self._rva - self.rv_shifts(pv), self._rvea, fmt='ok')
-        axs[1].errorbar(self._timea, self._rva - self.rv_model(pv), self._rvea, fmt='ok')
+        axs[0].errorbar(self._timea + self.tref, self._rva - self.rv_shifts(pv), self._rvea, fmt='ok')
+        axs[1].errorbar(self._timea + self.tref, self._rva - self.rv_model(pv), self._rvea, fmt='ok')
 
         if fig is not None:
             fig.tight_layout()
-
         return fig
 
     def plot_rv_vs_phase(self, planet: int, method='de', pv=None, nsamples: int = 200, ntimes: int = 500, axs=None):
@@ -221,14 +228,14 @@ class RVModel:
 
         if pv is None:
             if method == 'de':
-                if self.de is None:
+                if self.lpf.de is None:
                     raise ValueError("The global optimizer hasn't been initialized.")
                 pvp = None
-                pv = self.de.minimum_location
+                pv = self.lpf.de.minimum_location
             elif method == 'mcmc':
-                if self.sampler is None:
+                if self.lpf.sampler is None:
                     raise ValueError("The sampler hasn't been initialized.")
-                df = self.posterior_samples(derived_parameters=False)
+                df = self.lpf.posterior_samples()
                 pvp = permutation(df.values)[:nsamples, :]
                 pv = median(pvp, 0)
         else:
@@ -245,17 +252,18 @@ class RVModel:
         other_planets = all_planets.difference([planet])
 
         if pvp is None:
-            rv_model = self.rv_model(pv, rv_time, [planet], add_sv=False)
+            rv_model = self.rv_model(pv, rv_time + self.tref, [planet], add_sv=False)
             rv_others = self.rv_model(pv, planets=other_planets, add_sv=False)
             rv_model_limits = None
         else:
-            rv_percentiles = percentile(self.rv_model(pvp, rv_time, [planet], add_sv=False), [50, 16, 84, 2.5, 97.5], 0)
+            rv_percentiles = percentile(self.rv_model(pvp, rv_time + self.tref, [planet], add_sv=False),
+                                        [50, 16, 84, 2.5, 97.5], 0)
             rv_model = rv_percentiles[0]
             rv_model_limits = rv_percentiles[1:]
             rv_others = median(self.rv_model(pvp, planets=other_planets, add_sv=False), 0)
 
         period = pv[self.ps.names.index(f'p_{planet + 1}')]
-        tc = pv[self.ps.names.index(f'tc_{planet + 1}')]
+        tc = pv[self.ps.names.index(f'tc_{planet + 1}')] - self.tref
 
         phase = (fold(self._timea, period, tc, 0.5) - 0.5) * period
         phase_model = (fold(rv_time, period, tc, 0.5) - 0.5) * period
@@ -268,6 +276,7 @@ class RVModel:
             axs[0].fill_between(phase_model[msids], rv_model_limits[0, msids], rv_model_limits[1, msids],
                                 facecolor='darkblue',
                                 alpha=0.25)
+
         axs[0].errorbar(phase, self._rva - rv_others - self.rv_shifts(pv), self._rvea, fmt='ok')
         axs[0].plot(phase_model[msids], rv_model[msids], 'k')
         axs[1].errorbar(phase, self._rva - self.rv_model(pv), self._rvea, fmt='ok')
