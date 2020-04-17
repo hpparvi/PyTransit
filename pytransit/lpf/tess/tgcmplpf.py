@@ -101,8 +101,8 @@ class TGCMPLPF(BaseTGCLPF):
                 GParameter(f'tc_{i}', f'zero_epoch_{i}', 'd', NP(0.0, 0.1), (-inf, inf)),
                 GParameter(f'p_{i}', f'period_{i}', 'd', NP(1.0, 1e-5), (0, inf)),
                 GParameter(f'b_{i}', f'impact_parameter_{i}', 'R_s', UP(0.0, 1.0), (0, inf)),
-                GParameter(f'secosw_{i}', f'sqrt_e_cos_w_{i}', '', NP(0.0, 1e-8), (-1, 1)),
-                GParameter(f'sesinw_{i}', f'sqrt_e_sin_w_{i}', '', NP(0.0, 1e-8), (-1, 1))
+                GParameter(f'secw_{i}', f'sqrt_e_cos_w_{i}', '', NP(0.0, 1e-8), (-1, 1)),
+                GParameter(f'sesw_{i}', f'sqrt_e_sin_w_{i}', '', NP(0.0, 1e-8), (-1, 1))
             ])
         ps.add_global_block('planets', pp)
         self._start_pl = ps.blocks[-1].start
