@@ -67,7 +67,13 @@ class TestQuadraticModel(unittest.TestCase):
         assert tm.npb == 2
 
     def test_evaluate_1(self):
-        tm = QuadraticModel()
+        tm = QuadraticModel(interpolate=True)
+        tm.set_data(self.time)
+        flux = tm.evaluate(self.radius_ratios[0, 0], self.ldc[0,:2], self.zero_epochs[0], self.periods[0], self.smas[0], self.inclinations[0])
+        assert flux.ndim == 1
+        assert flux.size == self.time.size
+
+        tm = QuadraticModel(interpolate=False)
         tm.set_data(self.time)
         flux = tm.evaluate(self.radius_ratios[0, 0], self.ldc[0,:2], self.zero_epochs[0], self.periods[0], self.smas[0], self.inclinations[0])
         assert flux.ndim == 1
