@@ -62,11 +62,11 @@ class RVModel:
             assert lpf.nplanets == nplanets
         self.nplanets = nplanets
 
-        if hasattr(lpf, 'tref'):
+        if hasattr(lpf, '_tref'):
             assert tref is None
-            self.tref = lpf.tref
+            self._tref = lpf._tref
         else:
-            self.tref = lpf.tref = tref if tref is not None else 0.0
+            self._tref = lpf._tref = tref if tref is not None else 0.0
 
         self.times = None  # Mid-measurement times
         self.rvs = None  # RV values
@@ -94,7 +94,7 @@ class RVModel:
         self.rves = rves
         self.rvis = rvis
 
-        self._timea = concatenate(times) - self.tref
+        self._timea = concatenate(times) - self._tref
         self._rva = concatenate(rvs)
         self._rvea = concatenate(rves)
         self._rv_ids = concatenate([full(c.size, i) for i, c in enumerate(self.times)])
@@ -148,14 +148,14 @@ class RVModel:
         return squeeze(pvp[:, self._sl_rvs][:, self._rv_ids])
 
     def rv_model(self, pvp, times=None, planets=None, add_sv=True):
-        times = self._timea if times is None else times - self.tref
+        times = self._timea if times is None else times - self._tref
         pvp = atleast_2d(pvp)
         rvs = zeros((pvp.shape[0], times.size))
 
         planets = planets if planets is not None else arange(self.nplanets)
         for ipl in planets:
             pv = pvp[:, self.pids[ipl]]
-            tc = pv[:, 1] - self.tref
+            tc = pv[:, 1] - self._tref
             p = pv[:, 2]
             e = pv[:, 3] ** 2 + pv[:, 4] ** 2
             w = arctan2(pv[:, 4], pv[:, 3])
@@ -198,7 +198,7 @@ class RVModel:
                 pvp = permutation(pv)[:nsamples, :]
                 pv = median(pvp, 0)
 
-        rv_time = linspace(self._timea.min() - 1, self._timea.max() + 1, num=ntimes) + self.tref
+        rv_time = linspace(self._timea.min() - 1, self._timea.max() + 1, num=ntimes) + self._tref
 
         if pvp is None:
             rv_model = self.rv_model(pv, rv_time, add_sv=False)
@@ -213,8 +213,8 @@ class RVModel:
             axs[0].fill_between(rv_time, rv_model_limits[0], rv_model_limits[1], facecolor='darkblue', alpha=0.5)
 
         axs[0].plot(rv_time, rv_model, 'k', lw=1)
-        axs[0].errorbar(self._timea + self.tref, self._rva - self.rv_shifts(pv), self._rvea, fmt='ok')
-        axs[1].errorbar(self._timea + self.tref, self._rva - self.rv_model(pv), self._rvea, fmt='ok')
+        axs[0].errorbar(self._timea + self._tref, self._rva - self.rv_shifts(pv), self._rvea, fmt='ok')
+        axs[1].errorbar(self._timea + self._tref, self._rva - self.rv_model(pv), self._rvea, fmt='ok')
 
         if fig is not None:
             fig.tight_layout()
@@ -252,18 +252,18 @@ class RVModel:
         other_planets = all_planets.difference([planet])
 
         if pvp is None:
-            rv_model = self.rv_model(pv, rv_time + self.tref, [planet], add_sv=False)
+            rv_model = self.rv_model(pv, rv_time + self._tref, [planet], add_sv=False)
             rv_others = self.rv_model(pv, planets=other_planets, add_sv=False)
             rv_model_limits = None
         else:
-            rv_percentiles = percentile(self.rv_model(pvp, rv_time + self.tref, [planet], add_sv=False),
+            rv_percentiles = percentile(self.rv_model(pvp, rv_time + self._tref, [planet], add_sv=False),
                                         [50, 16, 84, 2.5, 97.5], 0)
             rv_model = rv_percentiles[0]
             rv_model_limits = rv_percentiles[1:]
             rv_others = median(self.rv_model(pvp, planets=other_planets, add_sv=False), 0)
 
         period = pv[self.ps.names.index(f'p_{planet + 1}')]
-        tc = pv[self.ps.names.index(f'tc_{planet + 1}')] - self.tref
+        tc = pv[self.ps.names.index(f'tc_{planet + 1}')] - self._tref
 
         phase = (fold(self._timea, period, tc, 0.5) - 0.5) * period
         phase_model = (fold(rv_time, period, tc, 0.5) - 0.5) * period
