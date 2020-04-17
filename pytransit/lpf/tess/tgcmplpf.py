@@ -30,20 +30,20 @@ from pytransit.param.parameter import NormalPrior as NP, UniformPrior as UP, GPa
 from pytransit.utils.misc import fold
 from .tgclpf import BaseTGCLPF
 
-
 @njit(fastmath=True)
-def map_pv(pv, istart, ipl):
+def map_pv(pv, pids, ipl):
     pv = atleast_2d(pv)
-    pp = pv[:, istart+6*ipl:istart+6*(1+ipl)]
+    pp = pv[:, pids[ipl]]
     pvt = zeros((pv.shape[0], 7))
     pvt[:, 0] = sqrt(pp[:, 0])                    # 0 - radius ratio
     pvt[:, 1] = pp[:, 1]                          # 1 - zero epoch
     pvt[:, 2] = pp[:, 2]                          # 2 - period
-    pvt[:, 3] = as_from_rhop(pv[:, 0], pp[:, 2])  # 3 - scaled semi-major axis
+    pvt[:, 3] = as_from_rhop(pp[:, 4], pp[:, 2])  # 3 - scaled semi-major axis
     pvt[:, 4] = i_from_ba(pp[:, 3], pvt[:, 3])    # 4 - inclination
-    pvt[:, 5] = pp[:,4]**2 + pp[:,5]**2           # 5 - eccentricity
-    pvt[:, 6] = arctan2(pp[:,5], pp[:,4])         # 6 - argument of periastron
+    pvt[:, 5] = pp[:,5]**2 + pp[:,6]**2           # 5 - eccentricity
+    pvt[:, 6] = arctan2(pp[:,6], pp[:,5])         # 6 - argument of periastron
     return pvt
+
 
 class TGCMPLPF(BaseTGCLPF):
 
@@ -75,6 +75,12 @@ class TGCMPLPF(BaseTGCLPF):
         for i in range(self.nplanets):
             self.set_prior(f'zero_epoch_{i+1}', NP(zero_epochs[i].n, 3 * zero_epochs[i].s))
             self.set_prior(f'period_{i+1}', NP(periods[i].n, 3 * periods[i].s))
+
+        self.pids = zeros((self.nplanets, 7), 'int')
+        for ipl in range(self.nplanets):
+            pnames = f"k2_true_{ipl+1} tc_{ipl+1} p_{ipl+1} b_{ipl+1} rho secw_{ipl+1} sesw_{ipl+1}".split()
+            for ip, pname in enumerate(pnames):
+                self.pids[ipl, ip] = self.ps.names.index(pname)
 
     def _init_p_orbit(self):
         """Orbit parameter initialisation.
@@ -117,7 +123,8 @@ class TGCMPLPF(BaseTGCLPF):
         ldc = map_ldc(pvp[:, self._sl_ld])
         planets = planets if planets is not None else arange(self.nplanets)
         for i in planets:
-            pvpl = map_pv(pvp, 5, i)
+            pvpl = map_pv(pvp, self.pids, i)
+            pvpl[:,1] -= self._tref
             flux += self.tm.evaluate_pv(pvpl, ldc, copy) - 1.
 
         pvc = pvp[:, self._sl_cn]
