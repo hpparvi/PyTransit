@@ -45,28 +45,31 @@ class LinearModelBaseline:
         if lpf.lcids is None:
             raise ValueError('The LPF data needs to be initialised before initialising LinearModelBaseline.')
 
-        self.lcids = lcids if lcids is not None else unique(lpf.lcids)
+        self.init_data(lcids)
+        self.init_parameters()
+
+    def init_data(self, lcids = None):
+        self.lcids = lcids if lcids is not None else unique(self.lpf.lcids)
         self.nlc = self.lcids.size
-        self.ncov = array([lpf.covariates[lcid].shape[1] for lcid in self.lcids])  # Number of covariates per light curve
-        self.cova = concatenate([lpf.covariates[lcid].ravel() for lcid in self.lcids])  # Flattened covariate vector
-        self.cids = concatenate([full((lpf.lcids == lcid).sum(), i) for i, lcid in enumerate(self.lcids)])
+        self.ncov = array(
+            [self.lpf.covariates[lcid].shape[1] for lcid in self.lcids])  # Number of covariates per light curve
+        self.cova = concatenate([self.lpf.covariates[lcid].ravel() for lcid in self.lcids])  # Flattened covariate vector
+        self.cids = concatenate([full((self.lpf.lcids == lcid).sum(), i) for i, lcid in enumerate(self.lcids)])
         self._bl_coeff_start = r_[[0], self.ncov + 1].cumsum()  # Parameter vector start index for the coefficients
 
-        self.mask = zeros(lpf.lcids.size, bool)
+        self.mask = zeros(self.lpf.lcids.size, bool)
         for lcid in self.lcids:
-            self.mask[lpf.lcslices[lcid]] = 1
+            self.mask[self.lpf.lcslices[lcid]] = 1
 
-        if hasattr(lpf, 'ins'):
-            self.ins = [lpf.ins[lcid] for lcid in self.lcids]
+        if hasattr(self.lpf, 'ins'):
+            self.ins = [self.lpf.ins[lcid] for lcid in self.lcids]
         else:
             self.ins = self.nlc * ['']
 
-        if hasattr(lpf, 'piis'):
-            self.piis = [lpf.piis[lcid] for lcid in self.lcids]
+        if hasattr(self.lpf, 'piis'):
+            self.piis = [self.lpf.piis[lcid] for lcid in self.lcids]
         else:
             self.piis = zeros(self.nlc, int)
-
-        self.init_parameters()
 
     def init_parameters(self):
         """Baseline parameter initialisation.
