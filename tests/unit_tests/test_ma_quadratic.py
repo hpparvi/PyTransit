@@ -66,42 +66,64 @@ class TestQuadraticModel(unittest.TestCase):
         tm.set_data(self.time, lcids=self.lcids, pbids=self.pbids)
         assert tm.npb == 2
 
-    def test_evaluate_1(self):
+    def test_evaluate_1i(self):
         tm = QuadraticModel(interpolate=True)
         tm.set_data(self.time)
         flux = tm.evaluate(self.radius_ratios[0, 0], self.ldc[0,:2], self.zero_epochs[0], self.periods[0], self.smas[0], self.inclinations[0])
         assert flux.ndim == 1
         assert flux.size == self.time.size
 
+    def test_evaluate_1d(self):
         tm = QuadraticModel(interpolate=False)
         tm.set_data(self.time)
         flux = tm.evaluate(self.radius_ratios[0, 0], self.ldc[0,:2], self.zero_epochs[0], self.periods[0], self.smas[0], self.inclinations[0])
         assert flux.ndim == 1
         assert flux.size == self.time.size
 
-    def test_evaluate_2(self):
-        tm = QuadraticModel()
+    def test_evaluate_2i(self):
+        tm = QuadraticModel(interpolate=True)
         tm.set_data(self.time, self.lcids, self.pbids)
         flux = tm.evaluate(self.radius_ratios[0, 0], self.ldc[0], self.zero_epochs[0], self.periods[0], self.smas[0], self.inclinations[0])
         assert flux.ndim == 1
         assert flux.size == self.time.size
 
-    def test_evaluate_3(self):
-        tm = QuadraticModel()
+    def test_evaluate_2d(self):
+        tm = QuadraticModel(interpolate=False)
+        tm.set_data(self.time, self.lcids, self.pbids)
+        flux = tm.evaluate(self.radius_ratios[0, 0], self.ldc[0], self.zero_epochs[0], self.periods[0], self.smas[0], self.inclinations[0])
+        assert flux.ndim == 1
+        assert flux.size == self.time.size
+
+    def test_evaluate_3i(self):
+        tm = QuadraticModel(interpolate=True)
         tm.set_data(self.time, self.lcids, self.pbids)
         flux = tm.evaluate(self.radius_ratios[0], self.ldc[0], self.zero_epochs[0], self.periods[0], self.smas[0], self.inclinations[0])
         assert flux.ndim == 1
         assert flux.size == self.time.size
 
-    def test_evaluate_ps(self):
-        tm = QuadraticModel()
+    def test_evaluate_3d(self):
+        tm = QuadraticModel(interpolate=False)
+        tm.set_data(self.time, self.lcids, self.pbids)
+        flux = tm.evaluate(self.radius_ratios[0], self.ldc[0], self.zero_epochs[0], self.periods[0], self.smas[0], self.inclinations[0])
+        assert flux.ndim == 1
+        assert flux.size == self.time.size
+
+    def test_evaluate_psi(self):
+        tm = QuadraticModel(interpolate=True)
         tm.set_data(self.time)
         flux = tm.evaluate(0.1, [0.2, 0.3], 0.0, 1.0, 3.0, 0.5*pi)
         assert flux.ndim == 1
         assert flux.size == self.time.size
 
-    def test_evaluate_pv(self):
-        tm = QuadraticModel()
+    def test_evaluate_psd(self):
+        tm = QuadraticModel(interpolate=False)
+        tm.set_data(self.time)
+        flux = tm.evaluate(0.1, [0.2, 0.3], 0.0, 1.0, 3.0, 0.5*pi)
+        assert flux.ndim == 1
+        assert flux.size == self.time.size
+
+    def test_evaluate_pvi(self):
+        tm = QuadraticModel(interpolate=True)
         tm.set_data(self.time)
 
         pvp = array([[0.12, 0.00, 1.0, 3.0, 0.500*pi, 0.0, 0.0],
@@ -116,6 +138,24 @@ class TestQuadraticModel(unittest.TestCase):
         flux = tm.evaluate_pv(pvp, ldc)
         assert flux.ndim == 2
         assert flux.shape == (2, self.time.size)
+
+    def test_evaluate_pvd(self):
+        tm = QuadraticModel(interpolate=False)
+        tm.set_data(self.time)
+
+        pvp = array([[0.12, 0.00, 1.0, 3.0, 0.500*pi, 0.0, 0.0],
+                     [0.11, 0.01, 0.9, 2.9, 0.495*pi, 0.0, 0.0]])
+
+        ldc = [[0.1, 0.2],[0.3, 0.1]]
+        flux = tm.evaluate_pv(pvp[0], ldc[0])
+        assert flux.ndim == 1
+        assert flux.size == self.time.size
+
+        ldc = [[0.1, 0.2],[0.3, 0.1]]
+        flux = tm.evaluate_pv(pvp, ldc)
+        assert flux.ndim == 2
+        assert flux.shape == (2, self.time.size)
+
 
     # TODO: Set up OpenCL in Travis
     # -----------------------------
