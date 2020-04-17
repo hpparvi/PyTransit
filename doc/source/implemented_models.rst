@@ -7,7 +7,7 @@ PyTransit implements a set of transit models that all share a common interface t
 Uniform model
 -------------
 
-The uniform model (`pytransit.UniformModel` and `pytransit.UniformModelCL`) reproduces an exoplanet transit over a uniform disc.
+The uniform model (:class:`pytransit.UniformModel` and :class:`pytransit.UniformModelCL`) reproduces an exoplanet transit over a uniform disc.
 This model is useful when modelling secondary eclipses, or when the effects from the stellar limb
 darkening can be ignored.
 
@@ -16,7 +16,7 @@ darkening can be ignored.
 Quadratic model
 ---------------
 
-The quadratic transit model (`pytransit.QuadraticModel` and `pytransit.QuadraticModelCL`) reproduces an exoplanet transit over a
+The quadratic transit model (:class:`pytransit.QuadraticModel` and :class:`pytransit.QuadraticModelCL`) reproduces an exoplanet transit over a
 stellar disk with the limb darkening modelled by a quadratic limb darkening model, as presented
 in `Mandel & Agol (ApJ 580, 2001) <https://iopscience.iop.org/article/10.1086/345520/fulltext/>`_.
 
@@ -30,7 +30,7 @@ in `Mandel & Agol (ApJ 580, 2001) <https://iopscience.iop.org/article/10.1086/34
 Power-2 model
 -------------
 
-Power-2 model (`pytransit.QPower2Model` and `pytransit.QPower2ModelCL`) implements the transit model with a power-2 law
+Power-2 model (:class:`pytransit.QPower2Model` and :class:`pytransit.QPower2ModelCL`) implements the transit model with a power-2 law
 limb darkening profile presented by
 `Maxted & Gill (A&A 622, A33 2019) <https://www.aanda.org/articles/aa/abs/2019/02/aa34563-18/aa34563-18.html>`_.
 The model is fast to evaluate and aims to model the limb darkening accurately for *cool stars*.
@@ -45,7 +45,7 @@ The model is fast to evaluate and aims to model the limb darkening accurately fo
 General model
 -------------
 
-The general model (`pytransit.GeneralModel`) implements the flexible transit model presented by
+The general model (:class:`pytransit.GeneralModel`) implements the flexible transit model presented by
 `Giménez (A&A 450, 2006) <https://www.aanda.org/articles/aa/abs/2006/18/aa4445-05/aa4445-05.html>`_. The stellar limb
 darkening follows a "general" limb darkening model, and the accuracy of limb darkening can be increased as needed.
 
@@ -67,7 +67,7 @@ computation time, but
 Chromosphere model
 ------------------
 
-Optically thin shell model (`pytransit.ChromosphereModel` and `pytransit.ChromosphereModelCL`) by
+Optically thin shell model (:class:`pytransit.ChromosphereModel` and :class:`pytransit.ChromosphereModelCL`) by
 `Schlawin et al. (ApJL 722, 2010) <https://iopscience.iop.org/article/10.1088/2041-8205/722/1/L75>`_ to model a transit
 over a chromosphere.
 

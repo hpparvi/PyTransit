@@ -6,7 +6,7 @@ Basic transit model evaluation
 
 PyTransit comes with a set of transit models that share a common interface (with small
 model-specific variations). So, while we use a Mandel & Agol quadratic limb darkening model
-(`pytransit.QuadraticModel`) as an example here, the evaluation works the same for all the models.
+(:class:`pytransit.QuadraticModel`) as an example here, the evaluation works the same for all the models.
 
 First, the transit model needs to be imported from PyTransit. After this, it can be initialised, and
 set up by giving it (at least) a set of mid-exposure times.
