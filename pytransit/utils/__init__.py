@@ -15,3 +15,4 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from .mdwarfs import md_rs_from_rho
+from .rv import mp_from_kiepms, surface_gravity
