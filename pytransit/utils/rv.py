@@ -27,7 +27,7 @@ def mp_from_kiepms(k, i, e, p, mstar):
     Parameters
     ----------
     k: float, ndarray, or Quantity
-        RV semiamplitude  [m/s]
+        RV semiamplitude [m/s]
     i: float, ndarray, or Quantity
         Inclination [rad]
     e: float, ndarray, or Quantity
@@ -39,13 +39,13 @@ def mp_from_kiepms(k, i, e, p, mstar):
 
     Returns
     -------
-    Planet mass in M_Jup
+    Planet mass [M_Jup]
     """
     k = k.to(u.m/u.s) if isinstance(k, Quantity) else k * u.m/u.s
     i = i.to(u.rad) if isinstance(i, Quantity) else i*u.rad
     p = p.to(u.s) if isinstance(p, Quantity) else (p*u.day).to(u.s)
     mstar = mstar.to(u.kg) if isinstance(mstar, Quantity) else (mstar*u.M_sun).to(u.kg)
-    return (k * ((p*24*3600)/(2*pi*G)) ** (1/3) * mstar ** (2 / 3) / sin(i) * sqrt((1 - e ** 2))).to(u.M_jup).value
+    return (k * (p/(2*pi*G)) ** (1/3) * mstar ** (2 / 3) / sin(i) * sqrt((1 - e ** 2))).to(u.M_jup).value
 
 
 def surface_gravity(k, i, e, p, ar):

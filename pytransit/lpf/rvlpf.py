@@ -174,7 +174,7 @@ class RVModel:
     def plot_rv_vs_time(self, method='de', pv=None, nsamples: int = 200, ntimes: int = 500, axs=None):
 
         if axs is None:
-            fig, axs = subplots(2, 1, gridspec_kw={'height_ratios': (3, 1)})
+            fig, axs = subplots(2, 1, gridspec_kw={'height_ratios': (3, 1)}, sharex='all')
         else:
             fig, axs = None, axs
 
@@ -213,7 +213,7 @@ class RVModel:
             axs[0].fill_between(rv_time, rv_model_limits[0], rv_model_limits[1], facecolor='darkblue', alpha=0.5)
 
         axs[0].plot(rv_time, rv_model, 'k', lw=1)
-        axs[0].errorbar(self._timea + self._tref, self._rva - self.rv_shifts(pv), self._rvea, fmt='ok')
+        axs[0].errorbar(self._timea + self._tref, self._rva + self.rv_shifts(pv), self._rvea, fmt='ok')
         axs[1].errorbar(self._timea + self._tref, self._rva - self.rv_model(pv), self._rvea, fmt='ok')
 
         if fig is not None:
@@ -222,7 +222,7 @@ class RVModel:
 
     def plot_rv_vs_phase(self, planet: int, method='de', pv=None, nsamples: int = 200, ntimes: int = 500, axs=None):
         if axs is None:
-            fig, axs = subplots(2, 1, gridspec_kw={'height_ratios': (3, 1)})
+            fig, axs = subplots(2, 1, gridspec_kw={'height_ratios': (3, 1)}, sharex='all')
         else:
             fig, axs = None, axs
 
@@ -277,10 +277,11 @@ class RVModel:
                                 facecolor='darkblue',
                                 alpha=0.25)
 
-        axs[0].errorbar(phase, self._rva - rv_others - self.rv_shifts(pv), self._rvea, fmt='ok')
+        axs[0].errorbar(phase, self._rva - rv_others + self.rv_shifts(pv), self._rvea, fmt='ok')
         axs[0].plot(phase_model[msids], rv_model[msids], 'k')
         axs[1].errorbar(phase, self._rva - self.rv_model(pv), self._rvea, fmt='ok')
 
+        axs[0].autoscale(axis='x', tight=True)
         if fig is not None:
             fig.tight_layout()
         return fig
