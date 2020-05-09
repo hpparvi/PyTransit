@@ -107,6 +107,10 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, e
             ilc = lcids[j]
             ipb = pbids[ilc]
 
+            if a[ipv] < 1.0 or e[ipv] > 0.94:
+                flux[ipv, j] = nan
+                continue
+
             if k.shape[1] == 1:
                 _k = k[ipv, 0]
             else:
@@ -128,6 +132,11 @@ def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, e
     k = atleast_1d(k)
     npt = t.size
     flux = zeros(npt)
+
+    if a < 1.0 or e > 0.94:
+        flux[:] = nan
+        return flux
+
     for j in prange(npt):
         ilc = lcids[j]
         ipb = pbids[ilc]
@@ -157,6 +166,10 @@ def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, es, ms, tae):
             t0, p, a, i, e, w = pvp[ipv,nk:]
             ilc = lcids[j]
             ipb = pbids[ilc]
+
+            if a < 1.0 or e > 0.94:
+                flux[ipv, j] = nan
+                continue
 
             if nk == 1:
                 k = pvp[ipv, 0]
