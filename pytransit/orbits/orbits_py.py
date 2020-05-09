@@ -652,8 +652,8 @@ def i_from_ba(b, a):
 
 
 @njit(cache=cache)
-def d_from_pkaiews(p, k, a, i, e, w, tr_sign):
-    """Transit duration (T14) from p, k, a, i, e, w, and the transit sign.
+def d_from_pkaiews(p, k, a, i, e, w, tr_sign, kind=14):
+    """Transit duration (T14 or T23) from p, k, a, i, e, w, and the transit sign.
 
     Calculates the transit duration (T14) from the orbital period, planet-star radius ratio, scaled semi-major axis,
     orbital inclination, eccentricity, argument of periastron, and the sign of the transit (transit:1, eclipse: -1).
@@ -668,6 +668,7 @@ def d_from_pkaiews(p, k, a, i, e, w, tr_sign):
        e  : eccentricity           [-]
        w  : argument of periastron [rad]
        tr_sign : transit sign, 1 for a transit, -1 for an eclipse
+       kind: either 14 for full transit duration or 23 for total transit duration
 
      Returns
      -------
@@ -676,7 +677,8 @@ def d_from_pkaiews(p, k, a, i, e, w, tr_sign):
      """
     b  = impact_parameter_ec(a, i, e, w, tr_sign)
     ae = sqrt(1.-e**2)/(1.+tr_sign*e*sin(w))
-    return p/pi  * arcsin(sqrt((1.+k)**2-b**2)/(a*sin(i))) * ae
+    ds = 1. if kind == 14 else -1.
+    return p/pi  * arcsin(sqrt((1.+ds*k)**2-b**2)/(a*sin(i))) * ae
 
 
 @njit(cache=cache)

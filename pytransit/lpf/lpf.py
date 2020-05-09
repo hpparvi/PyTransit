@@ -551,7 +551,8 @@ class BaseLPF(LogPosteriorFunction):
             df['inc'] = i_from_baew(df.b.values, df.a.values, 0., 0.)
 
             average_ks = sqrt(df.iloc[:, self._sl_k2]).mean(1).values
-            df['t14'] = d_from_pkaiews(df.p.values, average_ks, df.a.values, df.inc.values, 0., 0., 1)
+            df['t14'] = d_from_pkaiews(df.p.values, average_ks, df.a.values, df.inc.values, 0., 0., 1, kind=14)
+            df['t23'] = d_from_pkaiews(df.p.values, average_ks, df.a.values, df.inc.values, 0., 0., 1, kind=23)
         return df
 
     def plot_light_curves(self, method='de', ncol: int = 3, width: float = 2., max_samples: int = 1000, figsize=None,
