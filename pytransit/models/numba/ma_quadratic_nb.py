@@ -42,7 +42,7 @@
 from typing import Tuple
 
 from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, linspace, array, atleast_2d, floor, full, \
-    inf, isnan, cos, sign, sin, atleast_1d, ndarray, nan
+    inf, isnan, cos, sign, sin, atleast_1d, ndarray, nan, copysign
 from numba import njit, prange
 
 from ...orbits.orbits_py import z_ip_s
@@ -302,7 +302,7 @@ def eval_quad_z_s(z: float, k: float, u: ndarray):
         z += 1e-6
 
     # The source is unocculted
-    if z > 1.0 + k or z < 0.0:
+    if z > 1.0 + k or (copysign(1, z) < 0.0):
         return 1.0
 
     # The source is completely occulted
@@ -410,7 +410,7 @@ def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
 
     for i in prange(len(zs)):
         z = zs[i]
-        if (z >= 1.0 + k) or (z < 0.0):
+        if (z >= 1.0 + k) or (copysign(1, z) < 0.0):
             flux[i, :] = 1.0
         else:
             iz = int(floor((z - zt[0]) / dz))
@@ -460,7 +460,7 @@ def eval_quad_ip(zs, k, u, edt, ldt, let, kt, zt):
 
     for i in prange(len(zs)):
         z = zs[i]
-        if (z >= 1.0 + k) or (z < 0.0):
+        if (z >= 1.0 + k) or (copysign(1, z) < 0.0):
             flux[i, :] = 1.0
         else:
             iz = int(floor((z - zt[0]) / dz))
@@ -514,7 +514,7 @@ def eval_quad_ip_mp(zs, pbi, ks, u, edt, ldt, let, kt, zt):
 
         j = pbi[i]
 
-        if (z >= 1.0 + k) or (z < 0.0):
+        if (z >= 1.0 + k) or (copysign(1, z) < 0.0):
             flux[i] = 1.0
         else:
             iz = int(floor((z - zt[0]) / dz))
@@ -551,7 +551,7 @@ def quadratic_interpolated_z_s(z, k, u, edt, ldt, let, kt, zt):
     ak1 = (k - kt[ik]) / dk
     ak2 = 1.0 - ak1
 
-    if (z >= 1.0 + k) or (z < 0.0):
+    if (z >= 1.0 + k) or (copysign(1, z) < 0.0):
         flux = 1.0
     else:
         iz = int(floor((z - zt[0]) / dz))
