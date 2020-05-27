@@ -7,3 +7,4 @@ API
    transit_models
    lpfs
    pytransit.contamination
+   phase_curves
