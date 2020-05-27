@@ -1,9 +1,3 @@
-"""
-Secondary eclipses
-------------------
-
-"""
-
 #  PyTransit: fast and easy exoplanet transit modelling in Python.
 #  Copyright (C) 2010-2019  Hannu Parviainen
 #
@@ -20,11 +14,21 @@ Secondary eclipses
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from __future__ import division
+"""Methods for modelling of secondary eclipses
+
+  .. deprecated:: 2.0.0
+    ``pytransit.utils.eclipses`` will be removed in PyTransit 2.1, it is replaced by ``pytransit.utils.phasecurves``.
+
+"""
+import warnings
 from numpy import sqrt, exp, NaN
 
 from scipy.constants import k,h,c
 from scipy.optimize import brentq
+
+warnings.warn("the pytransits.utils.eclipses module is deprecated and will be removed in PyTransit 2.1",
+               FutureWarning, stacklevel=2)
+
 
 def Teq(Ts, a, f, A):
     """Equilibruim temperature of a planet.
