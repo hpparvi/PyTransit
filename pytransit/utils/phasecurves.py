@@ -32,6 +32,27 @@ mj2kg = u.M_jup.to(u.kg)
 ms2kg = u.M_sun.to(u.kg)
 d2s = u.day.to(u.s)
 
+def equilibrium_temperature(tstar: NPType, a: NPType, f: NPType, ab: NPType) -> NPType:
+    """Planetary equilibrium temperature [K].
+
+    Parameters
+    ----------
+    tstar
+        Effective stellar temperature  [K]
+    a
+        Scaled semi-major axis [Rsun]
+    f
+        Redistribution factor
+    ab
+        Bond albedo
+
+    Returns
+    -------
+    Teq : float or ndarray
+        Equilibrium temperature [K]
+    """
+    return tstar * sqrt(1 / a) * (f * (1 - ab)) ** 0.25
+
 
 # Thermal emission
 # ================
@@ -62,14 +83,14 @@ def summed_planck(teff, wl, tm):
     return flux
 
 
-def emission(tp: NPType, ts: NPType, k: NPType, flt: Filter) -> NPType:
+def emission(tp: NPType, tstar: NPType, k: NPType, flt: Filter) -> NPType:
     """Thermal emission from the planet.
 
     Parameters
     ----------
     tp : float or ndarray
         Equilibrium temperature of the planet [K]
-    ts : float or ndarray
+    tstar : float or ndarray
         Effective temperature of the star [K]
     k : float or ndarray
         Planet-star radius ratio
@@ -84,7 +105,7 @@ def emission(tp: NPType, ts: NPType, k: NPType, flt: Filter) -> NPType:
     """
     wl = linspace(flt.wl_min, flt.wl_max, 100)
     tm = flt(wl)
-    return k**2 * (summed_planck(tp, wl, tm) / summed_planck(ts, wl, tm))
+    return k**2 * (summed_planck(tp, wl, tm) / summed_planck(tstar, wl, tm))
 
 
 # Doppler boosting
@@ -187,28 +208,6 @@ def ellipsoidal_variation_amplitude(mp: NPType, ms: NPType, a: NPType, i: NPType
     return ae * (mp*mj2kg)/(ms*ms2kg) * a**-3
 
 
-def teq(ts: NPType, a: NPType, f: NPType, ab: NPType) -> NPType:
-    """Planetary equilibrium temperature [K].
-
-    Parameters
-    ----------
-    ts
-        Effective stellar temperature  [K]
-    a
-        Scaled semi-major axis [Rsun]
-    f
-        Redistribution factor
-    ab
-        Bond albedo
-
-    Returns
-    -------
-    Teq : float or ndarray
-        Equilibrium temperature [K]
-    """
-    return ts * sqrt(1 / a) * (f * (1 - ab)) ** 0.25
-
-
 def reflected_fr(a: NPType, ab: NPType, r: NPType = 1.5) -> NPType:
     """Reflected flux ratio per projected area element.
 
@@ -228,16 +227,12 @@ def reflected_fr(a: NPType, ab: NPType, r: NPType = 1.5) -> NPType:
     """
     return r * ab / a ** 2
 
-
-
-
-
-def flux_ratio(ts: NPType, a: NPType, f: NPType, ab: NPType, l: NPType, r: NPType = 1.5, ti: NPType = 0) -> NPType:
+def flux_ratio(tstar: NPType, a: NPType, f: NPType, ab: NPType, l: NPType, r: NPType = 1.5, ti: NPType = 0) -> NPType:
     """Total flux ratio per projected area element.
 
     Parameters
     ----------
-    ts
+    tstar
         Effective stellar temperature [K]
     a
         Scaled semi-major axis [Rs]
@@ -257,17 +252,17 @@ def flux_ratio(ts: NPType, a: NPType, f: NPType, ab: NPType, l: NPType, r: NPTyp
     fr: float
         Total flux ratio
     """
-    return reflected_fr(a, ab, r) + thermal_fr(ts, a, f, ab, l, ti)
+    return reflected_fr(a, ab, r) + thermal_fr(tstar, a, f, ab, l, ti)
 
 
-def solve_teq(fr, ts, a, ab, l, r=1.5, ti=0):
+def solve_teq(fr, tstar, a, ab, l, r=1.5, ti=0):
     """Solve the equilibrium temperature.
 
     Parameters
     ----------
     fr
         Flux ratio
-    ts
+    tstar
         Effective stellar temperature [K]
     a
         Scaled semi-major axis [Rs]
@@ -286,21 +281,21 @@ def solve_teq(fr, ts, a, ab, l, r=1.5, ti=0):
         Equilibrium temperature
 
     """
-    Bs = planck(ts, l)
+    Bs = planck(tstar, l)
     try:
-        return brentq(lambda Teq: reflected_fr(a, ab, r) + planck(Teq + ti, l) / Bs - fr, 5, ts)
+        return brentq(lambda Teq: reflected_fr(a, ab, r) + planck(Teq + ti, l) / Bs - fr, 5, tstar)
     except ValueError:
         return nan
 
 
-def solve_ab(fr, ts, a, f, l, r=1.5, ti=0):
+def solve_ab(fr, tstar, a, f, l, r=1.5, ti=0):
     """Solve the Bond albedo.
 
     Parameters
     ----------
     fr  :
         Flux ratio                    [-]
-    ts  :
+    tstar  :
         Effective stellar temperature [K]
     a   :
         Scaled semi-major axis        [Rs]
@@ -318,19 +313,19 @@ def solve_ab(fr, ts, a, f, l, r=1.5, ti=0):
       A : Bond albedo
     """
     try:
-        return brentq(lambda ab: reflected_fr(a, ab, r) + thermal_fr(ts, a, f, ab, l, ti) - fr, 0, 0.3)
+        return brentq(lambda ab: reflected_fr(a, ab, r) + thermal_fr(tstar, a, f, ab, l, ti) - fr, 0, 0.3)
     except ValueError:
         return nan
 
 
-def solve_redistribution(fr, ts, a, ab, l):
+def solve_redistribution(fr, tstar, a, ab, l):
     """Solve the redistribution factor.
 
     Parameters
     ----------
     fr  :
         Flux ratio                    [-]
-    ts  :
+    tstar  :
         Effective stellar temperature [K]
     a   :
         Scaled semi-major axis        [Rs]
@@ -347,5 +342,5 @@ def solve_redistribution(fr, ts, a, ab, l):
     -------
       f : Redistribution factor
     """
-    Teqs = solve_teq(fr, ts, l)
-    return brentq(lambda f: teq(ts, a, f, ab) - Teqs, 0.25, 15)
+    Teqs = solve_teq(fr, tstar, l)
+    return brentq(lambda f: equilibrium_temperature(tstar, a, f, ab) - Teqs, 0.25, 15)
