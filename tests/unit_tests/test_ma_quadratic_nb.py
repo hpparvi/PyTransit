@@ -16,6 +16,7 @@
 
 import unittest
 from numpy import array
+from numpy.testing import assert_almost_equal
 
 from pytransit.models.numba.ma_quadratic_nb import eval_quad_z_s, eval_quad_z_v
 
@@ -23,18 +24,45 @@ k = 0.1
 ldc1d = array([0.2, 0.1])
 ldc2d = array([[0.2, 0.1]])
 
+class TestQuadraticModelNB(unittest.TestCase):
 
-def test_eval_quad_z_v_edge_cases():
-    eval_quad_z_v(array([0.0]), k, ldc2d)
-    eval_quad_z_v(array([1.0]), k, ldc2d)
-    eval_quad_z_v(array([  k]), k, ldc2d)
-    eval_quad_z_v(array([1-k]), k, ldc2d)
-    eval_quad_z_v(array([1+k]), k, ldc2d)
+    def setUp(self) -> None:
+        self.k = k = 0.1
+        self.d = d = self.k**2
+        self.ldc1d0 = array([0., 0.])
+        self.ldc1d1 = array([0.2, 0.1])
+        self.ldc2d1 = array([[0.2, 0.1]])
+        self.z_edge = array([-0.0, 0.0, k, 1.0-k, 1.0, 1.0+k])
+        self.f_edge = array([1.0, 1-d, 1-d, 1-d, 0.9951061298, 1.0])
+
+    def test_quadratic_z_s_basic_cases(self):
+        assert_almost_equal(eval_quad_z_s(        -2.0, self.k, self.ldc1d1), 1.0)
+        assert_almost_equal(eval_quad_z_s(         2.0, self.k, self.ldc1d1), 1.0)
+        assert_almost_equal(eval_quad_z_s(         0.2, self.k, self.ldc1d0), 1.0-self.d)
+        assert_almost_equal(eval_quad_z_s(         0.2, self.k, self.ldc1d1), 0.98914137)
+
+    def test_quadratic_z_s_edge_cases(self):
+        # Standard edge cases
+        # -------------------
+        assert_almost_equal(eval_quad_z_s(        -0.0, self.k, self.ldc1d1), 1.0)
+        assert_almost_equal(eval_quad_z_s(         0.0, self.k, self.ldc1d0), 1.0-self.d)
+        assert_almost_equal(eval_quad_z_s(         0.0, self.k, self.ldc1d1), 0.98909638)
+        assert_almost_equal(eval_quad_z_s(      self.k, self.k, self.ldc1d0), 1.0-self.d)
+        assert_almost_equal(eval_quad_z_s(      self.k, self.k, self.ldc1d1), 0.98910745)
+        assert_almost_equal(eval_quad_z_s(  1 - self.k, self.k, self.ldc1d0), 1.0-self.d)
+        assert_almost_equal(eval_quad_z_s(  1 - self.k, self.k, self.ldc1d1), 0.99164875)
+        assert_almost_equal(eval_quad_z_s(         1.0, self.k, self.ldc1d0), 0.99510612)
+        assert_almost_equal(eval_quad_z_s(         1.0, self.k, self.ldc1d1), 0.99573423)
+        assert_almost_equal(eval_quad_z_s(  1 + self.k, self.k, self.ldc1d0), 1.0)
+        assert_almost_equal(eval_quad_z_s(  1 + self.k, self.k, self.ldc1d1), 1.0)
+
+        # Radius ratio larger or equal to unity
+        # -------------------------------------
+        assert_almost_equal(eval_quad_z_s(-0.0, 1.0, self.ldc1d1), 1.0)
+        assert_almost_equal(eval_quad_z_s( 0.0, 1.0, self.ldc1d1), 0.0)
+        assert_almost_equal(eval_quad_z_s( 0.0, 1.1, self.ldc1d1), 0.0)
+        assert_almost_equal(eval_quad_z_s( 1.0, 2.0, self.ldc1d1), 0.0)
 
 
-def test_eval_quad_z_s_edge_cases():
-    eval_quad_z_s(0.0, k, ldc1d)
-    eval_quad_z_s(1.0, k, ldc1d)
-    eval_quad_z_s(  k, k, ldc1d)
-    eval_quad_z_s(1-k, k, ldc1d)
-    eval_quad_z_s(1+k, k, ldc1d)
+if __name__ == '__main__':
+    unittest.main()
