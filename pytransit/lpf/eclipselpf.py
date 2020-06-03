@@ -18,9 +18,9 @@ from numba import njit
 from numpy import inf, repeat, atleast_2d, sqrt, arctan2, squeeze, ndarray, argsort, array, unique, arange
 from seaborn import despine
 
+from .loglikelihood.fmcloglikelihood import FrozenMultiCeleriteLogLikelihood
 from .lpf import BaseLPF
 from .. import UniformModel
-from .loglikelihood import WNLogLikelihood
 from .tesslpf import downsample_time
 from ..param import GParameter, PParameter, UniformPrior as UP, NormalPrior as NP
 from ..orbits import as_from_rhop, i_from_ba, i_from_baew, eclipse_phase, d_from_pkaiews, epoch
@@ -70,7 +70,7 @@ class EclipseLPF(BaseLPF):
         self._sl_fr = self.ps.blocks[-1].slice
 
     def _init_lnlikelihood(self):
-        self._add_lnlikelihood_model(WNLogLikelihood(self))
+        self._add_lnlikelihood_model(FrozenMultiCeleriteLogLikelihood(self))
 
     def _post_initialisation(self):
         super()._post_initialisation()
@@ -93,8 +93,12 @@ class EclipseLPF(BaseLPF):
     def create_pv_population(self, npop):
         return self.ps.sample_from_prior(npop)
 
-    def plot_light_curves(self, pv=None):
-        pv = self.ps.mean_pv if pv is None else pv
+    def plot_light_curves(self, pv=None, figsize=None, remove_baseline: bool = False):
+        if pv is None:
+            if self.de is not None:
+                pv = self.de.minimum_location
+            else:
+                pv = self.ps.mean_pv
 
         tc, p, rho, b, secw, sesw, k2 = pv[:7]
         a = as_from_rhop(rho, p)
@@ -108,9 +112,10 @@ class EclipseLPF(BaseLPF):
         nep = uep.size
         npb = self.npb
 
-        fig, axs = subplots(nep, npb, sharey='all', sharex='all')
+        fig, axs = subplots(nep, npb, sharey='all', sharex='all', figsize=figsize)
         emap = {e: ied for e, ied in zip(uep, arange(nep))}
         fmodel = self.flux_model(self.de.minimum_location)
+        bline = self._lnlikelihood_models[0].predict_baseline(pv)
 
         for ilc in range(self.nlc):
             iep = emap[eps[ilc]]
@@ -118,7 +123,11 @@ class EclipseLPF(BaseLPF):
             ax = axs[iep, ipb]
             time = 24 * (self.times[ilc] - (ec + eps[ilc] * p))
             ax.plot(time, self.fluxes[ilc])
-            ax.plot(time, fmodel[self.lcslices[ilc]], 'k')
+            if remove_baseline:
+                ax.plot(time, fmodel[self.lcslices[ilc]], 'k')
+            else:
+                ax.plot(time, fmodel[self.lcslices[ilc]] + bline[self.lcslices[ilc]] - 1, 'k')
+
             ax.axvspan(-24 * 0.5 * t14, 24 * 0.5 * t14, alpha=0.25)
         setp(axs[-1], xlabel='Time - T$_c$ [h]')
         setp(axs[:, 0], ylabel='Normalised flux')
