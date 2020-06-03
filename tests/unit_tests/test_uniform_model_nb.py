@@ -25,10 +25,8 @@ class TestUniformModelNB(unittest.TestCase):
     def setUp(self) -> None:
         self.k = k = 0.1
         self.d = d = self.k**2
-        self.z = array([0.0, 0.0+self.k, 0.5, 1.0-self.k, 1.0, 1.0+self.k, 2.0])
         self.z_edge = array([-0.0, 0.0, k, 1.0-k, 1.0, 1.0+k])
         self.f_edge = array([1.0, 1-d, 1-d, 1-d, 0.9951061298, 1.0])
-        self.f = array([1-d, 1-d, 1-d, 1-d, 23, 23, 1.0, 1.0])
 
     def test_uniform_z_s_basic_cases(self):
         # Primary transit
