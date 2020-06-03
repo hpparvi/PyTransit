@@ -21,11 +21,16 @@ from .transitmodel import TransitModel
 
 __all__ = ['UniformModel']
 
+npfloat = Union[float, ndarray]
 
 class UniformModel(TransitModel):
 
-    def evaluate(self, k: Union[float, ndarray], t0: Union[float, ndarray], p: Union[float, ndarray],
-                 a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = None, w: Union[float, ndarray] = None,
+    def __init__(self, eclipse: bool = False) -> None:
+        super().__init__()
+        self.is_eclipse = eclipse
+        self._zsign = -1.0 if self.is_eclipse else 1.0
+
+    def evaluate(self, k: npfloat, t0: npfloat, p: npfloat, a: npfloat, i: npfloat, e: npfloat = None, w: npfloat = None,
                  copy: bool = True) -> ndarray:
         """Evaluates the uniform transit model for a set of scalar or vector parameters.
 
@@ -64,9 +69,9 @@ class UniformModel(TransitModel):
         if isinstance(t0, float):
             if e is None:
                 e, w = 0., 0.
-
             flux = uniform_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples,
-                                   self.exptimes, self._es, self._ms, self._tae)
+                                   self.exptimes, self._es, self._ms, self._tae, zsign=self._zsign)
+
         # Parameter population branch
         # ---------------------------
         else:
@@ -79,7 +84,7 @@ class UniformModel(TransitModel):
                 k = k.reshape((k.size,1))
 
             flux = uniform_model_v(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples,
-                                   self.exptimes, self._es, self._ms, self._tae)
+                                   self.exptimes, self._es, self._ms, self._tae, zsign=self._zsign)
         return squeeze(flux)
 
     def evaluate_ps(self, k: float, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0.) -> ndarray:
@@ -117,7 +122,8 @@ class UniformModel(TransitModel):
             raise ValueError("Need to set the data before calling the transit model.")
 
         k = asarray(k)
-        flux = uniform_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
+        flux = uniform_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes,
+                               self._es, self._ms, self._tae, zsign=self._zsign)
         return squeeze(flux)
 
     def evaluate_pv(self, pvp: ndarray) -> ndarray:
@@ -141,5 +147,6 @@ class UniformModel(TransitModel):
              Modelled flux either as a 1D or 2D ndarray.
          """
         assert self.time is not None, "Need to set the data before calling the transit model."
-        flux = uniform_model_pv(self.time, pvp, self.lcids, self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
+        flux = uniform_model_pv(self.time, pvp, self.lcids, self.pbids, self.nsamples, self.exptimes,
+                                self._es, self._ms, self._tae, zsign=self._zsign)
         return squeeze(flux)

@@ -41,7 +41,8 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numba import njit, prange
-from numpy import pi, sqrt, arccos, abs, zeros_like, sign, sin, cos, abs, atleast_2d, zeros, atleast_1d, isnan, inf, nan
+from numpy import pi, sqrt, arccos, abs, zeros_like, sign, sin, cos, abs, atleast_2d, zeros, atleast_1d, isnan, inf, \
+    nan, copysign
 from ...orbits.orbits_py import z_ip_s
 
 TWO_PI = 2.0 * pi
@@ -51,14 +52,14 @@ INV_PI = 1 / pi
 
 
 @njit(cache=False, fastmath=True)
-def uniform_z_v(zs, k):
+def uniform_z_v(zs, k, zsign=1.0):
     flux = zeros_like(zs)
 
     if abs(k - 0.5) < 1e-3:
         k = 0.5
 
     for i in range(len(zs)):
-        z = zs[i]
+        z = zs[i] * zsign
         if z < 0.0 or z > 1.0 + k:
             flux[i] = 1.0
         elif k > 1.0 and z < k - 1.0:
@@ -75,10 +76,11 @@ def uniform_z_v(zs, k):
 
 
 @njit(fastmath=True)
-def uniform_z_s(z, k):
+def uniform_z_s(z, k, zsign=1.0):
     if abs(k - 0.5) < 1e-3:
         k = 0.5
 
+    z *= zsign
     if z < 0.0 or z > 1.0 + k:
         flux = 1.0
     elif k > 1.0 and z < k - 1.0:
@@ -95,7 +97,7 @@ def uniform_z_s(z, k):
 
 
 @njit(parallel=True, fastmath=True)
-def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, es, ms, tae):
+def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, es, ms, tae, zsign=1.0):
     t0, p, a, i, e, w = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w)
     k = atleast_2d(k)
 
@@ -122,13 +124,13 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, e
                 if z > 1.0 + _k:
                     flux[ipv, j] += 1.
                 else:
-                    flux[ipv, j] += uniform_z_s(z, _k)
+                    flux[ipv, j] += uniform_z_s(z, _k, zsign)
             flux[ipv, j] /= nsamples[ilc]
     return flux
 
 
 @njit(parallel=True, fastmath=True)
-def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, es, ms, tae):
+def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, es, ms, tae, zsign=1.0):
     k = atleast_1d(k)
     npt = t.size
     flux = zeros(npt)
@@ -148,13 +150,13 @@ def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, e
             if z > 1.0 + _k:
                 flux[j] += 1.
             else:
-                flux[j] += uniform_z_s(z, _k)
+                flux[j] += uniform_z_s(z, _k, zsign)
         flux[j] /= nsamples[ilc]
     return flux
 
 
 @njit(parallel=True, fastmath=True)
-def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, es, ms, tae):
+def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, es, ms, tae, zsign=1.0):
     pvp = atleast_2d(pvp)
     npv = pvp.shape[0]
     npt = t.size
@@ -185,6 +187,6 @@ def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, es, ms, tae):
                 if z > 1.0+k:
                     flux[ipv, j] += 1.
                 else:
-                    flux[ipv, j] += uniform_z_s(z, k)
+                    flux[ipv, j] += uniform_z_s(z, k, zsign)
             flux[ipv, j] /= nsamples[ilc]
     return flux
