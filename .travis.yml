@@ -11,10 +11,10 @@ cache: pip
 
 install:
   - if [ $TRAVIS_OS_NAME = linux ]; then sudo apt-get install libpocl-dev pocl-opencl-icd; fi
-  - pip install numpy scipy numba pyopencl pandas xarray tables astropy matplotlib tqdm seaborn emcee corner uncertainties coverage semantic_version
+  - pip install numpy scipy numba pyopencl pandas xarray tables astropy matplotlib tqdm seaborn emcee corner codecov uncertainties coverage semantic_version
   - python setup.py install
 
 script: nosetests -w tests --with-coverage
 
 after_success:
-  - coveralls
+  - codecov
