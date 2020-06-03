@@ -20,10 +20,6 @@ from numpy.testing import assert_almost_equal
 
 from pytransit.models.numba.ma_quadratic_nb import eval_quad_z_s, eval_quad_z_v
 
-k = 0.1
-ldc1d = array([0.2, 0.1])
-ldc2d = array([[0.2, 0.1]])
-
 class TestQuadraticModelNB(unittest.TestCase):
 
     def setUp(self) -> None:
