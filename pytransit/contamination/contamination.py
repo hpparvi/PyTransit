@@ -35,7 +35,7 @@ from pkg_resources import resource_filename
 from scipy.interpolate import interp1d, RegularGridInterpolator
 
 from .instrument import Instrument
-from ..utils.physics import planck
+from ..utils.phasecurves import planck
 
 
 @njit

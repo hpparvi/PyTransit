@@ -13,10 +13,14 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import warnings
 
 from numpy import exp
 from scipy.constants import c, k, h
 from numba import jit
+
+warnings.warn("the pytransits.utils.physics module is deprecated and will be removed in PyTransit 2.0",
+               FutureWarning, stacklevel=2)
 
 @jit
 def planck(T, wl):

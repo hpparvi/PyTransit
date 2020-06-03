@@ -16,11 +16,11 @@
 
 from numpy.random.mtrand import normal, uniform
 from pandas import DataFrame
-from astropy.units import Unit, R_jup, R_sun
+from astropy.units import Unit, R_jup, R_sun, AU
 from numpy import sqrt
-from pytransit.utils.eclipses import Teq
 
-from pytransit.orbits import as_from_rhop, i_from_ba, d_from_pkaiews
+from ..utils.phasecurves import equilibrium_temperature
+from ..orbits import as_from_rhop, i_from_ba, d_from_pkaiews
 
 
 def derive_qois(data: DataFrame, rstar: tuple = None, teff: tuple = None, distance_unit: Unit = R_jup):
@@ -56,5 +56,5 @@ def derive_qois(data: DataFrame, rstar: tuple = None, teff: tuple = None, distan
         df['a_au'] = df.a * (rstar_d * distance_unit).to(AU)
 
     if teff is not None:
-        df['teq_p'] = Teq(normal(*teff, size=ns), df.a, uniform(0.25, 0.50, ns), uniform(0, 0.4, ns))
+        df['teq_p'] = equilibrium_temperature(normal(*teff, size=ns), df.a, uniform(0.25, 0.50, ns), uniform(0, 0.4, ns))
     return df

@@ -19,12 +19,12 @@ from typing import Union
 import pandas as pd
 import astropy.units as u
 from numba import njit
-from numpy import ndarray, pi, atleast_1d, zeros, exp, diff, log, sqrt, nan, vstack, tile, linspace
+from numpy import ndarray, pi, atleast_1d, zeros, exp, diff, log, sqrt, nan, vstack, tile, linspace, cos, sin
 from scipy.constants import c,h,k,G
 from scipy.interpolate import RegularGridInterpolator
 from scipy.optimize import brentq
 
-from ..contamination.filter import Filter
+#from ..contamination.filter import Filter
 
 NPType = Union[float,ndarray]
 
@@ -83,7 +83,7 @@ def summed_planck(teff, wl, tm):
     return flux
 
 
-def emission(tp: NPType, tstar: NPType, k: NPType, flt: Filter) -> NPType:
+def emission(tp: NPType, tstar: NPType, k: NPType, flt) -> NPType:
     """Thermal emission from the planet.
 
     Parameters
@@ -111,7 +111,7 @@ def emission(tp: NPType, tstar: NPType, k: NPType, flt: Filter) -> NPType:
 # Doppler boosting
 # ================
 
-def doppler_boosting_alpha(teff: float, flt: Filter):
+def doppler_boosting_alpha(teff: float, flt):
     """The photon weighted bandpass-integrated boosting factor.
 
     Parameters
@@ -172,6 +172,31 @@ def doppler_boosting_amplitude(mp: NPType, ms: NPType, period: NPType, alpha: NP
     """
     return alpha / c *(2*pi*G/(d2s*period))**(1/3) * ((mp*mj2kg)/(ms*ms2kg)**(2/3))
 
+# Ellipsoidal variations
+# ======================
+
+def ellipsoidal_variation(f: NPType, theta: NPType, mp: float, ms: float, a: float, i: float, e: float, u: float, g: float):
+    raise NotImplementedError
+    #return ellipsoidal_variation_amplitude(mp, ms, a, i, u, g)
+
+def ellipsoidal_variation_signal(f: NPType, theta: NPType, e: float) -> NPType:
+    """
+
+    Parameters
+    ----------
+    f
+        True anomaly [rad]
+    theta
+        Angle between the line-of-sight and the star-planet direction
+    e
+        Eccentricity
+
+    Returns
+    -------
+
+    """
+    return -((1 + e * cos(f)) / (1-e**2))**3 * cos(2*theta)
+
 
 def ellipsoidal_variation_amplitude(mp: NPType, ms: NPType, a: NPType, i: NPType, u: NPType, g: NPType) -> NPType:
     """The amplitude of the ellipsoidal variation signal.
@@ -205,7 +230,7 @@ def ellipsoidal_variation_amplitude(mp: NPType, ms: NPType, a: NPType, i: NPType
 
     """
     ae = 0.15 * (15 + u) * (1 + g) / (3 - g)
-    return ae * (mp*mj2kg)/(ms*ms2kg) * a**-3
+    return ae * (mp*mj2kg)/(ms*ms2kg) * a**-3 * sin(i)**2
 
 
 def reflected_fr(a: NPType, ab: NPType, r: NPType = 1.5) -> NPType:
