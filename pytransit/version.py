@@ -14,5 +14,6 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-version_info = (2, 0, 0)
-version = '.'.join(str(c) for c in version_info)
+from semantic_version import Version
+
+__version__ = Version('2.0.0-beta2')

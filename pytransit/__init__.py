@@ -41,6 +41,8 @@ Date
 
 """
 
+from .version import __version__
+
 # Numba models
 # ------------
 from .models.qpower2 import QPower2Model
