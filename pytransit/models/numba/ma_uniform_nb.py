@@ -55,44 +55,68 @@ INV_PI = 1 / pi
 def uniform_z_v(zs, k, zsign=1.0):
     flux = zeros_like(zs)
 
-    if abs(k - 0.5) < 1e-3:
-        k = 0.5
-
     for i in range(len(zs)):
         z = zs[i] * zsign
-        if z < 0.0 or z > 1.0 + k:
+
+        # Out of transit
+        # --------------
+        if (copysign(1.0, z) < 0.0) or z >= 1.0 + k:
             flux[i] = 1.0
+
+        # Full transit by a larger object
+        # -------------------------------
         elif k > 1.0 and z < k - 1.0:
             flux[i] = 0.0
-        elif z > abs(1.0 - k) and z < 1.0 + k:
+
+        # Full transit
+        # ------------
+        elif z <= 1.0 - k:
+            flux[i] = 1.0 - k * k
+
+        # Ingress and egress
+        # ------------------
+        else:
             kap1 = arccos(min((1.0 - k * k + z * z) / 2.0 / z, 1.0))
             kap0 = arccos(min((k * k + z * z - 1.0) / 2.0 / k / z, 1.0))
             lambdae = k * k * kap0 + kap1
             lambdae = (lambdae - 0.5 * sqrt(max(4.0 * z * z - (1.0 + z * z - k * k) ** 2, 0.0))) / pi
             flux[i] = 1.0 - lambdae
-        elif z < 1.0 - k:
-            flux[i] = 1.0 - k * k
+
     return flux
 
 
 @njit(fastmath=True)
 def uniform_z_s(z, k, zsign=1.0):
-    if abs(k - 0.5) < 1e-3:
-        k = 0.5
-
     z *= zsign
-    if z < 0.0 or z > 1.0 + k:
+
+    # Out of transit
+    # --------------
+    if (copysign(1.0, z) < 0.0) or z >= 1.0 + k:
         flux = 1.0
+
+    # Full transit by a larger object
+    # -------------------------------
     elif k > 1.0 and z < k - 1.0:
         flux = 0.0
-    elif z > abs(1.0 - k) and z < 1.0 + k:
+
+    # Full transit
+    # ------------
+    elif z <= 1.0 - k:
+        flux = 1.0 - k * k
+
+    # Ingress and egress
+    # ------------------
+    #elif z > abs(1.0 - k) and z < 1.0 + k:
+    else:
         kap1 = arccos(min((1.0 - k * k + z * z) / 2.0 / z, 1.0))
         kap0 = arccos(min((k * k + z * z - 1.0) / 2.0 / k / z, 1.0))
         lambdae = k * k * kap0 + kap1
         lambdae = (lambdae - 0.5 * sqrt(max(4.0 * z * z - (1.0 + z * z - k * k) ** 2, 0.0))) / pi
         flux = 1.0 - lambdae
-    elif z < 1.0 - k:
-        flux = 1.0 - k * k
+
+    #else:
+    #    raise ValueError
+
     return flux
 
 
