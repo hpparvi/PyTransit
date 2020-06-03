@@ -21,7 +21,7 @@ with open("pytransit/version.py") as fp:
     exec(fp.read(), version)
 
 setup(name='PyTransit',
-      version=version['__version__'],
+      version=str(version['__version__']),
       description='Fast and painless exoplanet transit light curve modelling.',
       author='Hannu Parviainen',
       author_email='hpparvi@gmail.com',
