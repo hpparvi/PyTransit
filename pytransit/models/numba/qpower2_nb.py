@@ -47,7 +47,7 @@
 This module implements the qpower2 transit model by Maxted & Gill (A&A, 622, A33, 2019).
 """
 
-from numpy import sqrt, pi, arccos, ones_like, atleast_2d, zeros, atleast_1d, nan, copysign
+from numpy import any, sqrt, pi, arccos, ones_like, atleast_2d, zeros, atleast_1d, nan, copysign
 from numba import njit, prange
 
 from ...orbits.orbits_py import z_ip_s
@@ -86,10 +86,10 @@ def q2n(z, p, c, alpha, g, I_0):
     return 1. - I_0*(J1 - J2 + K1 - K2)
 
 
-@njit(fastmath=True)
+@njit(fastmath=False)
 def qpower2_z_s(z, k, u):
-    if k > 1.0:
-        raise ValueError('QPower2 model does not work for cases with k > 1')
+    if k > 1.0 or any(u < 0.0):
+        return nan
     if (copysign(1.0, z) < 0.0) or z >= 1.0 + k:
         flux = 1.0
     else:
@@ -107,7 +107,6 @@ def qpower2_model_v(t, k, ldc, t0, p, a, i, e, w, lcids, pbids, nsamples, exptim
     t0, p, a, i, e, w = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w)
     k = atleast_2d(k)
     ldc = atleast_2d(ldc)
-
     npv = k.shape[0]
     npt = t.size
     flux = zeros((npv, npt))
