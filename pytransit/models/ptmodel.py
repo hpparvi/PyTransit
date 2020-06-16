@@ -26,75 +26,23 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import timeit
 from typing import Tuple, Callable, Union, List, Optional
 
-from numba import njit
 from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, linspace, sqrt, pi, ones, log, exp
 from scipy.integrate import trapz
 
-from pytransit.models.numba.ptmodel import pt_model_direct_s, pt_model_direct_s_noparallel
+from .numba.ldmodels import *
+from .numba.ptmodel import pt_model_direct_s, pt_model_direct_s_serial, pt_model_interpolated_s, \
+    pt_model_direct_s_serial, pt_model_interpolated_s_serial, pt_model_direct_s_simple, pt_model_direct_v, \
+    pt_model_interpolated_v
 
 from .numba.ptmodel import create_z_grid, calculate_weights_3d
 from .transitmodel import TransitModel
 
 __all__ = ['PTModel']
 
-@njit(fastmath=True)
-def ld_uniform(mu, pv):
-    return ones(mu.size)
 
-@njit(fastmath=True)
-def ldi_uniform(pv):
-    return pi
-
-@njit(fastmath=True)
-def ld_linear(mu, pv):
-    return 1. - pv[0]*(1.-mu)
-
-@njit(fastmath=True)
-def ldi_linear(pv):
-    return 2*pi * 1/6*(3-2*pv[0])
-
-@njit(fastmath=True)
-def ld_quadratic(mu, pv):
-    return 1. - pv[0]*(1.-mu) - pv[1]*(1.-mu)**2
-
-@njit(fastmath=True)
-def ldi_quadratic(pv):
-    return 2*pi * 1/12*(-2*pv[0]-pv[1]+6)
-
-@njit(fastmath=True)
-def ld_quadratic_tri(mu, pv):
-    a, b = sqrt(pv[0]), 2*pv[1]
-    u, v = a * b, a * (1. - b)
-    return 1. - u*(1.-mu) - v*(1.-mu)**2
-
-@njit(fastmath=True)
-def ld_nonlinear(mu, pv):
-    return 1. - pv[0]*(1.-sqrt(mu)) - pv[1]*(1.-mu) - pv[2]*(1.-pow(mu, 1.5)) - pv[3]*(1.-mu**2)
-
-@njit(fastmath=True)
-def ld_general(mu, pv):
-    ldp = zeros(mu.size)
-    for i in range(pv.size):
-        ldp += pv[i]*(1.0-mu**(i+1))
-    return ldp
-
-@njit(fastmath=True)
-def ld_square_root(mu, pv):
-    return 1. - pv[0]*(1.-mu) - pv[1]*(1.-sqrt(mu))
-
-@njit(fastmath=True)
-def ld_logarithmic(mu, pv):
-    return 1. - pv[0]*(1.-mu) - pv[1]*mu*log(mu)
-
-@njit(fastmath=True)
-def ld_exponential(mu, pv):
-    return 1. - pv[0]*(1.-mu) - pv[1]/(1.-exp(mu))
-
-@njit(fastmath=True)
-def ld_power2(mu, pv):
-    return 1. - pv[0]*(1.-mu**pv[1])
 
 class PTModel(TransitModel):
     ldmodels = {'uniform': (ld_uniform, ldi_uniform),
@@ -110,7 +58,8 @@ class PTModel(TransitModel):
 
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  interpolate: bool = True, klims: tuple = (0.005, 0.5), nk: int = 256,
-                 nzin: int = 20, nzlimb: int = 20, zcut=0.7, ng: int = 50, parallel: bool = True):
+                 nzin: int = 20, nzlimb: int = 20, zcut=0.7, ng: int = 50, parallel: bool = True,
+                 simple=False):
         """The ridiculously fast transit model by Parviainen (2020).
 
         Parameters
@@ -126,13 +75,11 @@ class PTModel(TransitModel):
         """
         super().__init__()
         self.interpolate = interpolate
-
         self.parallel = parallel
-        if self.parallel:
-            self._m_direct_s = pt_model_direct_s
-        else:
-            self._m_direct_s = pt_model_direct_s_noparallel
+        self.simple = False
 
+        # Set up the limmb darkening model
+        # --------------------------------
         if isinstance(ldmodel, str):
             try:
                 if isinstance(self.ldmodels[ldmodel], tuple):
@@ -146,6 +93,8 @@ class PTModel(TransitModel):
                     f"Unknown limb darkening model: {ldmodel}. Choose from [{', '.join(self.ldmodels.keys())}] or supply a callable function.")
                 raise
 
+        # Set the basic variable
+        # ----------------------
         self.klims = klims
         self.nk = nk
         self.ng = ng
@@ -153,6 +102,8 @@ class PTModel(TransitModel):
         self.nzlimb = nzlimb
         self.zcut = zcut
 
+        # Declare the basic arrays
+        # ------------------------
         self.ze = None
         self.zm = None
         self.mu = None
@@ -160,10 +111,40 @@ class PTModel(TransitModel):
         self.dg = None
         self.weights = None
 
+        self._m_direct_s = None
+        self._m_direct_v = None
+        self._m_interp_s = None
+        self._m_interp_v = None
+
         self._ldmu = linspace(1, 0, 200)
         self._ldz = sqrt(1 - self._ldmu ** 2)
 
         self.init_integration(nzin, nzlimb, zcut, ng, nk)
+
+    def set_data(self, time: Union[ndarray, List],
+                 lcids: Optional[Union[ndarray, List]] = None,
+                 pbids: Optional[Union[ndarray, List]] = None,
+                 nsamples: Optional[Union[ndarray, List]] = None,
+                 exptimes: Optional[Union[ndarray, List]] = None,
+                 epids: Optional[Union[ndarray, List]] = None) -> None:
+        super().set_data(time, lcids, pbids, nsamples, exptimes, epids)
+        self.set_methods()
+
+
+    def set_methods(self):
+
+        if self.npb == 1 and all(self.nsamples == 1):
+            self.simple = True
+        else:
+            self.simple = False
+
+        if self.interpolate:
+            self._m_interp_s = self.choose_m_interp_s()
+            self._m_interp_v = pt_model_interpolated_v
+        else:
+            self._m_direct_s = self.choose_m_direct_s()
+            self._m_direct_v = pt_model_direct_v
+
 
     def init_integration(self, nzin, nzlimb, zcut, ng, nk=None):
         self.nk = nk
@@ -175,6 +156,63 @@ class PTModel(TransitModel):
         self.mu = sqrt(1 - self.zm ** 2)
         if self.interpolate:
             self.dk, self.dg, self.weights = calculate_weights_3d(nk, self.klims[0], self.klims[1], self.ze, ng)
+
+    def choose_m_direct_s(self):
+        time = linspace(-0.1, 0.1, self.npt)
+        ldc = array([0.24, 0.12])
+        ldp = ld_quadratic(self.mu, ldc)
+        istar = 2 * trapz(self._ldz * ld_quadratic(self._ldmu, ldc), self._ldz)
+        k = asarray([0.1])
+
+        model = pt_model_direct_s
+        ds = """pt_model_direct_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.ng, self.lcids, 
+                                  self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)"""
+        t0 = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
+
+        ds = """pt_model_direct_s_serial(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.ng, self.lcids, 
+                                  self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)"""
+        tt = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
+        if tt < t0:
+            model = pt_model_direct_s_serial
+            t0 = tt
+
+        if self.simple:
+            ds = """pt_model_direct_s_simple(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.ng, self.lcids, 
+                                  self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)"""
+            tt = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
+            if tt < t0:
+                model = pt_model_direct_s_simple
+                t0 = tt
+
+        return model
+
+
+    def choose_m_interp_s(self):
+        time = linspace(-0.1, 0.1, self.npt)
+        ldc = array([0.24, 0.12])
+        ldp = ld_quadratic(self.mu, ldc)
+        istar = 2 * trapz(self._ldz * ld_quadratic(self._ldmu, ldc), self._ldz)
+        k = asarray([0.1])
+
+        model = pt_model_interpolated_s
+        ds = """pt_model_interpolated_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.weights, self.dk, 
+                                        self.klims[0], self.dg, self.lcids, self.pbids, self.nsamples, self.exptimes, 
+                                        self._es, self._ms, self._tae)"""
+        t0 = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
+
+        ds = """pt_model_interpolated_s_serial(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.weights, self.dk, 
+                                               self.klims[0], self.dg, self.lcids, self.pbids, self.nsamples, self.exptimes, 
+                                               self._es, self._ms, self._tae)"""
+        tt = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
+        if tt < t0:
+            model = pt_model_interpolated_s_serial
+            t0 = tt
+
+        if self.simple:
+            pass
+
+        return model
+
 
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List], t0: Union[float, ndarray],
                  p: Union[float, ndarray],
@@ -216,16 +254,93 @@ class PTModel(TransitModel):
         # Scalar parameters branch
         # ------------------------
         if isinstance(t0, float):
-
-            ldp = self.ldmodel(self.mu, ldc)
-            if self.ldmmean is not None:
-                istar = self.ldmmean(ldc)
-            else:
-                istar = 2 * trapz(self._ldz * self.ldmodel(self._ldmu, ldc), self._ldz)
-
             if e is None:
                 e, w = 0.0, 0.0
+            return self.evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
 
-            return self._m_direct_s(self.time, asarray(k), t0, p, a, i, e, w, ldp, istar, self.ze, self.ng, self.lcids,
-                                    self.pbids,
-                                    self.nsamples, self.exptimes, self._es, self._ms, self._tae)
+        # Parameter population branch
+        # ---------------------------
+        else:
+            k, t0, p, a, i = asarray(k), asarray(t0), asarray(p), asarray(a), asarray(i)
+
+            if k.ndim == 1:
+                k = k.reshape((k.size, 1))
+
+            npv = t0.size
+            if e is None:
+                e, w = zeros(npv), zeros(npv)
+
+            ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
+
+            istar = zeros((npv, self.npb))
+            for ipv in range(npv):
+                for ipb in range(self.npb):
+                    if self.ldmmean is not None:
+                        istar[ipv, ipb] = self.ldmmean(ldc[ipv, ipb])
+                    else:
+                        istar[ipv, ipb] = 2 * trapz(self._ldz * self.ldmodel(self._ldmu, ldc[ipv, ipb]), self._ldz)
+
+            if self.interpolate:
+                flux = self._m_interp_v(self.time, k, t0, p, a, i, e, w, ldp, istar, self.weights, self.dk,
+                                       self.klims[0], self.dg, self.lcids, self.pbids, self.nsamples,
+                                       self.exptimes, self.npb, self._es, self._ms, self._tae)
+            else:
+                flux = self._m_direct_v(self.time, k, t0, p, a, i, e, w, ldp, istar, self.ze, self.ng,
+                                       self.lcids, self.pbids, self.nsamples,
+                                       self.exptimes, self.npb, self._es, self._ms, self._tae)
+
+        return squeeze(flux)
+
+    def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
+                    e: float = 0.0, w: float = 0.0, copy: bool = True) -> ndarray:
+        """Evaluate the transit model for a set of scalar parameters.
+
+        Parameters
+        ----------
+        k : array-like
+            Radius ratio(s) either as a single float or an 1D array.
+        ldc : array-like
+            Limb darkening coefficients as a 1D array.
+        t0 : float
+            Transit center as a float.
+        p : float
+            Orbital period as a float.
+        a : float
+            Orbital semi-major axis divided by the stellar radius as a float.
+        i : float
+            Orbital inclination(s) as a float.
+        e : float, optional
+            Orbital eccentricity as a float.
+        w : float, optional
+            Argument of periastron as a float.
+
+        Notes
+        -----
+        This version of the `evaluate` method is optimized for calculating a single transit model (such as when using a
+        local optimizer). If you want to evaluate the model for a large number of parameters simultaneously, use either
+        `evaluate` or `evaluate_pv`.
+
+        Returns
+        -------
+        ndarray
+            Modelled flux as a 1D ndarray.
+        """
+
+        ldc = asarray(ldc)
+        k = asarray(k)
+
+        ldp = self.ldmodel(self.mu, ldc)
+        if self.ldmmean is not None:
+            istar = self.ldmmean(ldc)
+        else:
+            istar = 2 * trapz(self._ldz * self.ldmodel(self._ldmu, ldc), self._ldz)
+
+        if self.interpolate:
+            flux = self._m_interp_s(self.time, k, t0, p, a, i, e, w, ldp, istar, self.weights,
+                                    self.dk, self.klims[0], self.dg, self.lcids, self.pbids, self.nsamples,
+                                    self.exptimes, self._es, self._ms, self._tae)
+        else:
+            flux = self._m_direct_s(self.time, k, t0, p, a, i, e, w, ldp, istar, self.ze, self.ng, self.lcids,
+                                    self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
+
+        return squeeze(flux)

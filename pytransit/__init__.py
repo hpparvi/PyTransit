@@ -50,6 +50,7 @@ from .models.ma_quadratic import QuadraticModel
 from .models.ma_uniform import UniformModel
 from .models.ma_chromosphere import ChromosphereModel
 from .models.general import GeneralModel
+from .models.ptmodel import PTModel
 
 # OpenCL models
 # -------------

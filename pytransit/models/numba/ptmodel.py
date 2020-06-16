@@ -324,7 +324,10 @@ def ptmodel_z_interpolated(z, k, istar, ldp, weights, dk, k0, dg):
 
 @njit(parallel=False, fastmath=True)
 def pt_model_direct_s_simple(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, nsamples, exptimes, es, ms, tae):
-    """Simple PT transit model for homogeneous light curves.
+    """Simple PT transit model for a homogeneous time series without supersampling and relatively small number of points.
+
+    This version avoids the overheads from threading and supersampling. The fastest option if the number of datapoints
+    is smaller than some thousands.
 
     Parameters
     ----------
@@ -389,7 +392,7 @@ def pt_model_direct_s(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids,
     return flux
 
 @njit(parallel=False, fastmath=True)
-def pt_model_direct_s_noparallel(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, nsamples, exptimes, es, ms, tae):
+def pt_model_direct_s_serial(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, nsamples, exptimes, es, ms, tae):
     k = atleast_1d(k)
     npt = t.size
     flux = zeros(npt)
@@ -416,8 +419,8 @@ def pt_model_direct_s_noparallel(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lc
 
 
 @njit(parallel=True, fastmath=True)
-def pt_model_interpolated_s(t, k, t0, p, a, i, e, w, ldp, istar, weights2d, dk, k0, dg,
-                              lcids, pbids, nsamples, exptimes, es, ms, tae):
+def pt_model_interpolated_s(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg,
+                            lcids, pbids, nsamples, exptimes, es, ms, tae):
     k = atleast_1d(k)
     npt = t.size
     flux = zeros(npt)
@@ -425,7 +428,7 @@ def pt_model_interpolated_s(t, k, t0, p, a, i, e, w, ldp, istar, weights2d, dk, 
     nk = (k[0] - k0) / dk
     ik = int(floor(nk))
     ak = nk - ik
-    ldw = (1.0 - ak) * dot(weights2d[ik], ldp) + ak * dot(weights2d[ik + 1], ldp)
+    ldw = (1.0 - ak) * dot(weights[ik], ldp) + ak * dot(weights[ik + 1], ldp)
 
     for j in prange(npt):
         ilc = lcids[j]
@@ -446,8 +449,8 @@ def pt_model_interpolated_s(t, k, t0, p, a, i, e, w, ldp, istar, weights2d, dk, 
 
 
 @njit(parallel=False, fastmath=True)
-def pt_model_interpolated_s_noparallel(t, k, t0, p, a, i, e, w, ldp, istar, weights2d, dk, k0, dg,
-                              lcids, pbids, nsamples, exptimes, es, ms, tae):
+def pt_model_interpolated_s_serial(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg,
+                                   lcids, pbids, nsamples, exptimes, es, ms, tae):
     k = atleast_1d(k)
     npt = t.size
     flux = zeros(npt)
@@ -455,7 +458,7 @@ def pt_model_interpolated_s_noparallel(t, k, t0, p, a, i, e, w, ldp, istar, weig
     nk = (k[0] - k0) / dk
     ik = int(floor(nk))
     ak = nk - ik
-    ldw = (1.0 - ak) * dot(weights2d[ik], ldp) + ak * dot(weights2d[ik + 1], ldp)
+    ldw = (1.0 - ak) * dot(weights[ik], ldp) + ak * dot(weights[ik + 1], ldp)
 
     for j in range(npt):
         ilc = lcids[j]
@@ -474,14 +477,12 @@ def pt_model_interpolated_s_noparallel(t, k, t0, p, a, i, e, w, ldp, istar, weig
         flux[j] /= nsamples[ilc]
     return flux
 
-
 @njit(parallel=True, fastmath=False)
-def pt_model_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights2d, dk, k0, dg,
+def pt_model_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng,
                       lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
     npv = k.shape[0]
     npt = t.size
     ldp = atleast_3d(ldp)
-    ng = weights2d.shape[1]
 
     if ldp.shape[0] != npv or ldp.shape[1] != npb:
         raise ValueError(f"The limb darkening profile array should have a shape [npv,npb,ng]")
@@ -490,14 +491,12 @@ def pt_model_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights2d, dk, 
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
+
+        gs, dg, weights = calculate_weights_2d(k[ipv,0], ze, ng)
+
         ldw = zeros((npb, ng))
-
-        nk = (k[ipv, 0] - k0) / dk
-        ik = int(floor(nk))
-        ak = nk - ik
-
         for ipb in range(npb):
-            ldw[ipb] = (1.0 - ak) * dot(weights2d[ik], ldp[ipv, ipb]) + ak * dot(weights2d[ik + 1], ldp[ipv, ipb])
+            ldw[ipb] = dot(weights, ldp[ipv, ipb])
 
         for j in range(npt):
             ilc = lcids[j]
@@ -519,6 +518,54 @@ def pt_model_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights2d, dk, 
                     else:
                         iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
                         aplanet = circle_circle_intersection_area(1.0, _k, z)
-                        flux[ipv, j] += (istar - iplanet * aplanet) / istar
+                        flux[ipv, j] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
+                flux[ipv, j] /= nsamples[ilc]
+    return flux
+
+@njit(parallel=True, fastmath=False)
+def pt_model_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg,
+                            lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
+    npv = k.shape[0]
+    npt = t.size
+    ldp = atleast_3d(ldp)
+    ng = weights.shape[1]
+
+    if ldp.shape[0] != npv or ldp.shape[1] != npb:
+        raise ValueError(f"The limb darkening profile array should have a shape [npv,npb,ng]")
+
+    t0, p, a, i = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i)
+
+    flux = zeros((npv, npt))
+    for ipv in prange(npv):
+        ldw = zeros((npb, ng))
+
+        nk = (k[ipv, 0] - k0) / dk
+        ik = int(floor(nk))
+        ak = nk - ik
+
+        for ipb in range(npb):
+            ldw[ipb] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb]) + ak * dot(weights[ik + 1], ldp[ipv, ipb])
+
+        for j in range(npt):
+            ilc = lcids[j]
+            ipb = pbids[ilc]
+
+            if k.shape[1] == 1:
+                _k = k[ipv, 0]
+            else:
+                _k = k[ipv, ipb]
+
+            if isnan(_k) or isnan(a[ipv]) or isnan(i[ipv]):
+                flux[ipv, j] = inf
+            else:
+                for isample in range(1, nsamples[ilc] + 1):
+                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                    z = z_ip_s(t[j] + time_offset, t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], es, ms, tae)
+                    if z > 1.0 + _k:
+                        flux[ipv, j] += 1.
+                    else:
+                        iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
+                        aplanet = circle_circle_intersection_area(1.0, _k, z)
+                        flux[ipv, j] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
                 flux[ipv, j] /= nsamples[ilc]
     return flux
