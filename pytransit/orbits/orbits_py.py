@@ -284,7 +284,7 @@ def z_circular(t, pv):
 
 @njit(fastmath=True, parallel=False)
 def z_ip_v(t, t0, p, a, i, e, w, es, ms, tae):
-    if e >= es[-1]:
+    if e < 0. or e >= es[-1]:
         return full(t.size, nan)
 
     Ma = mean_anomaly(t, t0, p, e, w)
@@ -327,7 +327,7 @@ def z_ip_v(t, t0, p, a, i, e, w, es, ms, tae):
 
 @njit(fastmath=True)
 def z_ip_s(t, t0, p, a, i, e, w, es, ms, tae):
-    if e >= es[-1]:
+    if e < 0. or e >= es[-1]:
         return nan
 
     Ma = mean_anomaly(t, t0, p, e, w)
