@@ -29,7 +29,7 @@
 
 from numba import njit, prange
 from numpy import (pi, arccos, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like, zeros, linspace, floor, arcsin,
-                   int, around)
+                   int, around, nan, full)
 from scipy.constants import G
 
 HALF_PI = 0.5 * pi
@@ -284,6 +284,9 @@ def z_circular(t, pv):
 
 @njit(fastmath=True, parallel=False)
 def z_ip_v(t, t0, p, a, i, e, w, es, ms, tae):
+    if e >= es[-1]:
+        return full(t.size, nan)
+
     Ma = mean_anomaly(t, t0, p, e, w)
     if e < 0.01:
         Ta = Ma
@@ -324,6 +327,9 @@ def z_ip_v(t, t0, p, a, i, e, w, es, ms, tae):
 
 @njit(fastmath=True)
 def z_ip_s(t, t0, p, a, i, e, w, es, ms, tae):
+    if e >= es[-1]:
+        return nan
+
     Ma = mean_anomaly(t, t0, p, e, w)
     if e < 0.01:
         Ta = Ma
