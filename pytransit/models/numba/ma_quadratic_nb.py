@@ -45,7 +45,7 @@ from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, lins
     inf, isnan, cos, sign, sin, atleast_1d, ndarray, nan, copysign
 from numba import njit, prange
 
-from ...orbits.orbits_py import z_ip_s
+from ...orbits.orbits_py import z_ip_s, z_ip_v
 
 HALF_PI = 0.5 * pi
 FOUR_PI = 4.0 * pi
@@ -616,6 +616,14 @@ def quadratic_model_direct_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
 
 
 @njit(parallel=True, fastmath=True)
+def quadratic_model_direct_s_simple(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
+    ldc = atleast_2d(ldc)
+    k = atleast_1d(k)
+    z = z_ip_v(t, t0, p, a, i, e, w, es, ms, tae)
+    flux, _, _, _ = eval_quad_z_v(z, k[0], ldc)
+    return flux
+
+@njit(parallel=True, fastmath=True)
 def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
     ldc = atleast_1d(ldc)
     k = atleast_1d(k)
@@ -626,6 +634,39 @@ def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
     npt = t.size
     flux = zeros(npt)
     for j in prange(npt):
+        ilc = lcids[j]
+        ipb = pbids[ilc]
+
+        if k.size == 1:
+            _k = k[0]
+        else:
+            _k = k[ipb]
+
+        ld = ldc[2 * ipb:2 * (ipb + 1)]
+        if isnan(_k) or isnan(a) or isnan(i) or isnan(ld[0]) or isnan(ld[1]):
+            flux[j] = inf
+        else:
+            for isample in range(1, nsamples[ilc] + 1):
+                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                z = z_ip_s(t[j] + time_offset, t0, p, a, i, e, w, es, ms, tae)
+                if z > 1.0 + _k:
+                    flux[j] += 1.
+                else:
+                    flux[j] += eval_quad_z_s(z, _k, ld)
+            flux[j] /= nsamples[ilc]
+    return flux
+
+@njit(parallel=False, fastmath=True)
+def quadratic_model_direct_s_serial(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
+    ldc = atleast_1d(ldc)
+    k = atleast_1d(k)
+
+    if ldc.size != 2*npb:
+        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+
+    npt = t.size
+    flux = zeros(npt)
+    for j in range(npt):
         ilc = lcids[j]
         ipb = pbids[ilc]
 

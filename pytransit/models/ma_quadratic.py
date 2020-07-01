@@ -108,8 +108,8 @@ class QuadraticModel(TransitModel):
         # Scalar parameters branch
         # ------------------------
         if isinstance(t0, float):
-            if e is None:
-                e, w = 0.0, 0.0
+            e = 0. if e is None else e
+            w = 0. if w is None else w
             return self.evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
 
         # Parameter population branch
@@ -122,8 +122,8 @@ class QuadraticModel(TransitModel):
                 k = k.reshape((k.size,1))
 
             npv = t0.size
-            if e is None:
-                e, w = zeros(npv), zeros(npv)
+            e = zeros(npv) if e is None else e
+            w = zeros(npv) if w is None else w
 
             if self.interpolate:
                 flux = quadratic_model_interpolated_v(self.time, k, t0, p, a, i, e, w, ldc,
