@@ -106,16 +106,12 @@ def uniform_z_s(z, k, zsign=1.0):
 
     # Ingress and egress
     # ------------------
-    #elif z > abs(1.0 - k) and z < 1.0 + k:
     else:
         kap1 = arccos(min((1.0 - k * k + z * z) / 2.0 / z, 1.0))
         kap0 = arccos(min((k * k + z * z - 1.0) / 2.0 / k / z, 1.0))
         lambdae = k * k * kap0 + kap1
         lambdae = (lambdae - 0.5 * sqrt(max(4.0 * z * z - (1.0 + z * z - k * k) ** 2, 0.0))) / pi
         flux = 1.0 - lambdae
-
-    #else:
-    #    raise ValueError
 
     return flux
 

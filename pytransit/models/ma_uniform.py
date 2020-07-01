@@ -67,8 +67,8 @@ class UniformModel(TransitModel):
         # Scalar parameters branch
         # ------------------------
         if isinstance(t0, float):
-            if e is None:
-                e, w = 0., 0.
+            e = 0. if e is None else e
+            w = 0. if w is None else w
             flux = uniform_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples,
                                    self.exptimes, self._es, self._ms, self._tae, zsign=self._zsign)
 
@@ -76,10 +76,9 @@ class UniformModel(TransitModel):
         # ---------------------------
         else:
             npv = t0.size
-            if e is None:
-                e, w = zeros(npv), zeros(npv)
+            e = zeros(npv) if e is None else e
+            w = zeros(npv) if w is None else w
 
-            k = asarray(k)
             if k.ndim == 1:
                 k = k.reshape((k.size,1))
 
