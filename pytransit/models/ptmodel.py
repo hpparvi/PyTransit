@@ -33,8 +33,8 @@ from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarra
 from scipy.integrate import trapz
 
 from .numba.ldmodels import *
-from .numba.ptmodel import pt_model_direct_s, pt_model_direct_s_serial, pt_model_interpolated_s, \
-    pt_model_direct_s_serial, pt_model_interpolated_s_serial, pt_model_direct_s_simple, pt_model_direct_v, \
+from .numba.ptmodel import pt_model_direct_s, pt_model_interpolated_s, \
+    pt_model_direct_s_simple, pt_model_direct_v, \
     pt_model_interpolated_v
 
 from .numba.ptmodel import create_z_grid, calculate_weights_3d

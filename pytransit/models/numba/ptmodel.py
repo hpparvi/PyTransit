@@ -276,24 +276,10 @@ def im_p_v2(gs, dg, ldw):
 
 
 @njit(parallel=True)
-def ptmodel_z_direct(z, k, istar, ng, ldp, ze):
+def ptmodel_z_direct_parallel(z, k, istar, ng, ldp, ze):
     flux = zeros(z.size)
     gs, dg, weights = calculate_weights_2d(k, ze, ng)
     ldw = dot(weights, ldp)
-    istar *= pi
-    for i in prange(z.size):
-        iplanet = lerp(z[i] / (1. + k), dg, ldw)
-        aplanet = circle_circle_intersection_area(1.0, k, z[i])
-        flux[i] = (istar - iplanet * aplanet) / istar
-    return flux
-
-
-@njit(parallel=False)
-def ptmodel_z_direct_noparallel(z, k, istar, ng, ldp, ze):
-    flux = zeros(z.size)
-    gs, dg, weights = calculate_weights_2d(k, ze, ng)
-    ldw = dot(weights, ldp)
-    istar *= pi
     for i in prange(z.size):
         iplanet = lerp(z[i] / (1. + k), dg, ldw)
         aplanet = circle_circle_intersection_area(1.0, k, z[i])
@@ -301,25 +287,38 @@ def ptmodel_z_direct_noparallel(z, k, istar, ng, ldp, ze):
     return flux
 
 @njit
-def ptmodel_z_direct_2(z, k, istar, ng, ldp, ze):
+def ptmodel_z_direct_serial(z, k, istar, ng, ldp, ze):
     gs, dg, weights = calculate_weights_2d(k, ze, ng)
     ztog = 1. / (1. + k)
-    istar *= pi
     iplanet = im_p_v(z*ztog, dg, weights, ldp)
     aplanet = circle_circle_intersection_area_v(1.0, k, z)
     return (istar - iplanet * aplanet) / istar
 
 @njit
-def ptmodel_z_interpolated(z, k, istar, ldp, weights, dk, k0, dg):
+def ptmodel_z_interpolated_serial(z, k, istar, ldp, weights, dk, k0, dg):
     nk = (k - k0) / dk
     ik = int(floor(nk))
     ak = nk - ik
     ldw = (1.0 - ak) * dot(weights[ik], ldp) + ak * dot(weights[ik + 1], ldp)
     ztog = 1. / (1. + k)
-    istar *= pi
     iplanet = im_p_v2(z*ztog, dg, ldw)
     aplanet = circle_circle_intersection_area_v(1.0, k, z)
     return (istar - iplanet * aplanet) / istar
+
+
+@njit(parallel=True)
+def ptmodel_z_interpolated_parallel(z, k, istar, ldp, weights, dk, k0, dg):
+    flux = zeros(z.size)
+    nk = (k - k0) / dk
+    ik = int(floor(nk))
+    ak = nk - ik
+    ldw = (1.0 - ak) * dot(weights[ik], ldp) + ak * dot(weights[ik + 1], ldp)
+    ztog = 1. / (1. + k)
+    for i in prange(z.size):
+        iplanet = lerp(z[i]*ztog, dg, ldw)
+        aplanet = circle_circle_intersection_area(1.0, k, z[i])
+        flux[i] = (istar - iplanet * aplanet) / istar
+    return flux
 
 
 @njit(parallel=False, fastmath=True)
@@ -366,13 +365,9 @@ def pt_model_direct_s_simple(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids,
 
 
 @njit(parallel=True, fastmath=True)
-def pt_model_direct_s(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, nsamples, exptimes, es, ms, tae):
-    k = atleast_1d(k)
+def _direct_s_parallel(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsamples, exptimes, es, ms, tae):
     npt = t.size
     flux = zeros(npt)
-
-    gs, dg, weights = calculate_weights_2d(k[0], ze, ng)
-    ldw = dot(weights, ldp)
 
     for j in prange(npt):
         ilc = lcids[j]
@@ -385,20 +380,18 @@ def pt_model_direct_s(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids,
             if z > 1.0 + _k:
                 flux[j] += 1.
             else:
+                pass
                 iplanet = lerp(z / (1. + _k), dg, ldw)
                 aplanet = circle_circle_intersection_area(1.0, _k, z)
                 flux[j] += (istar - iplanet * aplanet) / istar
         flux[j] /= nsamples[ilc]
     return flux
 
+
 @njit(parallel=False, fastmath=True)
-def pt_model_direct_s_serial(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, nsamples, exptimes, es, ms, tae):
-    k = atleast_1d(k)
+def _direct_s_serial(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsamples, exptimes, es, ms, tae):
     npt = t.size
     flux = zeros(npt)
-
-    gs, dg, weights = calculate_weights_2d(k[0], ze, ng)
-    ldw = dot(weights, ldp)
 
     for j in range(npt):
         ilc = lcids[j]
@@ -411,6 +404,7 @@ def pt_model_direct_s_serial(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids,
             if z > 1.0 + _k:
                 flux[j] += 1.
             else:
+                pass
                 iplanet = lerp(z / (1. + _k), dg, ldw)
                 aplanet = circle_circle_intersection_area(1.0, _k, z)
                 flux[j] += (istar - iplanet * aplanet) / istar
@@ -418,64 +412,31 @@ def pt_model_direct_s_serial(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids,
     return flux
 
 
-@njit(parallel=True, fastmath=True)
+@njit
+def pt_model_direct_s(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, nsamples, exptimes, es, ms, tae, parallel):
+    k = atleast_1d(k)
+    gs, dg, weights = calculate_weights_2d(k[0], ze, ng)
+    ldw = dot(weights, ldp)
+    if parallel:
+        return _direct_s_parallel(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsamples, exptimes, es, ms, tae)
+    else:
+        return _direct_s_serial(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsamples, exptimes, es, ms, tae)
+
+
+@njit(fastmath=True)
 def pt_model_interpolated_s(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg,
-                            lcids, pbids, nsamples, exptimes, es, ms, tae):
+                            lcids, pbids, nsamples, exptimes, es, ms, tae, parallel):
     k = atleast_1d(k)
-    npt = t.size
-    flux = zeros(npt)
-
     nk = (k[0] - k0) / dk
     ik = int(floor(nk))
     ak = nk - ik
     ldw = (1.0 - ak) * dot(weights[ik], ldp) + ak * dot(weights[ik + 1], ldp)
 
-    for j in prange(npt):
-        ilc = lcids[j]
-        ipb = pbids[ilc]
-        _k = k[0] if k.size == 1 else k[ipb]
+    if parallel:
+        return _direct_s_parallel(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsamples, exptimes, es, ms, tae)
+    else:
+        return _direct_s_serial(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsamples, exptimes, es, ms, tae)
 
-        for isample in range(1, nsamples[ilc] + 1):
-            time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-            z = z_ip_s(t[j] + time_offset, t0, p, a, i, e, w, es, ms, tae)
-            if z > 1.0 + _k:
-                flux[j] += 1.
-            else:
-                iplanet = lerp(z / (1. + _k), dg, ldw)
-                aplanet = circle_circle_intersection_area(1.0, _k, z)
-                flux[j] += (istar - iplanet * aplanet) / istar
-        flux[j] /= nsamples[ilc]
-    return flux
-
-
-@njit(parallel=False, fastmath=True)
-def pt_model_interpolated_s_serial(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg,
-                                   lcids, pbids, nsamples, exptimes, es, ms, tae):
-    k = atleast_1d(k)
-    npt = t.size
-    flux = zeros(npt)
-
-    nk = (k[0] - k0) / dk
-    ik = int(floor(nk))
-    ak = nk - ik
-    ldw = (1.0 - ak) * dot(weights[ik], ldp) + ak * dot(weights[ik + 1], ldp)
-
-    for j in range(npt):
-        ilc = lcids[j]
-        ipb = pbids[ilc]
-        _k = k[0] if k.size == 1 else k[ipb]
-
-        for isample in range(1, nsamples[ilc] + 1):
-            time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-            z = z_ip_s(t[j] + time_offset, t0, p, a, i, e, w, es, ms, tae)
-            if z > 1.0 + _k:
-                flux[j] += 1.
-            else:
-                iplanet = lerp(z / (1. + _k), dg, ldw)
-                aplanet = circle_circle_intersection_area(1.0, _k, z)
-                flux[j] += (istar - iplanet * aplanet) / istar
-        flux[j] /= nsamples[ilc]
-    return flux
 
 @njit(parallel=True, fastmath=False)
 def pt_model_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng,
