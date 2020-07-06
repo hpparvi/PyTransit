@@ -24,7 +24,7 @@ from pyopencl import CompilerWarning
 
 from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, \
     concatenate, empty, linspace, diff
-from pytransit.models.numba.ptmodel import create_z_grid
+from pytransit.models.numba.swiftmodel import create_z_grid
 
 from .transitmodel import TransitModel
 

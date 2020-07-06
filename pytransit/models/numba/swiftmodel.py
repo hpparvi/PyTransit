@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from numba import njit, prange
 from numpy import arccos, sqrt, linspace, zeros, arange, dot, floor, pi, ndarray, atleast_1d, atleast_2d, isnan, inf, \
-    atleast_3d
+    atleast_3d, nan
 
 from pytransit.orbits.orbits_py import z_ip_s, z_ip_v
 
@@ -74,6 +74,16 @@ def create_z_grid(zcut: float, nin: int, nedge: int):
         z_means[i + 1] = 0.5 * (z_edges[i] + z_edges[i + 1])
 
     return z_edges, z_means
+
+
+@njit
+def create_z_grid_acos(nz: int):
+    z_edges = arccos(linspace(1.0, 0.0, nz)) / (0.5*pi)
+    z_means = zeros(nz)
+    for i in range(nz - 1):
+        z_means[i + 1] = 0.5 * (z_edges[i] + z_edges[i + 1])
+    return z_edges, z_means
+
 
 @njit
 def calculate_weights_2d(k: float, ze: ndarray, ng: int):
@@ -147,6 +157,52 @@ def calculate_weights_3d(nk: int, k0: float, k1: float, ze: ndarray, ng: int):
             for i in range(nz):
                 weights[ik, ig, i] /= s
     return (k1-k0)/nk, gs[1] - gs[0], weights
+
+
+@njit(fastmath=True)
+def interpolate_limb_darkening_s(z, mz, ldp):
+    if z < 0.0:
+        return nan
+    if z > mz[-1]:
+        return ldp[-1]
+
+    i = mz.size // 2
+    if z > mz[i]:
+        while z > mz[i + 1]:
+            i += 1
+    else:
+        while z < mz[i]:
+            i -= 1
+
+    a = (z - mz[i]) / (mz[i + 1] - mz[i])
+    return (1.0 - a) * ldp[i] + a * ldp[i + 1]
+
+
+@njit(fastmath=True)
+def interpolate_limb_darkening_v(zs, mz, ldp):
+    nz = zs.size
+    ld = zeros(nz)
+
+    for iz in range(nz):
+        z = zs[iz]
+        if z < 0.0:
+            ld[iz] = nan
+            continue
+        if z > mz[-1]:
+            ld[iz] = ldp[-1]
+            continue
+
+        i = mz.size // 2
+        if z > mz[i]:
+            while z > mz[i + 1]:
+                i += 1
+        else:
+            while z < mz[i]:
+                i -= 1
+
+        a = (z - mz[i]) / (mz[i + 1] - mz[i])
+        ld[iz] = (1.0 - a) * ldp[i] + a * ldp[i + 1]
+    return ld
 
 
 @njit
@@ -276,7 +332,7 @@ def im_p_v2(gs, dg, ldw):
 
 
 @njit(parallel=True)
-def ptmodel_z_direct_parallel(z, k, istar, ng, ldp, ze):
+def swmodel_z_direct_parallel(z, k, istar, ng, ldp, ze):
     flux = zeros(z.size)
     gs, dg, weights = calculate_weights_2d(k, ze, ng)
     ldw = dot(weights, ldp)
@@ -287,7 +343,7 @@ def ptmodel_z_direct_parallel(z, k, istar, ng, ldp, ze):
     return flux
 
 @njit
-def ptmodel_z_direct_serial(z, k, istar, ng, ldp, ze):
+def swmodel_z_direct_serial(z, k, istar, ng, ldp, ze):
     gs, dg, weights = calculate_weights_2d(k, ze, ng)
     ztog = 1. / (1. + k)
     iplanet = im_p_v(z*ztog, dg, weights, ldp)
@@ -295,7 +351,7 @@ def ptmodel_z_direct_serial(z, k, istar, ng, ldp, ze):
     return (istar - iplanet * aplanet) / istar
 
 @njit
-def ptmodel_z_interpolated_serial(z, k, istar, ldp, weights, dk, k0, dg):
+def swmodel_z_interpolated_serial(z, k, istar, ldp, weights, dk, k0, dg):
     nk = (k - k0) / dk
     ik = int(floor(nk))
     ak = nk - ik
@@ -307,7 +363,7 @@ def ptmodel_z_interpolated_serial(z, k, istar, ldp, weights, dk, k0, dg):
 
 
 @njit(parallel=True)
-def ptmodel_z_interpolated_parallel(z, k, istar, ldp, weights, dk, k0, dg):
+def swmodel_z_interpolated_parallel(z, k, istar, ldp, weights, dk, k0, dg):
     flux = zeros(z.size)
     nk = (k - k0) / dk
     ik = int(floor(nk))
@@ -322,74 +378,33 @@ def ptmodel_z_interpolated_parallel(z, k, istar, ldp, weights, dk, k0, dg):
 
 
 @njit(parallel=False, fastmath=True)
-def pt_model_direct_s_simple(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, nsamples, exptimes, es, ms, tae):
+def swmodel_direct_s_simple(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae, parallel):
     """Simple PT transit model for a homogeneous time series without supersampling and relatively small number of points.
 
     This version avoids the overheads from threading and supersampling. The fastest option if the number of datapoints
     is smaller than some thousands.
-
-    Parameters
-    ----------
-    t
-    k
-    t0
-    p
-    a
-    i
-    e
-    w
-    ldp
-    istar
-    ze
-    ng
-    lcids
-    pbids
-    nsamples
-    exptimes
-    es
-    ms
-    tae
-
-    Returns
-    -------
-
     """
     k = atleast_1d(k)
-    gs, dg, weights = calculate_weights_2d(k[0], ze, ng)
-    ldw = dot(weights, ldp)
     z = z_ip_v(t, t0, p, a, i, e, w, es, ms, tae)
-    iplanet = im_p_v2(z / (1. + k[0]), dg, ldw)
+
+    # Swift model branch
+    # ------------------
+    if k[0] > splimit:
+        gs, dg, weights = calculate_weights_2d(k[0], ze, ng)
+        ldw = dot(weights, ldp[0,0,:])
+        iplanet = im_p_v2(z / (1. + k[0]), dg, ldw)
+
+    # Small-planet approximation branch
+    # ---------------------------------
+    else:
+        iplanet = interpolate_limb_darkening_v(z, zm, ldp[0,0,:])
+
     aplanet = circle_circle_intersection_area_v(1.0, k[0], z)
-    flux = (istar - iplanet * aplanet) / istar
+    flux = (istar[0,0] - iplanet * aplanet) / istar[0,0]
     return flux
-
-
-@njit(parallel=True, fastmath=True)
-def _direct_s_parallel(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsamples, exptimes, es, ms, tae):
-    npt = t.size
-    flux = zeros(npt)
-
-    for j in prange(npt):
-        ilc = lcids[j]
-        ipb = pbids[ilc]
-        _k = k[0] if k.size == 1 else k[ipb]
-
-        for isample in range(1, nsamples[ilc] + 1):
-            time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-            z = z_ip_s(t[j] + time_offset, t0, p, a, i, e, w, es, ms, tae)
-            if z > 1.0 + _k:
-                flux[j] += 1.
-            else:
-                pass
-                iplanet = lerp(z / (1. + _k), dg, ldw)
-                aplanet = circle_circle_intersection_area(1.0, _k, z)
-                flux[j] += (istar - iplanet * aplanet) / istar
-        flux[j] /= nsamples[ilc]
-    return flux
-
 
 @njit(parallel=False, fastmath=True)
-def _direct_s_serial(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsamples, exptimes, es, ms, tae):
+def _eval_s_serial(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae):
     npt = t.size
     flux = zeros(npt)
 
@@ -404,43 +419,80 @@ def _direct_s_serial(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsam
             if z > 1.0 + _k:
                 flux[j] += 1.
             else:
-                pass
-                iplanet = lerp(z / (1. + _k), dg, ldw)
+                if _k > splimit:
+                    iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
+                else:
+                    iplanet = interpolate_limb_darkening_s(z, zm, ldp[0,ipb])
                 aplanet = circle_circle_intersection_area(1.0, _k, z)
-                flux[j] += (istar - iplanet * aplanet) / istar
+                flux[j] += (istar[0,ipb] - iplanet * aplanet) / istar[0,ipb]
+        flux[j] /= nsamples[ilc]
+    return flux
+
+
+@njit(parallel=True, fastmath=True)
+def _eval_s_parallel(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae):
+    npt = t.size
+    flux = zeros(npt)
+
+    for j in prange(npt):
+        ilc = lcids[j]
+        ipb = pbids[ilc]
+        _k = k[0] if k.size == 1 else k[ipb]
+
+        for isample in range(1, nsamples[ilc] + 1):
+            time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+            z = z_ip_s(t[j] + time_offset, t0, p, a, i, e, w, es, ms, tae)
+            if z > 1.0 + _k:
+                flux[j] += 1.
+            else:
+                if _k > splimit:
+                    iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
+                else:
+                    iplanet = interpolate_limb_darkening_s(z, zm, ldp[0,ipb])
+                aplanet = circle_circle_intersection_area(1.0, _k, z)
+                flux[j] += (istar[0,ipb] - iplanet * aplanet) / istar[0,ipb]
         flux[j] /= nsamples[ilc]
     return flux
 
 
 @njit
-def pt_model_direct_s(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, nsamples, exptimes, es, ms, tae, parallel):
+def swmodel_direct_s(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae, parallel):
     k = atleast_1d(k)
+    npb = ldp.shape[1]
     gs, dg, weights = calculate_weights_2d(k[0], ze, ng)
-    ldw = dot(weights, ldp)
+
+    ldw = zeros((npb, ng))
+    for ipb in range(npb):
+        ldw[ipb] = dot(weights, ldp[0, ipb])
+
     if parallel:
-        return _direct_s_parallel(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsamples, exptimes, es, ms, tae)
+        return _eval_s_parallel(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae)
     else:
-        return _direct_s_serial(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsamples, exptimes, es, ms, tae)
+        return _eval_s_serial(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae)
 
 
 @njit(fastmath=True)
-def pt_model_interpolated_s(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg,
-                            lcids, pbids, nsamples, exptimes, es, ms, tae, parallel):
+def swmodel_interpolated_s(t, k, t0, p, a, i, e, w, ldp, istar, weights, zm, dk, k0, dg, splimit,
+                           lcids, pbids, nsamples, exptimes, es, ms, tae, parallel):
     k = atleast_1d(k)
+    npb = ldp.shape[1]
     nk = (k[0] - k0) / dk
     ik = int(floor(nk))
     ak = nk - ik
-    ldw = (1.0 - ak) * dot(weights[ik], ldp) + ak * dot(weights[ik + 1], ldp)
+
+    ldw = zeros((npb, weights.shape[1]))
+    for ipb in range(npb):
+        ldw[ipb] = (1.0 - ak) * dot(weights[ik], ldp[0,ipb]) + ak * dot(weights[ik + 1], ldp[0,ipb])
 
     if parallel:
-        return _direct_s_parallel(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsamples, exptimes, es, ms, tae)
+        return _eval_s_parallel(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae)
     else:
-        return _direct_s_serial(t, k, t0, p, a, i, e, w, istar, dg, ldw, lcids, pbids, nsamples, exptimes, es, ms, tae)
+        return _eval_s_serial(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae)
 
 
 @njit(parallel=True, fastmath=False)
-def pt_model_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng,
-                      lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
+def swmodel_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng,
+                     lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
     npv = k.shape[0]
     npt = t.size
     ldp = atleast_3d(ldp)
@@ -452,7 +504,6 @@ def pt_model_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng,
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
-
         gs, dg, weights = calculate_weights_2d(k[ipv,0], ze, ng)
 
         ldw = zeros((npb, ng))
@@ -484,8 +535,8 @@ def pt_model_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng,
     return flux
 
 @njit(parallel=True, fastmath=False)
-def pt_model_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg,
-                            lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
+def swmodel_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg,
+                           lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
     npv = k.shape[0]
     npt = t.size
     ldp = atleast_3d(ldp)

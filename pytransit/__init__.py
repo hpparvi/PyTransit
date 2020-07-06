@@ -50,7 +50,7 @@ from .models.ma_quadratic import QuadraticModel
 from .models.ma_uniform import UniformModel
 from .models.ma_chromosphere import ChromosphereModel
 from .models.general import GeneralModel
-from .models.ptmodel import PTModel
+from .models.swiftmodel import SwiftModel
 
 # OpenCL models
 # -------------
@@ -58,6 +58,10 @@ from .models.qpower2_cl import QPower2ModelCL
 from .models.ma_quadratic_cl import QuadraticModelCL
 from .models.ma_uniform_cl import UniformModelCL
 
+from .models.ldtkldm import LDTkLDModel
+
+# Generic
+# -------
 from .models.transitmodel import TransitModel
 
 from .lpf.lpf import BaseLPF

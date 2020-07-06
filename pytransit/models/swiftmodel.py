@@ -29,26 +29,27 @@
 import timeit
 from typing import Tuple, Callable, Union, List, Optional
 
-from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, linspace, sqrt, pi, ones, log, exp
+from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, linspace, sqrt, pi, ones, log, exp, \
+    tile
 from scipy.integrate import trapz
 
+from .ldtkldm import LDModel
 from .numba.ldmodels import *
-from .numba.ptmodel import pt_model_direct_s, pt_model_interpolated_s, \
-    pt_model_direct_s_simple, pt_model_direct_v, \
-    pt_model_interpolated_v
+from .numba.swiftmodel import swmodel_direct_s, swmodel_interpolated_s, \
+    swmodel_direct_s_simple, swmodel_direct_v, \
+    swmodel_interpolated_v
 
-from .numba.ptmodel import create_z_grid, calculate_weights_3d
+from .numba.swiftmodel import create_z_grid, calculate_weights_3d
 from .transitmodel import TransitModel
 
-__all__ = ['PTModel']
+__all__ = ['SwiftModel']
 
 
-
-class PTModel(TransitModel):
+class SwiftModel(TransitModel):
     ldmodels = {'uniform': (ld_uniform, ldi_uniform),
                 'linear': (ld_linear, ldi_linear),
                 'quadratic': (ld_quadratic, ldi_quadratic),
-                'quadratic_tri': ld_quadratic_tri,
+                'quadratic_tri': (ld_quadratic_tri, ldi_quadratic_tri),
                 'nonlinear': ld_nonlinear,
                 'general': ld_general,
                 'square_root': ld_square_root,
@@ -57,9 +58,9 @@ class PTModel(TransitModel):
                 'power2': ld_power2}
 
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
-                 interpolate: bool = True, klims: tuple = (0.005, 0.5), nk: int = 256,
-                 nzin: int = 20, nzlimb: int = 20, zcut=0.7, ng: int = 50, parallel: bool = True,
-                 simple=False):
+                 interpolate: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
+                 nzin: int = 20, nzlimb: int = 20, zcut=0.7, ng: int = 50, parallel: bool = False,
+                 small_planet_limit: float = 0.05):
         """The ridiculously fast transit model by Parviainen (2020).
 
         Parameters
@@ -76,7 +77,8 @@ class PTModel(TransitModel):
         super().__init__()
         self.interpolate = interpolate
         self.parallel = parallel
-        self.simple = False
+        self.is_simple = False
+        self.splimit = small_planet_limit
 
         # Set up the limmb darkening model
         # --------------------------------
@@ -92,6 +94,17 @@ class PTModel(TransitModel):
                 print(
                     f"Unknown limb darkening model: {ldmodel}. Choose from [{', '.join(self.ldmodels.keys())}] or supply a callable function.")
                 raise
+        elif isinstance(ldmodel, LDModel):
+            self.ldmodel = ldmodel
+            self.ldmmean = ldmodel._integrate
+        elif callable(ldmodel):
+            self.ldmodel = ldmodel
+            self.ldmmean = None
+        elif isinstance(ldmodel, tuple) and callable(ldmodel[0]) and callable(ldmodel[1]):
+            self.ldmodel = ldmodel[0]
+            self.ldmmean = ldmodel[1]
+        else:
+            raise NotImplementedError
 
         # Set the basic variable
         # ----------------------
@@ -134,16 +147,16 @@ class PTModel(TransitModel):
     def set_methods(self):
 
         if self.npb == 1 and all(self.nsamples == 1):
-            self.simple = True
+            self.is_simple = True
         else:
-            self.simple = False
+            self.is_simple = False
 
         if self.interpolate:
             self._m_interp_s = self.choose_m_interp_s()
-            self._m_interp_v = pt_model_interpolated_v
+            self._m_interp_v = swmodel_interpolated_v
         else:
             self._m_direct_s = self.choose_m_direct_s()
-            self._m_direct_v = pt_model_direct_v
+            self._m_direct_v = swmodel_direct_v
 
 
     def init_integration(self, nzin, nzlimb, zcut, ng, nk=None):
@@ -159,57 +172,55 @@ class PTModel(TransitModel):
 
     def choose_m_direct_s(self):
         time = linspace(-0.1, 0.1, self.npt)
-        ldc = array([0.24, 0.12])
-        ldp = ld_quadratic(self.mu, ldc)
-        istar = 2 * trapz(self._ldz * ld_quadratic(self._ldmu, ldc), self._ldz)
+        ldc = tile([0.2, 0.3], (1,self.npb,1))
+        ldp = evaluate_ld(ld_quadratic, self.mu, ldc)
+        istar = evaluate_ldi(ldi_quadratic, ldc)
         k = asarray([0.1])
 
-        model = pt_model_direct_s
-        ds = """pt_model_direct_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.ng, self.lcids, 
-                                  self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)"""
-        t0 = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
+        model = swmodel_direct_s
+        ds = """swmodel_direct_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.zm, self.ng, self.splimit,
+                                  self.lcids, self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae,
+                                  True)"""
+        tparallel = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
 
-        ds = """pt_model_direct_s_serial(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.ng, self.lcids, 
-                                  self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)"""
-        tt = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
-        if tt < t0:
-            model = pt_model_direct_s_serial
-            t0 = tt
+        ds = """swmodel_direct_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.zm, self.ng, self.splimit,
+                                  self.lcids, self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae,
+                                  False)"""
+        tserial = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
+        if tparallel < tserial:
+            self.parallel = True
+        tmin = min(tparallel, tserial)
 
-        if self.simple:
-            ds = """pt_model_direct_s_simple(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.ng, self.lcids, 
-                                  self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)"""
-            tt = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
-            if tt < t0:
-                model = pt_model_direct_s_simple
-                t0 = tt
+        if self.is_simple:
+            ds = """swmodel_direct_s_simple(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.zm, self.ng, 
+                                             self.splimit, self.lcids, self.pbids, self.nsamples, self.exptimes, 
+                                             self._es, self._ms, self._tae, False)"""
+            tsimple = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
+            if tsimple < tmin:
+                model = swmodel_direct_s_simple
 
         return model
 
-
     def choose_m_interp_s(self):
         time = linspace(-0.1, 0.1, self.npt)
-        ldc = array([0.24, 0.12])
-        ldp = ld_quadratic(self.mu, ldc)
-        istar = 2 * trapz(self._ldz * ld_quadratic(self._ldmu, ldc), self._ldz)
+        ldc = tile([0.2, 0.3], (1,self.npb,1))
+        ldp = evaluate_ld(ld_quadratic, self.mu, ldc)
+        istar = evaluate_ldi(ldi_quadratic, ldc)
         k = asarray([0.1])
 
-        model = pt_model_interpolated_s
-        ds = """pt_model_interpolated_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.weights, self.dk, 
-                                        self.klims[0], self.dg, self.lcids, self.pbids, self.nsamples, self.exptimes, 
-                                        self._es, self._ms, self._tae)"""
-        t0 = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
+        model = swmodel_interpolated_s
+        ds = """swmodel_interpolated_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.weights, self.zm, self.dk, 
+                                        self.klims[0], self.dg, self.splimit, self.lcids, self.pbids, self.nsamples, self.exptimes, 
+                                        self._es, self._ms, self._tae, True)"""
+        tparallel = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
 
-        ds = """pt_model_interpolated_s_serial(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.weights, self.dk, 
-                                               self.klims[0], self.dg, self.lcids, self.pbids, self.nsamples, self.exptimes, 
-                                               self._es, self._ms, self._tae)"""
-        tt = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
-        if tt < t0:
-            model = pt_model_interpolated_s_serial
-            t0 = tt
+        ds = """swmodel_interpolated_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.weights, self.zm, self.dk, 
+                                        self.klims[0], self.dg, self.splimit, self.lcids, self.pbids, self.nsamples, self.exptimes, 
+                                        self._es, self._ms, self._tae, False)"""
+        tserial = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
 
-        if self.simple:
-            pass
+        if tparallel < tserial:
+            self.parallel = True
 
         return model
 
@@ -270,15 +281,18 @@ class PTModel(TransitModel):
             if e is None:
                 e, w = zeros(npv), zeros(npv)
 
-            ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
+            if isinstance(self.ldmodel, LDModel):
+                ldp, istar = self.ldmodel(self.mu, ldc)
+            else:
+                ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
+                istar = zeros((npv, self.npb))
+                for ipv in range(npv):
+                    for ipb in range(self.npb):
 
-            istar = zeros((npv, self.npb))
-            for ipv in range(npv):
-                for ipb in range(self.npb):
-                    if self.ldmmean is not None:
-                        istar[ipv, ipb] = self.ldmmean(ldc[ipv, ipb])
-                    else:
-                        istar[ipv, ipb] = 2 * trapz(self._ldz * self.ldmodel(self._ldmu, ldc[ipv, ipb]), self._ldz)
+                        if self.ldmmean is not None:
+                            istar[ipv, ipb] = self.ldmmean(ldc[ipv, ipb])
+                        else:
+                            istar[ipv, ipb] = 2 * pi * trapz(self._ldz * self.ldmodel(self._ldmu, ldc[ipv, ipb]), self._ldz)
 
             if self.interpolate:
                 flux = self._m_interp_v(self.time, k, t0, p, a, i, e, w, ldp, istar, self.weights, self.dk,
@@ -288,7 +302,6 @@ class PTModel(TransitModel):
                 flux = self._m_direct_v(self.time, k, t0, p, a, i, e, w, ldp, istar, self.ze, self.ng,
                                        self.lcids, self.pbids, self.nsamples,
                                        self.exptimes, self.npb, self._es, self._ms, self._tae)
-
         return squeeze(flux)
 
     def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
@@ -326,21 +339,32 @@ class PTModel(TransitModel):
             Modelled flux as a 1D ndarray.
         """
 
-        ldc = asarray(ldc)
         k = asarray(k)
+        ldc = asarray(ldc)
 
-        ldp = self.ldmodel(self.mu, ldc)
-        if self.ldmmean is not None:
-            istar = self.ldmmean(ldc)
+        if isinstance(self.ldmodel, LDModel):
+            ldp, istar = self.ldmodel(self.mu, ldc)
         else:
-            istar = 2 * trapz(self._ldz * self.ldmodel(self._ldmu, ldc), self._ldz)
+            ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
+            if self.ldmmean is not None:
+                istar = evaluate_ldi(self.ldmmean, ldc)
+            else:
+                istar = zeros((1,self.npb))
+                if ldc.ndim == 1:
+                    ldc = ldc.reshape((1, 1, -1))
+                elif ldc.ndim == 2:
+                    ldc = ldc.reshape((1, ldc.shape[1], -1))
+
+                for ipb in range(self.npb):
+                    istar[0,ipb] = 2 * pi * trapz(self._ldz * self.ldmodel(self._ldmu, ldc[0,ipb]), self._ldz)
 
         if self.interpolate:
-            flux = self._m_interp_s(self.time, k, t0, p, a, i, e, w, ldp, istar, self.weights,
-                                    self.dk, self.klims[0], self.dg, self.lcids, self.pbids, self.nsamples,
-                                    self.exptimes, self._es, self._ms, self._tae)
+            flux = self._m_interp_s(self.time, k, t0, p, a, i, e, w, ldp, istar, self.weights, self.zm,
+                                    self.dk, self.klims[0], self.dg, self.splimit, self.lcids, self.pbids, self.nsamples,
+                                    self.exptimes, self._es, self._ms, self._tae, self.parallel)
         else:
-            flux = self._m_direct_s(self.time, k, t0, p, a, i, e, w, ldp, istar, self.ze, self.ng, self.lcids,
-                                    self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
+            flux = self._m_direct_s(self.time, k, t0, p, a, i, e, w, ldp, istar, self.ze, self.zm, self.ng, self.splimit,
+                                    self.lcids, self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae,
+                                    self.parallel)
 
         return squeeze(flux)
