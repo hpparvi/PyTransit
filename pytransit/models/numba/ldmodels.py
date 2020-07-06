@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numba import njit
-from numpy import ones, pi, sqrt, log, exp, zeros
+from numpy import ones, pi, sqrt, log, exp, zeros, power
 
 
 @njit(fastmath=True)
@@ -56,8 +56,15 @@ def ld_quadratic_tri(mu, pv):
 
 
 @njit(fastmath=True)
+def ldi_quadratic_tri(pv):
+    a, b = sqrt(pv[0]), 2 * pv[1]
+    u, v = a * b, a * (1. - b)
+    return 2 * pi * 1 / 12 * (-2 * u - v + 6)
+
+
+@njit(fastmath=True)
 def ld_nonlinear(mu, pv):
-    return 1. - pv[0] * (1. - sqrt(mu)) - pv[1] * (1. - mu) - pv[2] * (1. - pow(mu, 1.5)) - pv[3] * (1. - mu ** 2)
+    return 1. - pv[0] * (1. - sqrt(mu)) - pv[1] * (1. - mu) - pv[2] * (1. - power(mu, 1.5)) - pv[3] * (1. - mu ** 2)
 
 
 @njit(fastmath=True)
@@ -91,9 +98,9 @@ def ld_power2(mu, pv):
 @njit
 def evaluate_ld(ldm, mu, pvo):
     if pvo.ndim == 1:
-        pv = pvo.reshape((1, 1, 2))
+        pv = pvo.reshape((1, 1, -1))
     elif pvo.ndim == 2:
-        pv = pvo.reshape((1, pvo.shape[1], 2))
+        pv = pvo.reshape((1, pvo.shape[1], -1))
     else:
         pv = pvo
 
@@ -104,3 +111,21 @@ def evaluate_ld(ldm, mu, pvo):
         for ipb in range(npb):
             ldp[ipv, ipb, :] = ldm(mu, pv[ipv, ipb])
     return ldp
+
+
+@njit
+def evaluate_ldi(ldi, pvo):
+    if pvo.ndim == 1:
+        pv = pvo.reshape((1, 1, -1))
+    elif pvo.ndim == 2:
+        pv = pvo.reshape((1, pvo.shape[1], -1))
+    else:
+        pv = pvo
+
+    npv = pv.shape[0]
+    npb = pv.shape[1]
+    istar = zeros((npv, npb))
+    for ipv in range(npv):
+        for ipb in range(npb):
+            istar[ipv, ipb] = ldi(pv[ipv, ipb])
+    return istar
