@@ -49,7 +49,7 @@ class SwiftModel(TransitModel):
     ldmodels = {'uniform': (ld_uniform, ldi_uniform),
                 'linear': (ld_linear, ldi_linear),
                 'quadratic': (ld_quadratic, ldi_quadratic),
-                'quadratic_tri': (ld_quadratic_tri, ldi_quadratic_tri),
+                'quadratic-tri': (ld_quadratic_tri, ldi_quadratic_tri),
                 'nonlinear': ld_nonlinear,
                 'general': ld_general,
                 'square_root': ld_square_root,
