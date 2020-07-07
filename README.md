@@ -45,10 +45,9 @@ Read the docs at [pytransit.readthedocs.io](https://pytransit.readthedocs.io).
 
 ## News
 
-- **5.4.2020:** The log likelihood and baseline computation has been changed completely for log posterior functions. 
- The changes make creating complex models combining different noise models easy to implement, but also will break old
- code... Please use the *old_lnlike_and_baseline* branch if your code is broken by the changes, and change to the new 
- approach when feasible. The required changes are small and relatively painless.
+- **7.7.2020:** Now introducing the *Swift* transit model (Parviainen, submitted 2020), a fast exoplanet transit model 
+that can use any radially symmetric function to model stellar limb darkening while still being faster to evaluate than 
+the analytical transit model for quadratic limb darkening.
 
 ## Examples and tutorials
 
@@ -60,7 +59,16 @@ Read the docs at [pytransit.readthedocs.io](https://pytransit.readthedocs.io).
   as detailed in [Parviainen et al. (A&A, 2019)](https://www.aanda.org/articles/aa/pdf/2019/10/aa35709-19.pdf), and used 
   in [Parviainen et al. (A&A, 2020)](https://www.aanda.org/articles/aa/pdf/2020/01/aa35958-19.pdf).
 
-## What's new in PyTransit v2.0 beta (2020)
+## What's new in PyTransit v2.1
+
+**Added** 
+ - A new transit model, ``pytransit.SwiftModel``, that can use any radially symmetric function to model stellar limb
+   darkening while still giving performance similar to the analytical transit model for quadratic limb darkening 
+   (``pytransit.QuadraticModel``).
+ - See the [basic example notebook](https://github.com/hpparvi/PyTransit/blob/ptmodel/notebooks/swift/swift_model_example_1.ipynb)
+   and the [custom limb darkening notebook](https://github.com/hpparvi/PyTransit/blob/ptmodel/notebooks/swift/swift_model_example_2.ipynb).
+  
+## What's new in PyTransit v2.0
 
 **Freedom from Fortran**
 - PyTransit v2.0 replaces all the old Fortran code with numba-accelerated Python versions!
@@ -85,11 +93,6 @@ Read the docs at [pytransit.readthedocs.io](https://pytransit.readthedocs.io).
 - All (well, most of, but this'll be improved) the functionality is now documented in Jupyter notebooks available in
  [GitHub](https://github.com/hpparvi/PyTransit/tree/master/notebooks).
 - TESS modelling examples using `pytransit.lpf.TESSLPF`.
-
-**Lop posterior function (LPF) classes**
-- The `pytransit.lpf` (LogPosteriorFunction) module contains classes that can be used directly to carry out Bayesian 
-transit analyses. They can also be used as a starting point for more complex models, and have been written to be easily 
-extendable.
 
 ## Features
 
