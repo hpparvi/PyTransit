@@ -238,6 +238,71 @@ class SwiftModelCL(TransitModel):
         pvp[:, nk + 4] = e
         pvp[:, nk + 5] = w
 
+        return self.evaluate_pv(pvp, ldc, copy)
+
+    def evaluate_ps(self, k, ldc, t0, p, a, i, e=0., w=0., copy=True) -> ndarray:
+        """Evaluate the transit model for a set of scalar parameters.
+
+           Parameters
+           ----------
+           k : array-like
+               Radius ratio(s) either as a single float or an 1D array.
+           ldc
+             Limb darkening coefficients as a 1D or 2D array.
+           t0 : float
+               Transit center as a float.
+           p : float
+               Orbital period as a float.
+           a : float
+               Orbital semi-major axis divided by the stellar radius as a float.
+           i : float
+               Orbital inclination(s) as a float.
+           e : float, optional
+               Orbital eccentricity as a float.
+           w : float, optional
+               Argument of periastron as a float.
+
+           Notes
+           -----
+           This version of the `evaluate` method is optimized for calculating a single transit model (such as when using a
+           local optimizer). If you want to evaluate the model for a large number of parameters simultaneously, use either
+           `evaluate` or `evaluate_pv`.
+
+           Returns
+           -------
+           ndarray
+               Modelled flux as a 1D ndarray.
+           """
+        if isinstance(k, float):
+            pv = array([[k, t0, p, a, i, e, w]], float32)
+        else:
+            pv = concatenate([k, [t0, p, a, i, e, w]]).astype(float32)
+        return self.evaluate_pv(pv, ldc, copy)
+
+    def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
+        """Evaluate the transit model for a 2D parameter array.
+
+           Parameters
+           ----------
+           pvp
+               Parameter array with a shape `(npv, npar)` where `npv` is the number of parameter vectors, and each row
+               contains a set of parameters `[k, t0, p, a, i, e, w]`. The radius ratios can also be given per passband,
+               in which case the row should be structured as `[k_0, k_1, k_2, ..., k_npb, t0, p, a, i, e, w]`.
+
+           Notes
+           -----
+           This version of the `evaluate` method is optimized for calculating several models in parallel, such as when
+           using *emcee* for MCMC sampling.
+
+           Returns
+           -------
+           ndarray
+               Modelled flux either as a 1D or 2D ndarray.
+           """
+        pvp = atleast_2d(pvp)
+        ldc = asarray(ldc)
+        nk = pvp.shape[1] - 6
+
         # Release and reinitialise the GPU buffers if the parameter vector size changes
         if self.npv != pvp.shape[0]:
             self.npv = uint32(pvp.shape[0])
@@ -276,7 +341,7 @@ class SwiftModelCL(TransitModel):
             else:
                 istar = zeros((self.npv, self.npb))
                 ldpi = evaluate_ld(self.ldmodel, self._ldmu, ldc)
-                for ipv in range(npv):
+                for ipv in range(self.npv):
                     for ipb in range(self.npb):
                         istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv,ipb], self._ldz)
 
@@ -301,104 +366,3 @@ class SwiftModelCL(TransitModel):
             return squeeze(self.f)
         else:
             return None
-
-    def evaluate_ps(self, k, ldc, t0, p, a, i, e=0., w=0., copy=True) -> ndarray:
-        """Evaluate the transit model for a set of scalar parameters.
-
-           Parameters
-           ----------
-           k : array-like
-               Radius ratio(s) either as a single float or an 1D array.
-           ldc
-             Limb darkening coefficients as a 1D or 2D array.
-           t0 : float
-               Transit center as a float.
-           p : float
-               Orbital period as a float.
-           a : float
-               Orbital semi-major axis divided by the stellar radius as a float.
-           i : float
-               Orbital inclination(s) as a float.
-           e : float, optional
-               Orbital eccentricity as a float.
-           w : float, optional
-               Argument of periastron as a float.
-
-           Notes
-           -----
-           This version of the `evaluate` method is optimized for calculating a single transit model (such as when using a
-           local optimizer). If you want to evaluate the model for a large number of parameters simultaneously, use either
-           `evaluate` or `evaluate_pv`.
-
-           Returns
-           -------
-           ndarray
-               Modelled flux as a 1D ndarray.
-           """
-        ldc = asarray(ldc, float32)
-        if isinstance(k, float):
-            pv = array([[k, t0, p, a, i, e, w]], float32)
-        else:
-            pv = concatenate([k, [t0, p, a, i, e, w]]).astype(float32)
-        return self.evaluate_pv(pv, ldc, copy)
-
-    def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
-        """Evaluate the transit model for a 2D parameter array.
-
-           Parameters
-           ----------
-           pvp
-               Parameter array with a shape `(npv, npar)` where `npv` is the number of parameter vectors, and each row
-               contains a set of parameters `[k, t0, p, a, i, e, w]`. The radius ratios can also be given per passband,
-               in which case the row should be structured as `[k_0, k_1, k_2, ..., k_npb, t0, p, a, i, e, w]`.
-
-           Notes
-           -----
-           This version of the `evaluate` method is optimized for calculating several models in parallel, such as when
-           using *emcee* for MCMC sampling.
-
-           Returns
-           -------
-           ndarray
-               Modelled flux either as a 1D or 2D ndarray.
-           """
-        pvp = atleast_2d(pvp)
-        ldc = atleast_2d(ldc).astype(float32)
-        self.npv = uint32(pvp.shape[0])
-        self.spv = uint32(pvp.shape[1])
-
-        # Release and reinitialise the GPU buffers if the sizes of the time or
-        # limb darkening coefficient arrays change.
-        if (ldc.size != self.u.size) or (pvp.size != self.pv.size):
-            assert self.npb == ldc.shape[1] // 2
-
-            if self._b_f is not None:
-                self._b_f.release()
-                self._b_u.release()
-                self._b_p.release()
-
-            self.pv = zeros(pvp.shape, float32)
-            self.u = zeros((self.npv, 2 * self.npb), float32)
-            self.f = zeros((self.npv, self.nptb), float32)
-
-            mf = cl.mem_flags
-            self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * self.npv)
-            self._b_u = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.u)
-            self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
-
-        # Copy the limb darkening coefficient array to the GPU
-        cl.enqueue_copy(self.queue, self._b_u, ldc)
-
-        # Copy the parameter vector to the GPU
-        self.pv[:] = pvp
-        cl.enqueue_copy(self.queue, self._b_p, self.pv)
-
-        self.prg.qpower2_eccentric_pop(self.queue, (self.npv, self.nptb), None, self._b_time, self._b_lcids, self._b_pbids,
-                                  self._b_p, self._b_u, self._b_nsamples, self._b_etimes, self.spv, self.nlc, self.npb, self._b_f)
-
-        if copy:
-            cl.enqueue_copy(self.queue, self.f, self._b_f)
-            return squeeze(self.f)
-        else:
-            return None
-
