@@ -91,9 +91,14 @@ def ld_exponential(mu, pv):
 
 
 @njit(fastmath=True)
-def ld_power2(mu, pv):
+def ld_power_2(mu, pv):
     return 1. - pv[0] * (1. - mu ** pv[1])
 
+@njit(fastmath=True)
+def ld_power_2_pm(mu, pv):
+    c = 1 - pv[0] + pv[1]
+    a = log(c/pv[1])
+    return 1. - c * (1. - mu**a)
 
 @njit
 def evaluate_ld(ldm, mu, pvo):

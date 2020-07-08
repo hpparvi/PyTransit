@@ -55,7 +55,8 @@ class SwiftModel(TransitModel):
                 'square_root': ld_square_root,
                 'logarithmic': ld_logarithmic,
                 'exponential': ld_exponential,
-                'power2': ld_power2}
+                'power-2': ld_power_2,
+                'power-2-pm': ld_power_2_pm}
 
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  interpolate: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
