@@ -80,7 +80,7 @@ class SwiftModel(TransitModel):
         self.is_simple = False
         self.splimit = small_planet_limit
 
-        # Set up the limmb darkening model
+        # Set up the limb darkening model
         # --------------------------------
         if isinstance(ldmodel, str):
             try:
@@ -285,14 +285,15 @@ class SwiftModel(TransitModel):
                 ldp, istar = self.ldmodel(self.mu, ldc)
             else:
                 ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
-                istar = zeros((npv, self.npb))
-                for ipv in range(npv):
-                    for ipb in range(self.npb):
 
-                        if self.ldmmean is not None:
-                            istar[ipv, ipb] = self.ldmmean(ldc[ipv, ipb])
-                        else:
-                            istar[ipv, ipb] = 2 * pi * trapz(self._ldz * self.ldmodel(self._ldmu, ldc[ipv, ipb]), self._ldz)
+                if self.ldmmean is not None:
+                    istar = evaluate_ldi(self.ldmmean, ldc)
+                else:
+                    istar = zeros((npv, self.npb))
+                    ldpi = evaluate_ld(self.ldmodel, self._ldmu, ldc)
+                    for ipv in range(npv):
+                        for ipb in range(self.npb):
+                            istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv, ipb], self._ldz)
 
             if self.interpolate:
                 flux = self._m_interp_v(self.time, k, t0, p, a, i, e, w, ldp, istar, self.weights, self.dk,
