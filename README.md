@@ -65,8 +65,9 @@ the analytical transit model for quadratic limb darkening.
  - A new transit model, ``pytransit.SwiftModel``, that can use any radially symmetric function to model stellar limb
    darkening while still giving performance similar to the analytical transit model for quadratic limb darkening 
    (``pytransit.QuadraticModel``).
- - See the [basic example notebook](https://github.com/hpparvi/PyTransit/blob/ptmodel/notebooks/swift/swift_model_example_1.ipynb)
-   and the [custom limb darkening notebook](https://github.com/hpparvi/PyTransit/blob/ptmodel/notebooks/swift/swift_model_example_2.ipynb).
+ - See the [basic example notebook](https://github.com/hpparvi/PyTransit/blob/dev/notebooks/swift/swift_model_example_1.ipynb),
+   the [custom limb darkening notebook](https://github.com/hpparvi/PyTransit/dev/ptmodel/notebooks/swift/swift_model_example_2.ipynb),
+   and the [LDTk limb darkening model example notebook](https://github.com/hpparvi/PyTransit/blob/dev/notebooks/swift/swift_model_example_3.ipynb).
   
 ## What's new in PyTransit v2.0
 
