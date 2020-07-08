@@ -13,7 +13,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Optional, Union
+from typing import Optional, Union, Callable, Tuple
 
 import numpy as np
 import pyopencl as cl
@@ -23,26 +23,82 @@ import warnings
 from pyopencl import CompilerWarning
 
 from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, \
-    concatenate, empty, linspace, diff
+    concatenate, empty, linspace, diff, trapz
+from pytransit.models.ldtkldm import LDModel
+
 from pytransit.models.numba.swiftmodel import create_z_grid
 
 from .transitmodel import TransitModel
+from .numba.ldmodels import *
 
 warnings.filterwarnings('ignore', category=CompilerWarning)
 
-class PTModelCL(TransitModel):
-    """
-    """
+__all__ = ['SwiftModelCL']
 
-    def __init__(self, cl_ctx=None, cl_queue=None) -> None:
+class SwiftModelCL(TransitModel):
+    ldmodels = {'uniform': (ld_uniform, ldi_uniform),
+                'linear': (ld_linear, ldi_linear),
+                'quadratic': (ld_quadratic, ldi_quadratic),
+                'quadratic-tri': (ld_quadratic_tri, ldi_quadratic_tri),
+                'nonlinear': ld_nonlinear,
+                'general': ld_general,
+                'square_root': ld_square_root,
+                'logarithmic': ld_logarithmic,
+                'exponential': ld_exponential,
+                'power2': ld_power2}
+
+    def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
+                 interpolate: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
+                 nzin: int = 20, nzlimb: int = 20, zcut=0.7, ng: int = 50, parallel: bool = False,
+                 small_planet_limit: float = 0.05, cl_ctx=None, cl_queue=None) -> None:
         super().__init__()
 
         self.ctx = cl_ctx or cl.create_some_context()
         self.queue = cl_queue or cl.CommandQueue(self.ctx)
 
+        self.splimit = small_planet_limit
+
+        # Set up the limb darkening model
+        # --------------------------------
+        if isinstance(ldmodel, str):
+            try:
+                if isinstance(self.ldmodels[ldmodel], tuple):
+                    self.ldmodel = self.ldmodels[ldmodel][0]
+                    self.ldmmean = self.ldmodels[ldmodel][1]
+                else:
+                    self.ldmodel = self.ldmodels[ldmodel]
+                    self.ldmmean = None
+            except KeyError:
+                print(
+                    f"Unknown limb darkening model: {ldmodel}. Choose from [{', '.join(self.ldmodels.keys())}] or supply a callable function.")
+                raise
+        elif isinstance(ldmodel, LDModel):
+            self.ldmodel = ldmodel
+            self.ldmmean = ldmodel._integrate
+        elif callable(ldmodel):
+            self.ldmodel = ldmodel
+            self.ldmmean = None
+        elif isinstance(ldmodel, tuple) and callable(ldmodel[0]) and callable(ldmodel[1]):
+            self.ldmodel = ldmodel[0]
+            self.ldmmean = ldmodel[1]
+        else:
+            raise NotImplementedError
+
+        self._ldmu = linspace(1, 0, 200)
+        self._ldz = sqrt(1 - self._ldmu ** 2)
+
+        # Set the basic variable
+        # ----------------------
+        self.klims = klims
+        self.nk = nk
+        self.ng = ng
+        self.nzin = nzin
+        self.nzlimb = nzlimb
+        self.zcut = zcut
+
+        self.npv = None
         self.nptb  = 0
         self.npb   = 0
-        self.u     = np.array([])
         self.f     = None
         self.pv = array([])
 
@@ -53,35 +109,37 @@ class PTModelCL(TransitModel):
         self.exptimes = None
 
         self.ze = None
-        self.nz = None
-        self.ng = None
         self.gs = None
         self.dg = None
 
-        # Declare the buffers for the pt model arrays
+        # Declare the buffers for the swift model arrays
         self._b_ze = None
         self._b_gs = None
         self._b_weights = None
+        self._b_istar = None
         self._b_ldp = None
         self._b_ldw = None
+        self._b_ks = None
 
         # Declare the buffers for the ld coefficients, time, and flux arrays. These will
         # be initialised when the model is first evaluated, and reinitialised if the
         # array sizes change.
         #
-        self._b_u = None       # Limb darkening coefficient buffer
         self._b_time = None    # Time buffer
         self._b_f = None       # Flux buffer
         self._b_p = None       # Parameter vector buffer
 
         self._time_id = None   # Time array ID
 
-        self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'opencl','ptmodel.cl'),'r').read()).build()
+        self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'opencl','swiftmodel.cl'),'r').read()).build()
 
-    def init_pt_arrays(self, zcut: float = 0.7, ng: int = 50,nzin: int = 30, nzlimb: int = 30):
+        self.init_siwft_arrays(self.zcut, self.ng, self.nzin, self.nzlimb)
+
+    def init_siwft_arrays(self, zcut: float = 0.7, ng: int = 50, nzin: int = 30, nzlimb: int = 30):
         mf = cl.mem_flags
 
         self.ze, self.zm = create_z_grid(zcut, nzin, nzlimb)
+        self.mu = sqrt(1-self.zm**2).astype('float32')
         self.ze = self.ze.astype('float32')
         self.nz = int32(self.ze.size)
         self.ng = int32(ng)
@@ -92,15 +150,9 @@ class PTModelCL(TransitModel):
         if self._b_ze is not None:
             self._b_ze.release()
             self._b_gs.releare()
-            self._b_weights.release()
-            self._b_ldp.release()
-            self._b_ldw.release()
 
         self._b_ze = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ze)
         self._b_gs = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.gs)
-        self._b_weights = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.ng * self.nz * float32().nbytes)
-        self._b_ldp = cl.Buffer(self.ctx, mf.READ_ONLY, self.ng*float32().nbytes)
-        self._b_ldw = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.ng*float32().nbytes)
 
     def set_data(self, time, lcids=None, pbids=None, nsamples=None, exptimes=None):
         mf = cl.mem_flags
@@ -127,6 +179,7 @@ class PTModelCL(TransitModel):
         self._b_pbids = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pbids)
         self._b_nsamples = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.nsamples)
         self._b_etimes = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.exptimes)
+
 
     def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Optional[Union[float, ndarray]] = None,
@@ -185,40 +238,63 @@ class PTModelCL(TransitModel):
         pvp[:, nk + 4] = e
         pvp[:, nk + 5] = w
 
-        ldc = atleast_2d(ldc).astype(float32)
-        self.npv = uint32(pvp.shape[0])
-        self.spv = uint32(pvp.shape[1])
-
-        # Release and reinitialise the GPU buffers if the sizes of the time or
-        # limb darkening coefficient arrays change.
-        if (ldc.size != self.u.size) or (pvp.size != self.pv.size):
-            assert self.npb == ldc.shape[1] // 2
+        # Release and reinitialise the GPU buffers if the parameter vector size changes
+        if self.npv != pvp.shape[0]:
+            self.npv = uint32(pvp.shape[0])
+            self.spv = uint32(pvp.shape[1])
 
             if self._b_f is not None:
                 self._b_f.release()
-                self._b_u.release()
                 self._b_p.release()
 
+            if self._b_weights is not None:
+                self._b_weights.release()
+                self._b_ldp.release()
+                self._b_ldw.release()
+                self._b_istar.release()
+                self._b_ks.release()
+
             self.pv = zeros(pvp.shape, float32)
-            self.u = zeros((self.npv, 2 * self.npb), float32)
             self.f = zeros((self.npv, self.nptb), float32)
 
             mf = cl.mem_flags
             self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * self.npv)
-            self._b_u = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.u)
             self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
+            self._b_weights = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.npv * self.ng * self.nz * float32().nbytes)
+            self._b_ldp = cl.Buffer(self.ctx, mf.READ_ONLY, self.npv*self.npb*self.ng*float32().nbytes)
+            self._b_ldw = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.npv*self.npb*self.ng*float32().nbytes)
+            self._b_istar = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.npv*self.npb*float32().nbytes)
+            self._b_ks = cl.Buffer(self.ctx, mf.READ_ONLY, self.npv*float32().nbytes)
 
-        # Copy the limb darkening coefficient array to the GPU
-        cl.enqueue_copy(self.queue, self._b_u, ldc)
+        if isinstance(self.ldmodel, LDModel):
+            ldp, istar = self.ldmodel(self.mu, ldc)
+        else:
+            ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
+
+            if self.ldmmean is not None:
+                istar = evaluate_ldi(self.ldmmean, ldc)
+            else:
+                istar = zeros((self.npv, self.npb))
+                ldpi = evaluate_ld(self.ldmodel, self._ldmu, ldc)
+                for ipv in range(npv):
+                    for ipb in range(self.npb):
+                        istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv,ipb], self._ldz)
+
+        # Copy the limb darkening profiles and their integrals to the GPU
+        cl.enqueue_copy(self.queue, self._b_ldp, ldp.astype('float32'))
+        cl.enqueue_copy(self.queue, self._b_istar, istar.astype('float32'))
+        cl.enqueue_copy(self.queue, self._b_ks, pvp[:, :nk].mean(1).astype('float32'))
 
         # Copy the parameter vector to the GPU
         self.pv[:] = pvp
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
-        self.prg.qpower2_eccentric_pop(self.queue, (self.npv, self.nptb), None, self._b_time, self._b_lcids,
-                                       self._b_pbids,
-                                       self._b_p, self._b_u, self._b_nsamples, self._b_etimes, self.spv, self.nlc,
-                                       self.npb, self._b_f)
+        self.prg.calculate_weights(self.queue, (self.npv, self.ng, self.nz), None, self._b_ks, self._b_ze, self._b_gs, self._b_weights)
+        self.prg.calculate_ldw(self.queue, (self.npv, self.npb, self.ng), None, self.nz, self._b_ldp, self._b_weights, self._b_ldw)
+
+        self.prg.swift_pop(self.queue, (self.npv, self.nptb), None, self._b_time, self._b_istar, self._b_ldw, self.ng,
+                           self.dg, self._b_lcids, self._b_pbids, self._b_p, self._b_nsamples, self._b_etimes,
+                           self.spv, self.nlc, self.npb, self._b_f)
 
         if copy:
             cl.enqueue_copy(self.queue, self.f, self._b_f)
