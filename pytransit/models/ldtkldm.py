@@ -86,9 +86,9 @@ class LDModel:
 
 class LDTkLDModel(LDModel):
     def __init__(self, teff: Tuple[float, float], logg: Tuple[float, float], z: Tuple[float, float], pbs: Tuple,
-                 nsamples: int = 500, frozen: bool = False, cache: Optional[Union[str, Path]] = None):
+                 nsamples: int = 500, frozen: bool = False, cache: Optional[Union[str, Path]] = None, lowres: bool = True):
         super().__init__()
-        self._sc = LDPSetCreator(teff, logg, z, pbs, cache=cache)
+        self._sc = LDPSetCreator(teff, logg, z, pbs, cache=cache, lowres=lowres)
         self._ps = self._sc.create_profiles(nsamples)
         self._i = 0
 
@@ -99,6 +99,12 @@ class LDTkLDModel(LDModel):
         self.mu = self._ps._mu
         self.profiles = self._ps._ldps
         self.mean_profiles = self._ps.profile_averages
+
+    def thaw(self):
+        self.frozen = False
+
+    def freeze(self):
+        self.frozen = True
 
     def __call__(self, mu: ndarray, x: Optional[ndarray] = None) -> Tuple[ndarray, ndarray]:
         npv = 1 if x is None else x.shape[0]
@@ -113,3 +119,4 @@ class LDTkLDModel(LDModel):
 
     def _integrate(self, x: ndarray) -> float:
         raise NotImplementedError
+
