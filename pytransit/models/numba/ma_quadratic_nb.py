@@ -42,10 +42,10 @@
 from typing import Tuple
 
 from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, linspace, array, atleast_2d, floor, full, \
-    inf, isnan, cos, sign, sin, atleast_1d, ndarray, nan, copysign
+    inf, isnan, cos, sign, sin, atleast_1d, ndarray, nan, copysign, fmax
 from numba import njit, prange
 
-from ...orbits.orbits_py import z_ip_s, z_ip_v
+from ...orbits.orbits_py import z_ip_s, z_ip_v, z_newton_s, vaj_from_pabew, z_taylor_st
 
 HALF_PI = 0.5 * pi
 FOUR_PI = 4.0 * pi
@@ -150,7 +150,7 @@ def eval_quad_z_v(zs, k, u: ndarray):
         Normalized distances
     k: float
         Planet-star radius ratio
-    u: 1D array
+    u: 2D array
         Limb darkening coefficients
 
     Returns
@@ -579,118 +579,135 @@ def quadratic_interpolated_z_s(z, k, u, edt, ldt, let, kt, zt):
 # Direct models
 # -------------
 
+@njit(parallel=True, fastmath=True)
+def quadratic_model_direct_s(t, k, t0, p, a, b, e, w, ldc, lcids, pbids, nsamples, exptimes, npb):
+    ldc = atleast_1d(ldc)
+    k = atleast_1d(k)
+
+    if ldc.size != 2 * npb:
+        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+
+    vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0, p, a, b, e, w)
+    half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
+
+    npt = t.size
+    flux = zeros(npt)
+    for j in prange(npt):
+        epoch = floor((t[j] - t0 + 0.5 * p) / p)
+        tc = t[j] - (t0 + epoch * p)
+        if abs(tc) > half_window_width:
+            flux[j] = 1.0
+        else:
+            ilc = lcids[j]
+            ipb = pbids[ilc]
+
+            if k.size == 1:
+                _k = k[0]
+            else:
+                _k = k[ipb]
+
+            ld = ldc[2 * ipb:2 * (ipb + 1)]
+            if isnan(_k) or isnan(a) or isnan(ld[0]) or isnan(ld[1]):
+                flux[j] = inf
+            else:
+                for isample in range(1, nsamples[ilc] + 1):
+                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                    z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                    if z > 1.0 + _k:
+                        flux[j] += 1.
+                    else:
+                        flux[j] += eval_quad_z_s(z, _k, ld)
+                flux[j] /= nsamples[ilc]
+    return flux
+
+
+@njit(parallel=False, fastmath=True)
+def quadratic_model_direct_s_serial(t, k, t0, p, a, b, e, w, ldc, lcids, pbids, nsamples, exptimes, npb):
+    ldc = atleast_1d(ldc)
+    k = atleast_1d(k)
+
+    if ldc.size != 2 * npb:
+        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+
+    vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0, p, a, b, e, w)
+    half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
+
+    npt = t.size
+    flux = zeros(npt)
+    for j in range(npt):
+        epoch = floor((t[j] - t0 + 0.5 * p) / p)
+        tc = t[j] - (t0 + epoch * p)
+        if abs(tc) > half_window_width:
+            flux[j] = 1.0
+        else:
+            ilc = lcids[j]
+            ipb = pbids[ilc]
+
+            if k.size == 1:
+                _k = k[0]
+            else:
+                _k = k[ipb]
+
+            ld = ldc[2 * ipb:2 * (ipb + 1)]
+            if isnan(_k) or isnan(a) or isnan(ld[0]) or isnan(ld[1]):
+                flux[j] = inf
+            else:
+                for isample in range(1, nsamples[ilc] + 1):
+                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                    z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                    if z > 1.0 + _k:
+                        flux[j] += 1.
+                    else:
+                        flux[j] += eval_quad_z_s(z, _k, ld)
+                flux[j] /= nsamples[ilc]
+    return flux
+
+
 @njit(parallel=True, fastmath=False)
-def quadratic_model_direct_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
+def quadratic_model_direct_v(t, k, t0, p, a, b, e, w, ldc, lcids, pbids, nsamples, exptimes, npb):
     ldc = atleast_2d(ldc)
 
     if ldc.shape[1] != 2*npb:
         raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
-    t0, p, a, i = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i)
+    t0, p, a, i = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(b)
     npv = k.shape[0]
     npt = t.size
     flux = zeros((npv, npt))
-    for j in prange(npt):
-        for ipv in range(npv):
-            ilc = lcids[j]
-            ipb = pbids[ilc]
-
-            if k.shape[1] == 1:
-                _k = k[ipv, 0]
+    for ipv in range(npv):
+        vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0[ipv], p[ipv], a[ipv], b[ipv], e[ipv], w[ipv])
+        half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
+        for j in prange(npt):
+            epoch = floor((t[j] - t0 + 0.5 * p) / p)
+            tc = t[j] - (t0 + epoch * p)
+            if abs(tc) > half_window_width:
+                flux[j] = 1.0
             else:
-                _k = k[ipv, ipb]
+                ilc = lcids[j]
+                ipb = pbids[ilc]
 
-            ld = ldc[ipv, 2 * ipb:2 * (ipb + 1)]
-            if isnan(_k) or isnan(a[ipv]) or isnan(i[ipv]) or isnan(ld[0]) or isnan(ld[1]):
-                flux[ipv, j] = inf
-            else:
-                for isample in range(1, nsamples[ilc] + 1):
-                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                    z = z_ip_s(t[j] + time_offset, t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], es, ms, tae)
-                    if z > 1.0 + _k:
-                        flux[ipv, j] += 1.
-                    else:
-                        flux[ipv, j] += eval_quad_z_s(z, _k, ld)
-                flux[ipv, j] /= nsamples[ilc]
-    return flux
-
-
-@njit(parallel=True, fastmath=True)
-def quadratic_model_direct_s_simple(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
-    ldc = atleast_2d(ldc)
-    k = atleast_1d(k)
-    z = z_ip_v(t, t0, p, a, i, e, w, es, ms, tae)
-    flux, _, _, _ = eval_quad_z_v(z, k[0], ldc)
-    return flux
-
-@njit(parallel=True, fastmath=True)
-def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
-    ldc = atleast_1d(ldc)
-    k = atleast_1d(k)
-
-    if ldc.size != 2*npb:
-        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
-
-    npt = t.size
-    flux = zeros(npt)
-    for j in prange(npt):
-        ilc = lcids[j]
-        ipb = pbids[ilc]
-
-        if k.size == 1:
-            _k = k[0]
-        else:
-            _k = k[ipb]
-
-        ld = ldc[2 * ipb:2 * (ipb + 1)]
-        if isnan(_k) or isnan(a) or isnan(i) or isnan(ld[0]) or isnan(ld[1]):
-            flux[j] = inf
-        else:
-            for isample in range(1, nsamples[ilc] + 1):
-                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = z_ip_s(t[j] + time_offset, t0, p, a, i, e, w, es, ms, tae)
-                if z > 1.0 + _k:
-                    flux[j] += 1.
+                if k.shape[1] == 1:
+                    _k = k[ipv, 0]
                 else:
-                    flux[j] += eval_quad_z_s(z, _k, ld)
-            flux[j] /= nsamples[ilc]
-    return flux
+                    _k = k[ipv, ipb]
 
-@njit(parallel=False, fastmath=True)
-def quadratic_model_direct_s_serial(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
-    ldc = atleast_1d(ldc)
-    k = atleast_1d(k)
-
-    if ldc.size != 2*npb:
-        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
-
-    npt = t.size
-    flux = zeros(npt)
-    for j in range(npt):
-        ilc = lcids[j]
-        ipb = pbids[ilc]
-
-        if k.size == 1:
-            _k = k[0]
-        else:
-            _k = k[ipb]
-
-        ld = ldc[2 * ipb:2 * (ipb + 1)]
-        if isnan(_k) or isnan(a) or isnan(i) or isnan(ld[0]) or isnan(ld[1]):
-            flux[j] = inf
-        else:
-            for isample in range(1, nsamples[ilc] + 1):
-                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = z_ip_s(t[j] + time_offset, t0, p, a, i, e, w, es, ms, tae)
-                if z > 1.0 + _k:
-                    flux[j] += 1.
+                ld = ldc[ipv, 2 * ipb:2 * (ipb + 1)]
+                if isnan(_k) or isnan(a[ipv]) or isnan(ld[0]) or isnan(ld[1]):
+                    flux[ipv, j] = inf
                 else:
-                    flux[j] += eval_quad_z_s(z, _k, ld)
-            flux[j] /= nsamples[ilc]
+                    for isample in range(1, nsamples[ilc] + 1):
+                        time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                        z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                        if z > 1.0 + _k:
+                            flux[ipv, j] += 1.
+                        else:
+                            flux[ipv, j] += eval_quad_z_s(z, _k, ld)
+                    flux[ipv, j] /= nsamples[ilc]
     return flux
+
 
 @njit(parallel=True, fastmath=False)
-def quadratic_model_direct_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
+def quadratic_model_direct_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes, npb):
     pvp = atleast_2d(pvp)
     ldc = atleast_2d(ldc)
 
@@ -705,34 +722,40 @@ def quadratic_model_direct_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes, npb
     npt = t.size
     flux = zeros((npv, npt))
 
-    for j in prange(npt):
-        ilc = lcids[j]
-        ipb = pbids[ilc]
-
-        for ipv in range(npv):
-            t0, p, a, i, e, w = pvp[ipv,nk:]
-
-            if nk == 1:
-                k = pvp[ipv, 0]
+    for ipv in range(npv):
+        t0, p, a, b, e, w = pvp[ipv, nk:]
+        vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0, p, a, b, e, w)
+        half_window_width = fmax(0.125, (2.0 + pvp[ipv, 0]) / vx)
+        for j in prange(npt):
+            epoch = floor((t[j] - t0 + 0.5 * p) / p)
+            tc = t[j] - (t0 + epoch * p)
+            if abs(tc) > half_window_width:
+                flux[j] = 1.0
             else:
-                if ipb < nk:
-                    k = pvp[ipv, ipb]
-                else:
-                    k = nan
+                ilc = lcids[j]
+                ipb = pbids[ilc]
 
-            ld = ldc[ipv, 2 * ipb:2 * (ipb + 1)]
-            if isnan(k) or isnan(a) or isnan(i) or isnan(ld[0]) or isnan(ld[1]):
-                flux[ipv, j] = inf
-                continue
-
-            for isample in range(1,nsamples[ilc]+1):
-                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = z_ip_s(t[j]+time_offset, t0, p, a, i, e, w, es, ms, tae)
-                if z > 1.0+k:
-                    flux[ipv, j] += 1.
+                if nk == 1:
+                    k = pvp[ipv, 0]
                 else:
-                    flux[ipv, j] += eval_quad_z_s(z, k, ld)
-            flux[ipv, j] /= nsamples[ilc]
+                    if ipb < nk:
+                        k = pvp[ipv, ipb]
+                    else:
+                        k = nan
+
+                ld = ldc[ipv, 2 * ipb:2 * (ipb + 1)]
+                if isnan(k) or isnan(a) or isnan(ld[0]) or isnan(ld[1]):
+                    flux[ipv, j] = inf
+                    continue
+
+                for isample in range(1,nsamples[ilc]+1):
+                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                    z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                    if z > 1.0+k:
+                        flux[ipv, j] += 1.
+                    else:
+                        flux[ipv, j] += eval_quad_z_s(z, k, ld)
+                flux[ipv, j] /= nsamples[ilc]
 
     return flux
 
