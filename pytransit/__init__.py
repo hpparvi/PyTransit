@@ -50,14 +50,14 @@ from .models.ma_quadratic import QuadraticModel
 from .models.ma_uniform import UniformModel
 from .models.ma_chromosphere import ChromosphereModel
 from .models.general import GeneralModel
-from .models.swiftmodel import SwiftModel
+from .models.swiftmodel import SwiftModel, SwiftModel as SWIFTModel
 
 # OpenCL models
 # -------------
 from .models.qpower2_cl import QPower2ModelCL
 from .models.ma_quadratic_cl import QuadraticModelCL
 from .models.ma_uniform_cl import UniformModelCL
-from .models.swiftmodel_cl import SwiftModelCL
+from .models.swiftmodel_cl import SwiftModelCL, SwiftModelCL as SWIFTModelCL
 
 from .models.ldtkldm import LDTkLDModel, LDTkLD
 

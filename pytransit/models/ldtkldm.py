@@ -85,15 +85,15 @@ class LDModel:
 
 
 class LDTkLDModel(LDModel):
-    def __init__(self, teff: Tuple[float, float], logg: Tuple[float, float], z: Tuple[float, float], pbs: Tuple,
-                 nsamples: int = 500, frozen: bool = False, cache: Optional[Union[str, Path]] = None, lowres: bool = True):
+    def __init__(self, pbs: Tuple, teff: Tuple[float, float], logg: Tuple[float, float], z: Tuple[float, float],
+                 samples: int = 500, frozen: bool = False, cache: Optional[Union[str, Path]] = None, lowres: bool = True):
         super().__init__()
         self._sc = LDPSetCreator(teff, logg, z, pbs, cache=cache, lowres=lowres)
-        self._ps = self._sc.create_profiles(nsamples)
+        self._ps = self._sc.create_profiles(samples)
         self._i = 0
 
         self.npb = len(pbs)
-        self.nsamples = nsamples
+        self.nsamples = samples
         self.frozen = frozen
         self.z = self._ps._z
         self.mu = self._ps._mu
