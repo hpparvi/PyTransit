@@ -488,9 +488,152 @@ def z_ps5(t, pv):
     t0, p, a, i, e, w = pv
     return z_from_ta_v(ta_ps5(t, t0, p, e, w), a, i, e, w)
 
+
+# Z: x and y as Taylor series
+# ---------------------------
+
+@njit(fastmath=True)
+def vaj_from_pabew(t0, p, a, b, e, w):
+    """Planet velocity, acceleration, and jerk at mid-transit in [R_star / day]"""
+    i = i_from_baew(b, a, e, w)
+
+    dt = 1e-3
+    f0 = ta_newton_s(t0 - 2 * dt, t0, p, e, w)
+    f1 = ta_newton_s(t0 - dt, t0, p, e, w)
+    f2 = ta_newton_s(t0, t0, p, e, w)
+    f3 = ta_newton_s(t0 + dt, t0, p, e, w)
+    f4 = ta_newton_s(t0 + 2 * dt, t0, p, e, w)
+
+    ae = a * (1. - e ** 2)
+    ci = cos(i)
+
+    r0 = ae / (1. + e * cos(f0))
+    r1 = ae / (1. + e * cos(f1))
+    r2 = ae / (1. + e * cos(f2))
+    r3 = ae / (1. + e * cos(f3))
+    r4 = ae / (1. + e * cos(f4))
+
+    x0 = -r0 * cos(w + f0)
+    x1 = -r1 * cos(w + f1)
+    x2 = -r2 * cos(w + f2)
+    x3 = -r3 * cos(w + f3)
+    x4 = -r4 * cos(w + f4)
+
+    y0 = -r0 * sin(w + f0) * ci
+    y1 = -r1 * sin(w + f1) * ci
+    y2 = -r2 * sin(w + f2) * ci
+    y3 = -r3 * sin(w + f3) * ci
+    y4 = -r4 * sin(w + f4) * ci
+
+    vx = (x0 - 8 * x1 + 8 * x3 - x4) / (12 * dt)
+    vy = (y0 - 8 * y1 + 8 * y3 - y4) / (12 * dt)
+
+    ax = (-x0 + 16 * x1 - 30 * x2 + 16 * x3 - x4) / (12 * dt * dt)
+    ay = (-y0 + 16 * y1 - 30 * y2 + 16 * y3 - y4) / (12 * dt * dt)
+
+    jx = (-x0 + 2 * x1 - 2 * x3 + x4) / (2 * dt ** 3)
+    jy = (-y0 + 2 * y1 - 2 * y3 + y4) / (2 * dt ** 3)
+
+    return vx, vy, ax, ay, jx, jy
+
+
+@njit(fastmath=True)
+def z_taylor_s(tc, t0, p, b, vx, vy, ax, ay, jx, jy):
+    """Normalized planet-star center distance using Taylor series expansion.
+
+    Parameters
+    ----------
+    tc
+    t0
+    p
+    b
+    vx
+    vy
+    ax
+    ay
+    jx
+    jy
+
+    Returns
+    -------
+
+    """
+    epoch = floor((tc - t0 + 0.5 * p) / p)
+    t = tc - (t0 + epoch * p)
+    t2 = t * t
+    t3 = t2 * t
+    px = vx * t + 0.5 * ax * t2 + jx * t3 / 6.0
+    py = - b + vy * t + 0.5 * ay * t2 + jy * t3 / 6.0
+    return sqrt(px ** 2 + py ** 2)
+
+@njit(fastmath=True)
+def z_taylor_st(t, b, vx, vy, ax, ay, jx, jy):
+    """Normalized planet-star center distance using Taylor series expansion.
+
+    Parameters
+    ----------
+    tc
+    t0
+    p
+    b
+    vx
+    vy
+    ax
+    ay
+    jx
+    jy
+
+    Returns
+    -------
+
+    """
+    t2 = t * t
+    t3 = t2 * t
+    px = vx * t + 0.5 * ax * t2 + jx * t3 / 6.0
+    py = - b + vy * t + 0.5 * ay * t2 + jy * t3 / 6.0
+    return sqrt(px ** 2 + py ** 2)
+
+@njit(fastmath=True)
+def z_taylor_v(times, t0, p, b, vx, vy, ax, ay, jx, jy):
+    z = zeros_like(times)
+    npt = times.size
+    for i in range(npt):
+        epoch = floor((times[i] - t0 + 0.5 * p) / p)
+        t = times[i] - (t0 + epoch * p)
+        t2 = t * t
+        t3 = t2 * t
+        px = vx * t + 0.5 * ax * t2 + jx * t3 / 6.0
+        py = - b + vy * t + 0.5 * ay * t2 + jy * t3 / 6.0
+        z[i] = sqrt(px ** 2 + py ** 2)
+    return z
+
+
+@njit(fastmath=True)
+def xy_newton_v(times, t0, p, a, b, e, w):
+    """Planet velocity and acceleration at mid-transit in [R_star / day]"""
+    i = i_from_baew(b, a, e, w)
+    f = ta_newton_v(times, t0, p, e, w)
+    r = a * (1. - e ** 2) / (1. + e * cos(f))
+    x = -r * cos(w + f)
+    y = -r * sin(w + f) * cos(i)
+    return x, y
+
+
+@njit(fastmath=True)
+def xy_taylor_v(times, t0, p, b, vx, vy, ax, ay, jx, jy):
+    z = zeros_like(times)
+    npt = times.size
+    px = zeros(npt)
+    py = zeros(npt)
+    for i in range(npt):
+        epoch = floor((times[i] - t0 + 0.5 * p) / p)
+        t = times[i] - (t0 + epoch * p)
+        px[i] = vx * t + 0.5 * ax * t ** 2 + jx * t ** 3 / 6.
+        py[i] = -b + vy * t + 0.5 * ay * t ** 2 + jy * t ** 3 / 6.
+    return px, py
+
 # Utility functions
 # -----------------
-
 
 @njit(cache=cache)
 def impact_parameter(a, i):
