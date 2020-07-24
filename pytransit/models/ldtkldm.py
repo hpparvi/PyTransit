@@ -120,3 +120,5 @@ class LDTkLDModel(LDModel):
     def _integrate(self, x: ndarray) -> float:
         raise NotImplementedError
 
+class LDTkLD(LDTkLDModel):
+    ...

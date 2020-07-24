@@ -59,7 +59,7 @@ from .models.ma_quadratic_cl import QuadraticModelCL
 from .models.ma_uniform_cl import UniformModelCL
 from .models.swiftmodel_cl import SwiftModelCL
 
-from .models.ldtkldm import LDTkLDModel
+from .models.ldtkldm import LDTkLDModel, LDTkLD
 
 # Generic
 # -------
