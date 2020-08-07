@@ -28,11 +28,9 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Union, Optional, List
 
-from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray
+from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, inf
 
-from .numba.ma_quadratic_nb import quadratic_model_interpolated_pv, calculate_interpolation_tables, \
-    quadratic_model_interpolated_v, quadratic_model_interpolated_s, quadratic_model_direct_v, quadratic_model_direct_s, \
-    quadratic_model_direct_pv
+from .numba.ma_quadratic_nb import quadratic_model_pv, calculate_interpolation_tables, quadratic_model_v, quadratic_model_s
 from .transitmodel import TransitModel
 
 __all__ = ['QuadraticModel']
@@ -41,7 +39,7 @@ class QuadraticModel(TransitModel):
     """Transit model with quadratic limb darkening (Mandel & Agol, ApJ 580, L171-L175 2002).
     """
 
-    def __init__(self, interpolate: bool = True, klims: tuple = (0.005, 0.5), nk: int = 256, nz: int = 256):
+    def __init__(self, interpolate: bool = True, klims: tuple = (0.01, 0.5), nk: int = 256, nz: int = 256):
         """Transit model with quadratic limb darkening (Mandel & Agol, ApJ 580, L171-L175 2002).
 
         Parameters
@@ -60,17 +58,14 @@ class QuadraticModel(TransitModel):
 
         # Interpolation tables for the model components
         # ---------------------------------------------
-        if interpolate:
-            self.ed, self.le, self.ld, self.kt, self.zt = calculate_interpolation_tables(klims[0], klims[1], nk, nz)
-            self.klims = klims
-            self.nk = nk
-            self.nz = nz
-        else:
-            self.ed, self.le, self.ld, self.kt, self.zt = None, None, None, None, None
-            self.klims, self.nk, self.nz = None, None, None
+        self.ed, self.le, self.ld, self.kt, self.zt = calculate_interpolation_tables(klims[0], klims[1], nk, nz)
+        self.klims = klims
+        self.nk = nk
+        self.nz = nz
+
 
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List], t0: Union[float, ndarray], p: Union[float, ndarray],
-                 a: Union[float, ndarray], i: Union[float, ndarray], e: Optional[Union[float, ndarray]] = None,
+                 a: Union[float, ndarray], b: Union[float, ndarray], e: Optional[Union[float, ndarray]] = None,
                  w: Optional[Union[float, ndarray]] = None, copy: bool = True) -> ndarray:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
@@ -86,8 +81,8 @@ class QuadraticModel(TransitModel):
             Orbital period(s) as a float or a 1D vector.
         a
             Orbital semi-major axis (axes) divided by the stellar radius as a float or a 1D vector.
-        i
-            Orbital inclination(s) as a float or a 1D vector.
+        b
+            Impact parameter(s) as a float or a 1D vector.
         e : optional
             Orbital eccentricity as a float or a 1D vector.
         w : optional
@@ -110,13 +105,13 @@ class QuadraticModel(TransitModel):
         if isinstance(t0, float):
             e = 0. if e is None else e
             w = 0. if w is None else w
-            return self.evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
+            return self.evaluate_ps(k, ldc, t0, p, a, b, e, w, copy)
 
         # Parameter population branch
         # ---------------------------
         else:
             ldc = atleast_2d(ldc)
-            k, t0, p, a, i = asarray(k), asarray(t0), asarray(p), asarray(a), asarray(i)
+            k, t0, p, a, b = asarray(k), asarray(t0), asarray(p), asarray(a), asarray(b)
 
             if k.ndim == 1:
                 k = k.reshape((k.size,1))
@@ -125,18 +120,14 @@ class QuadraticModel(TransitModel):
             e = zeros(npv) if e is None else e
             w = zeros(npv) if w is None else w
 
-            if self.interpolate:
-                flux = quadratic_model_interpolated_v(self.time, k, t0, p, a, i, e, w, ldc,
-                                                      self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb,
-                                                      self._es, self._ms, self._tae, self.ed, self.ld, self.le,
-                                                      self.kt, self.zt)
-            else:
-                flux = quadratic_model_direct_v(self.time, k, t0, p, a, i, e, w, ldc,
-                                                self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb,
-                                                self._es, self._ms, self._tae)
+            flux = quadratic_model_v(self.time, k, t0, p, a, b, e, w, ldc,
+                                     self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb,
+                                     self.ed, self.ld, self.le,
+                                     self.kt, self.zt, self.interpolate)
+
         return squeeze(flux)
 
-    def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
+    def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, b: float,
                     e: float = 0.0, w: float = 0.0, copy: bool = True) -> ndarray:
         """Evaluate the transit model for a set of scalar parameters.
 
@@ -152,8 +143,8 @@ class QuadraticModel(TransitModel):
             Orbital period as a float.
         a : float
             Orbital semi-major axis divided by the stellar radius as a float.
-        i : float
-            Orbital inclination(s) as a float.
+        b : float
+            Impact parameter as a float.
         e : float, optional
             Orbital eccentricity as a float.
         w : float, optional
@@ -179,15 +170,9 @@ class QuadraticModel(TransitModel):
         if ldc.size != 2 * self.npb:
             raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
-        if self.interpolate:
-            flux = quadratic_model_interpolated_s(self.time, k, t0, p, a, i, e, w, ldc,
-                                                  self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb,
-                                                  self._es, self._ms, self._tae, self.ed, self.ld, self.le,
-                                                  self.kt, self.zt)
-        else:
-            flux = quadratic_model_direct_s(self.time, k, t0, p, a, i, e, w, ldc,
-                                            self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb,
-                                            self._es, self._ms, self._tae)
+        flux = quadratic_model_s(self.time, k, t0, p, a, b, e, w, ldc,
+                                 self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb,
+                                 self.ed, self.ld, self.le, self.kt, self.zt, self.interpolate)
         return squeeze(flux)
 
     def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
@@ -197,8 +182,8 @@ class QuadraticModel(TransitModel):
         ----------
         pvp: ndarray
             Parameter array with a shape `(npv, npar)` where `npv` is the number of parameter vectors, and each row
-            contains a set of parameters `[k, t0, p, a, i, e, w]`. The radius ratios can also be given per passband,
-            in which case the row should be structured as `[k_0, k_1, k_2, ..., k_npb, t0, p, a, i, e, w]`.
+            contains a set of parameters `[k, t0, p, a, b, e, w]`. The radius ratios can also be given per passband,
+            in which case the row should be structured as `[k_0, k_1, k_2, ..., k_npb, t0, p, a, b, e, w]`.
         ldc: ndarray
             Limb darkening coefficient array with shape `(npv, 2*npb)`, where `npv` is the number of parameter vectors
             and `npb` is the number of passbands.
@@ -220,13 +205,8 @@ class QuadraticModel(TransitModel):
         if self.time is None:
             raise ValueError("Need to set the data before calling the transit model.")
 
-        if self.interpolate:
-            flux = quadratic_model_interpolated_pv(self.time, pvp, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes,
-                                                   self.npb, self._es, self._ms, self._tae, self.ed, self.ld, self.le,
-                                                   self.kt, self.zt)
-        else:
-            flux = quadratic_model_direct_pv(self.time, pvp, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes,
-                                                   self.npb, self._es, self._ms, self._tae)
+        flux = quadratic_model_pv(self.time, pvp, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes,
+                                  self.npb, self.ed, self.ld, self.le, self.kt, self.zt, self.interpolate)
         return squeeze(flux)
 
     def to_opencl(self):
