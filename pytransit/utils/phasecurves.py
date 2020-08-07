@@ -19,7 +19,7 @@ from typing import Union
 import pandas as pd
 import astropy.units as u
 from numba import njit
-from numpy import ndarray, pi, atleast_1d, zeros, exp, diff, log, sqrt, nan, vstack, tile, linspace, cos, sin
+from numpy import ndarray, pi, atleast_1d, zeros, exp, diff, log, sqrt, nan, vstack, tile, linspace, cos, sin, sum
 from scipy.constants import c,h,k,G
 from scipy.interpolate import RegularGridInterpolator
 from scipy.optimize import brentq

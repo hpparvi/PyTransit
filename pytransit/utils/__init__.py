@@ -16,3 +16,4 @@
 
 from .mdwarfs import md_rs_from_rho
 from .rv import mp_from_kiepms, surface_gravity
+from .phasecurves import doppler_boosting_alpha, doppler_boosting_amplitude, ellipsoidal_variation_amplitude
