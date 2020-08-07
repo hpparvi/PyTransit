@@ -15,9 +15,9 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from numba import njit, prange
 from numpy import arccos, sqrt, linspace, zeros, arange, dot, floor, pi, ndarray, atleast_1d, atleast_2d, isnan, inf, \
-    atleast_3d, nan
+    atleast_3d, nan, fmax
 
-from pytransit.orbits.orbits_py import z_ip_s, z_ip_v
+from pytransit.orbits.orbits_py import z_ip_s, z_ip_v, vaj_from_pabew, z_taylor_st, z_taylor_v
 
 
 @njit
@@ -378,14 +378,16 @@ def swmodel_z_interpolated_parallel(z, k, istar, ldp, weights, dk, k0, dg):
 
 
 @njit(parallel=False, fastmath=True)
-def swmodel_direct_s_simple(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae, parallel):
+def swmodel_direct_s_simple(t, k, t0, p, a, b, e, w, ldp, istar, ze, zm, ng, splimit, lcids, pbids, nsamples, exptimes, parallel):
     """Simple PT transit model for a homogeneous time series without supersampling and relatively small number of points.
 
     This version avoids the overheads from threading and supersampling. The fastest option if the number of datapoints
     is smaller than some thousands.
     """
     k = atleast_1d(k)
-    z = z_ip_v(t, t0, p, a, i, e, w, es, ms, tae)
+
+    vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0, p, a, b, e, w)
+    z = z_taylor_v(t, t0, p, b, vx, vy, ax, ay, jx, jy)
 
     # Swift model branch
     # ------------------
@@ -403,60 +405,77 @@ def swmodel_direct_s_simple(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, spl
     flux = (istar[0,0] - iplanet * aplanet) / istar[0,0]
     return flux
 
+
 @njit(parallel=False, fastmath=True)
-def _eval_s_serial(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae):
+def _eval_s_serial(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes):
     npt = t.size
     flux = zeros(npt)
 
-    for j in range(npt):
-        ilc = lcids[j]
-        ipb = pbids[ilc]
-        _k = k[0] if k.size == 1 else k[ipb]
+    vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0, p, a, b, e, w)
+    half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
-        for isample in range(1, nsamples[ilc] + 1):
-            time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-            z = z_ip_s(t[j] + time_offset, t0, p, a, i, e, w, es, ms, tae)
-            if z > 1.0 + _k:
-                flux[j] += 1.
-            else:
-                if _k > splimit:
-                    iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
+    for j in range(npt):
+        epoch = floor((t[j] - t0 + 0.5 * p) / p)
+        tc = t[j] - (t0 + epoch * p)
+        if abs(tc) > half_window_width:
+            flux[j] = 1.0
+        else:
+            ilc = lcids[j]
+            ipb = pbids[ilc]
+            _k = k[0] if k.size == 1 else k[ipb]
+
+            for isample in range(1, nsamples[ilc] + 1):
+                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                if z > 1.0 + _k:
+                    flux[j] += 1.
                 else:
-                    iplanet = interpolate_limb_darkening_s(z, zm, ldp[0,ipb])
-                aplanet = circle_circle_intersection_area(1.0, _k, z)
-                flux[j] += (istar[0,ipb] - iplanet * aplanet) / istar[0,ipb]
-        flux[j] /= nsamples[ilc]
+                    if _k > splimit:
+                        iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
+                    else:
+                        iplanet = interpolate_limb_darkening_s(z, zm, ldp[0,ipb])
+                    aplanet = circle_circle_intersection_area(1.0, _k, z)
+                    flux[j] += (istar[0,ipb] - iplanet * aplanet) / istar[0,ipb]
+            flux[j] /= nsamples[ilc]
     return flux
 
 
 @njit(parallel=True, fastmath=True)
-def _eval_s_parallel(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae):
+def _eval_s_parallel(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes):
     npt = t.size
     flux = zeros(npt)
 
-    for j in prange(npt):
-        ilc = lcids[j]
-        ipb = pbids[ilc]
-        _k = k[0] if k.size == 1 else k[ipb]
+    vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0, p, a, b, e, w)
+    half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
-        for isample in range(1, nsamples[ilc] + 1):
-            time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-            z = z_ip_s(t[j] + time_offset, t0, p, a, i, e, w, es, ms, tae)
-            if z > 1.0 + _k:
-                flux[j] += 1.
-            else:
-                if _k > splimit:
-                    iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
+    for j in prange(npt):
+        epoch = floor((t[j] - t0 + 0.5 * p) / p)
+        tc = t[j] - (t0 + epoch * p)
+        if abs(tc) > half_window_width:
+            flux[j] = 1.0
+        else:
+            ilc = lcids[j]
+            ipb = pbids[ilc]
+            _k = k[0] if k.size == 1 else k[ipb]
+
+            for isample in range(1, nsamples[ilc] + 1):
+                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                if z > 1.0 + _k:
+                    flux[j] += 1.
                 else:
-                    iplanet = interpolate_limb_darkening_s(z, zm, ldp[0,ipb])
-                aplanet = circle_circle_intersection_area(1.0, _k, z)
-                flux[j] += (istar[0,ipb] - iplanet * aplanet) / istar[0,ipb]
-        flux[j] /= nsamples[ilc]
+                    if _k > splimit:
+                        iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
+                    else:
+                        iplanet = interpolate_limb_darkening_s(z, zm, ldp[0,ipb])
+                    aplanet = circle_circle_intersection_area(1.0, _k, z)
+                    flux[j] += (istar[0,ipb] - iplanet * aplanet) / istar[0,ipb]
+            flux[j] /= nsamples[ilc]
     return flux
 
 
 @njit
-def swmodel_direct_s(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae, parallel):
+def swmodel_direct_s(t, k, t0, p, a, b, e, w, ldp, istar, ze, zm, ng, splimit, lcids, pbids, nsamples, exptimes, parallel):
     k = atleast_1d(k)
     npb = ldp.shape[1]
     gs, dg, weights = calculate_weights_2d(k[0], ze, ng)
@@ -466,14 +485,14 @@ def swmodel_direct_s(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, splimit, l
         ldw[ipb] = dot(weights, ldp[0, ipb])
 
     if parallel:
-        return _eval_s_parallel(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae)
+        return _eval_s_parallel(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes)
     else:
-        return _eval_s_serial(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae)
+        return _eval_s_serial(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes)
 
 
 @njit(fastmath=True)
-def swmodel_interpolated_s(t, k, t0, p, a, i, e, w, ldp, istar, weights, zm, dk, k0, dg, splimit,
-                           lcids, pbids, nsamples, exptimes, es, ms, tae, parallel):
+def swmodel_interpolated_s(t, k, t0, p, a, b, e, w, ldp, istar, weights, zm, dk, k0, dg, splimit,
+                           lcids, pbids, nsamples, exptimes, parallel):
     k = atleast_1d(k)
     npb = ldp.shape[1]
     nk = (k[0] - k0) / dk
@@ -485,14 +504,13 @@ def swmodel_interpolated_s(t, k, t0, p, a, i, e, w, ldp, istar, weights, zm, dk,
         ldw[ipb] = (1.0 - ak) * dot(weights[ik], ldp[0,ipb]) + ak * dot(weights[ik + 1], ldp[0,ipb])
 
     if parallel:
-        return _eval_s_parallel(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae)
+        return _eval_s_parallel(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes)
     else:
-        return _eval_s_serial(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes, es, ms, tae)
+        return _eval_s_serial(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes)
 
 
 @njit(parallel=True, fastmath=False)
-def swmodel_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng,
-                     lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
+def swmodel_direct_v(t, k, t0, p, a, b, e, w, ldp, istar, ze, ng, lcids, pbids, nsamples, exptimes, npb):
     npv = k.shape[0]
     npt = t.size
     ldp = atleast_3d(ldp)
@@ -500,10 +518,13 @@ def swmodel_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng,
     if ldp.shape[0] != npv or ldp.shape[1] != npb:
         raise ValueError(f"The limb darkening profile array should have a shape [npv,npb,ng]")
 
-    t0, p, a, i = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i)
+    t0, p, a, b = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(b)
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
+        vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0[ipv], p[ipv], a[ipv], b[ipv], e[ipv], w[ipv])
+        half_window_width = fmax(0.125, (2 + k[0]) / vx)
+
         gs, dg, weights = calculate_weights_2d(k[ipv,0], ze, ng)
 
         ldw = zeros((npb, ng))
@@ -511,32 +532,36 @@ def swmodel_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng,
             ldw[ipb] = dot(weights, ldp[ipv, ipb])
 
         for j in range(npt):
-            ilc = lcids[j]
-            ipb = pbids[ilc]
-
-            if k.shape[1] == 1:
-                _k = k[ipv, 0]
+            epoch = floor((t[j] - t0 + 0.5 * p) / p)
+            tc = t[j] - (t0 + epoch * p)
+            if abs(tc) > half_window_width:
+                flux[ipv, j] = 1.0
             else:
-                _k = k[ipv, ipb]
+                ilc = lcids[j]
+                ipb = pbids[ilc]
 
-            if isnan(_k) or isnan(a[ipv]) or isnan(i[ipv]):
-                flux[ipv, j] = inf
-            else:
-                for isample in range(1, nsamples[ilc] + 1):
-                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                    z = z_ip_s(t[j] + time_offset, t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], es, ms, tae)
-                    if z > 1.0 + _k:
-                        flux[ipv, j] += 1.
-                    else:
-                        iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
-                        aplanet = circle_circle_intersection_area(1.0, _k, z)
-                        flux[ipv, j] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
-                flux[ipv, j] /= nsamples[ilc]
+                if k.shape[1] == 1:
+                    _k = k[ipv, 0]
+                else:
+                    _k = k[ipv, ipb]
+
+                if isnan(_k) or isnan(a[ipv]):
+                    flux[ipv, j] = inf
+                else:
+                    for isample in range(1, nsamples[ilc] + 1):
+                        time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                        z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                        if z > 1.0 + _k:
+                            flux[ipv, j] += 1.
+                        else:
+                            iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
+                            aplanet = circle_circle_intersection_area(1.0, _k, z)
+                            flux[ipv, j] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
+                    flux[ipv, j] /= nsamples[ilc]
     return flux
 
 @njit(parallel=True, fastmath=False)
-def swmodel_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg,
-                           lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
+def swmodel_interpolated_v(t, k, t0, p, a, b, e, w, ldp, istar, weights, dk, k0, dg, lcids, pbids, nsamples, exptimes, npb):
     npv = k.shape[0]
     npt = t.size
     ldp = atleast_3d(ldp)
@@ -545,10 +570,13 @@ def swmodel_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0,
     if ldp.shape[0] != npv or ldp.shape[1] != npb:
         raise ValueError(f"The limb darkening profile array should have a shape [npv,npb,ng]")
 
-    t0, p, a, i = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i)
+    t0, p, a, b = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(b)
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
+        vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0[ipv], p[ipv], a[ipv], b[ipv], e[ipv], w[ipv])
+        half_window_width = fmax(0.125, (2 + k[0]) / vx)
+
         ldw = zeros((npb, ng))
 
         nk = (k[ipv, 0] - k0) / dk
@@ -559,25 +587,30 @@ def swmodel_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0,
             ldw[ipb] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb]) + ak * dot(weights[ik + 1], ldp[ipv, ipb])
 
         for j in range(npt):
-            ilc = lcids[j]
-            ipb = pbids[ilc]
-
-            if k.shape[1] == 1:
-                _k = k[ipv, 0]
+            epoch = floor((t[j] - t0 + 0.5 * p) / p)
+            tc = t[j] - (t0 + epoch * p)
+            if abs(tc) > half_window_width:
+                flux[ipv, j] = 1.0
             else:
-                _k = k[ipv, ipb]
+                ilc = lcids[j]
+                ipb = pbids[ilc]
 
-            if isnan(_k) or isnan(a[ipv]) or isnan(i[ipv]):
-                flux[ipv, j] = inf
-            else:
-                for isample in range(1, nsamples[ilc] + 1):
-                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                    z = z_ip_s(t[j] + time_offset, t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], es, ms, tae)
-                    if z > 1.0 + _k:
-                        flux[ipv, j] += 1.
-                    else:
-                        iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
-                        aplanet = circle_circle_intersection_area(1.0, _k, z)
-                        flux[ipv, j] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
-                flux[ipv, j] /= nsamples[ilc]
+                if k.shape[1] == 1:
+                    _k = k[ipv, 0]
+                else:
+                    _k = k[ipv, ipb]
+
+                if isnan(_k) or isnan(a[ipv]):
+                    flux[ipv, j] = inf
+                else:
+                    for isample in range(1, nsamples[ilc] + 1):
+                        time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                        z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                        if z > 1.0 + _k:
+                            flux[ipv, j] += 1.
+                        else:
+                            iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
+                            aplanet = circle_circle_intersection_area(1.0, _k, z)
+                            flux[ipv, j] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
+                    flux[ipv, j] /= nsamples[ilc]
     return flux
