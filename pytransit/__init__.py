@@ -54,10 +54,13 @@ from .models.swiftmodel import SwiftModel, SwiftModel as SWIFTModel
 
 # OpenCL models
 # -------------
-from .models.qpower2_cl import QPower2ModelCL
-from .models.ma_quadratic_cl import QuadraticModelCL
-from .models.ma_uniform_cl import UniformModelCL
-from .models.swiftmodel_cl import SwiftModelCL, SwiftModelCL as SWIFTModelCL
+try:
+    from .models.qpower2_cl import QPower2ModelCL
+    from .models.ma_quadratic_cl import QuadraticModelCL
+    from .models.ma_uniform_cl import UniformModelCL
+    from .models.swiftmodel_cl import SwiftModelCL, SwiftModelCL as SWIFTModelCL
+except:
+    pass
 
 from .models.ldtkldm import LDTkLDModel, LDTkLD
 
