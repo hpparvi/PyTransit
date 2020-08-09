@@ -1,5 +1,5 @@
 #  PyTransit: fast and easy exoplanet transit modelling in Python.
-#  Copyright (C) 2010-2019  Hannu Parviainen
+#  Copyright (C) 2010-2020  Hannu Parviainen
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -37,12 +37,15 @@ Author
   Hannu Parviainen  <hannu@iac.es>
 
 Date
-  24.04.2019
+  9.08.2020
 
 """
 
 from .version import __version__
 
+# Generic
+# -------
+from .models.transitmodel import TransitModel
 
 # Numba models
 # ------------
@@ -58,10 +61,11 @@ from .models.swiftmodel import SwiftModel, SwiftModel as SWIFTModel
 # -------------
 class DummyModelCL:
     def __init__(self, *args, **kwargs):
-        raise ImportError('Cannot use OpenCL models because pyopencl is not installed. Please install pyopencl.')
+        raise ImportError('Cannot use the OpenCL models because pyopencl is not installed. Please install pyopencl.')
 
 
 try:
+    import pyopencl
     from .models.qpower2_cl import QPower2ModelCL
     from .models.ma_quadratic_cl import QuadraticModelCL
     from .models.ma_uniform_cl import UniformModelCL
@@ -77,23 +81,25 @@ except ModuleNotFoundError:
 # ---------------------------------------
 class DummyLDTkLDModel:
     def __init__(self, *args, **kwargs):
-        raise ImportError('Cannot use LDTk limb darkening model because ldtk is not installed. Please install ldtk.')
+        raise ImportError('Cannot use the LDTk limb darkening model because ldtk is not installed. Please install ldtk.')
 
 
 try:
+    import ldtk
     from .models.ldtkldm import LDTkLDModel, LDTkLD
 except ModuleNotFoundError:
     LDTkLD = LDTkLDModel = DummyLDTkLDModel
 
 
-# Generic
-# -------
-from .models.transitmodel import TransitModel
-
+# Log posterior functions
+# -----------------------
 from .lpf.lpf import BaseLPF
 from .lpf.cntlpf import PhysContLPF
 from .lpf.baselines.legendrebaseline import LegendreBaseline
 from .lpf.baselines.linearbaseline import LinearModelBaseline
 
+
+# Utilities
+# ---------
 from .param.parameter import UniformPrior, NormalPrior
 from .utils import md_rs_from_rho
