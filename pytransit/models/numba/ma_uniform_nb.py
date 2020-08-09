@@ -149,7 +149,7 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, e
     return flux
 
 
-@njit(parallel=True, fastmath=True)
+@njit(parallel=False, fastmath=True)
 def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, es, ms, tae, zsign=1.0):
     k = atleast_1d(k)
     npt = t.size
@@ -159,7 +159,7 @@ def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, e
         flux[:] = nan
         return flux
 
-    for j in prange(npt):
+    for j in range(npt):
         ilc = lcids[j]
         ipb = pbids[ilc]
         _k = k[0] if k.size == 1 else k[ipb]

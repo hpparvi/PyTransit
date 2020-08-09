@@ -623,7 +623,7 @@ def quadratic_model_direct_s_simple(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, 
     flux, _, _, _ = eval_quad_z_v(z, k[0], ldc)
     return flux
 
-@njit(parallel=True, fastmath=True)
+@njit(parallel=False, fastmath=True)
 def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, es, ms, tae):
     ldc = atleast_1d(ldc)
     k = atleast_1d(k)
@@ -633,7 +633,7 @@ def quadratic_model_direct_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsample
 
     npt = t.size
     flux = zeros(npt)
-    for j in prange(npt):
+    for j in range(npt):
         ilc = lcids[j]
         ipb = pbids[ilc]
 
@@ -776,7 +776,7 @@ def quadratic_model_interpolated_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, n
     return flux
 
 
-@njit(parallel=True, fastmath=True)
+@njit(parallel=False, fastmath=True)
 def quadratic_model_interpolated_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb,
                                    es, ms, tae, edt, ldt, let, kt, zt):
     ldc = atleast_1d(ldc)
@@ -787,7 +787,7 @@ def quadratic_model_interpolated_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, n
 
     npt = t.size
     flux = zeros(npt)
-    for j in prange(npt):
+    for j in range(npt):
         ilc = lcids[j]
         ipb = pbids[ilc]
 
