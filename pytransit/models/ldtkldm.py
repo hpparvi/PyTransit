@@ -19,8 +19,10 @@ from pathlib import Path
 
 from ldtk import LDPSetCreator
 from numba import njit
-from numpy import zeros, interp, pi, ndarray, linspace, trapz, sqrt
+from numpy import zeros, interp, pi, ndarray
 from numpy.random import randint
+
+from .ldmodel import LDModel
 
 
 @njit
@@ -61,27 +63,6 @@ def eval_ldm_frozen(emu, mu, z, mldps, npv):
         ldi[i] = ldi[0]
 
     return ldp, ldi
-
-
-class LDModel:
-    def __init__(self, niz: int = 200):
-        self._int_z = linspace(0, 1, niz)
-        self._int_mu = sqrt(1 - self._int_z ** 2)
-
-    def __call__(self, mu: ndarray, x: ndarray) -> Tuple[ndarray, ndarray]:
-        return self._evaluate(mu, x), self._integrate(x)
-
-    def _evaluate(self, mu: ndarray, x:ndarray) -> ndarray:
-        raise NotImplementedError
-
-    def _integrate(self, x: ndarray) -> ndarray:
-        npv = x.shape[0]
-        npb = x.shape[1]
-        ldi = zeros((npv, npb))
-        for ipv in range(npv):
-            for ipb in range(npb):
-                ldi[ipv,ipb] = 2. * pi * trapz(self._int_z * self(self._int_mu, x), self._int_z)
-        return ldi
 
 
 class LDTkLDModel(LDModel):

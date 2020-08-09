@@ -65,7 +65,6 @@ class DummyModelCL:
 
 
 try:
-    import pyopencl
     from .models.qpower2_cl import QPower2ModelCL
     from .models.ma_quadratic_cl import QuadraticModelCL
     from .models.ma_uniform_cl import UniformModelCL
@@ -85,7 +84,6 @@ class DummyLDTkLDModel:
 
 
 try:
-    import ldtk
     from .models.ldtkldm import LDTkLDModel, LDTkLD
 except ModuleNotFoundError:
     LDTkLD = LDTkLDModel = DummyLDTkLDModel

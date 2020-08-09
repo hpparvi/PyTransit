@@ -33,7 +33,7 @@ from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarra
     tile
 from scipy.integrate import trapz
 
-from .ldtkldm import LDModel
+from .ldmodel import LDModel
 from .numba.ldmodels import *
 from .numba.swiftmodel import swmodel_direct_s, swmodel_interpolated_s, \
     swmodel_direct_s_simple, swmodel_direct_v, \

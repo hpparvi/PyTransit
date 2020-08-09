@@ -24,7 +24,7 @@ from pyopencl import CompilerWarning
 
 from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, \
     concatenate, empty, linspace, diff, trapz
-from pytransit.models.ldtkldm import LDModel
+from .ldmodel import LDModel
 
 from pytransit.models.numba.swiftmodel import create_z_grid
 
