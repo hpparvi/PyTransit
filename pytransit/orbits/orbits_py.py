@@ -493,52 +493,89 @@ def z_ps5(t, pv):
 # ---------------------------
 
 @njit(fastmath=True)
-def vaj_from_pabew(t0, p, a, b, e, w):
-    """Planet velocity, acceleration, and jerk at mid-transit in [R_star / day]"""
-    i = i_from_baew(b, a, e, w)
+def vajs_from_paiew(t0, p, a, i, e, w):
+    """Planet velocity, acceleration, jerk, and snap at mid-transit in [R_star / day]"""
 
-    dt = 1e-3
-    f0 = ta_newton_s(t0 - 2 * dt, t0, p, e, w)
-    f1 = ta_newton_s(t0 - dt, t0, p, e, w)
-    f2 = ta_newton_s(t0, t0, p, e, w)
-    f3 = ta_newton_s(t0 + dt, t0, p, e, w)
-    f4 = ta_newton_s(t0 + 2 * dt, t0, p, e, w)
+    # Time step for central finite difference
+    # ---------------------------------------
+    # I've tried to choose a value that is small enough to
+    # work with ultra-short-period orbits and large enough
+    # not to cause floating point problems with the fourth
+    # derivative (anything much smaller starts hitting the
+    # double precision limit.)
+    dt = 2e-2
 
-    ae = a * (1. - e ** 2)
+    ae = a*(1. - e**2)
     ci = cos(i)
 
-    r0 = ae / (1. + e * cos(f0))
-    r1 = ae / (1. + e * cos(f1))
-    r2 = ae / (1. + e * cos(f2))
-    r3 = ae / (1. + e * cos(f3))
-    r4 = ae / (1. + e * cos(f4))
+    # Calculation of X and Y positions
+    # --------------------------------
+    # These could just as well be calculated with a single
+    # loop with X and Y as arrays, but I've decided to
+    # manually unroll it because it seems to give a small
+    # speed advantage with numba.
 
-    x0 = -r0 * cos(w + f0)
-    x1 = -r1 * cos(w + f1)
-    x2 = -r2 * cos(w + f2)
-    x3 = -r3 * cos(w + f3)
-    x4 = -r4 * cos(w + f4)
+    f0 = ta_newton_s(t0 - 3*dt, t0, p, e, w)
+    f1 = ta_newton_s(t0 - 2*dt, t0, p, e, w)
+    f2 = ta_newton_s(t0 - dt, t0, p, e, w)
+    f3 = ta_newton_s(t0, t0, p, e, w)
+    f4 = ta_newton_s(t0 + dt, t0, p, e, w)
+    f5 = ta_newton_s(t0 + 2*dt, t0, p, e, w)
+    f6 = ta_newton_s(t0 + 3*dt, t0, p, e, w)
 
-    y0 = -r0 * sin(w + f0) * ci
-    y1 = -r1 * sin(w + f1) * ci
-    y2 = -r2 * sin(w + f2) * ci
-    y3 = -r3 * sin(w + f3) * ci
-    y4 = -r4 * sin(w + f4) * ci
+    r0 = ae/(1. + e*cos(f0))
+    r1 = ae/(1. + e*cos(f1))
+    r2 = ae/(1. + e*cos(f2))
+    r3 = ae/(1. + e*cos(f3))
+    r4 = ae/(1. + e*cos(f4))
+    r5 = ae/(1. + e*cos(f5))
+    r6 = ae/(1. + e*cos(f6))
 
-    vx = (x0 - 8 * x1 + 8 * x3 - x4) / (12 * dt)
-    vy = (y0 - 8 * y1 + 8 * y3 - y4) / (12 * dt)
+    x0 = -r0*cos(w + f0)
+    x1 = -r1*cos(w + f1)
+    x2 = -r2*cos(w + f2)
+    x3 = -r3*cos(w + f3)
+    x4 = -r4*cos(w + f4)
+    x5 = -r5*cos(w + f5)
+    x6 = -r6*cos(w + f6)
 
-    ax = (-x0 + 16 * x1 - 30 * x2 + 16 * x3 - x4) / (12 * dt * dt)
-    ay = (-y0 + 16 * y1 - 30 * y2 + 16 * y3 - y4) / (12 * dt * dt)
+    y0 = -r0*sin(w + f0)*ci
+    y1 = -r1*sin(w + f1)*ci
+    y2 = -r2*sin(w + f2)*ci
+    y3 = -r3*sin(w + f3)*ci
+    y4 = -r4*sin(w + f4)*ci
+    y5 = -r5*sin(w + f5)*ci
+    y6 = -r6*sin(w + f6)*ci
 
-    jx = (-x0 + 2 * x1 - 2 * x3 + x4) / (2 * dt ** 3)
-    jy = (-y0 + 2 * y1 - 2 * y3 + y4) / (2 * dt ** 3)
+    # First time derivative of position: velocity
+    # -------------------------------------------
+    a, b, c = 1/60, 9/60, 45/60
+    vx = (-a*x0 + b*x1 - c*x2 + c*x4 - b*x5 + a*x6)/dt
+    vy = (-a*y0 + b*y1 - c*y2 + c*y4 - b*y5 + a*y6)/dt
 
-    return vx, vy, ax, ay, jx, jy
+    # Second time derivative of position: acceleration
+    # ------------------------------------------------
+    a, b, c, d = 1/90, 3/20, 3/2, 49/18
+    ax = (a*x0 - b*x1 + c*x2 - d*x3 + c*x4 - b*x5 + a*x6)/dt**2
+    ay = (a*y0 - b*y1 + c*y2 - d*y3 + c*y4 - b*y5 + a*y6)/dt**2
+
+    # Third time derivative of position: jerk
+    # ---------------------------------------
+    a, b, c = 1/8, 1, 13/8
+    jx = (a*x0 - b*x1 + c*x2 - c*x4 + b*x5 - a*x6)/dt**3
+    jy = (a*y0 - b*y1 + c*y2 - c*y4 + b*y5 - a*y6)/dt**3
+
+    # Fourth time derivative of position: snap
+    # ----------------------------------------
+    a, b, c, d = 1/6, 2, 13/2, 28/3
+    sx = (-a*x0 + b*x1 - c*x2 + d*x3 - c*x4 + b*x5 - a*x6)/dt**4
+    sy = (-a*y0 + b*y1 - c*y2 + d*y3 - c*y4 + b*y5 - a*y6)/dt**4
+
+    return x3, y3, vx, vy, ax, ay, jx, jy, sx, sy
 
 
 @njit(fastmath=True)
-def z_taylor_s(tc, t0, p, b, vx, vy, ax, ay, jx, jy):
+def z_taylor_s(tc, t0, p, y0, vx, vy, ax, ay, jx, jy, sx, sy):
     """Normalized planet-star center distance using Taylor series expansion.
 
     Parameters
@@ -562,12 +599,13 @@ def z_taylor_s(tc, t0, p, b, vx, vy, ax, ay, jx, jy):
     t = tc - (t0 + epoch * p)
     t2 = t * t
     t3 = t2 * t
-    px = vx * t + 0.5 * ax * t2 + jx * t3 / 6.0
-    py = - b + vy * t + 0.5 * ay * t2 + jy * t3 / 6.0
+    t4 = t3 * t
+    px =      vx * t + 0.5 * ax * t2 + jx * t3 / 6.0 + sx * t4 / 24.
+    py = y0 + vy * t + 0.5 * ay * t2 + jy * t3 / 6.0 + sy * t4 / 24.
     return sqrt(px ** 2 + py ** 2)
 
 @njit(fastmath=True)
-def z_taylor_st(t, b, vx, vy, ax, ay, jx, jy):
+def z_taylor_st(t, y0, vx, vy, ax, ay, jx, jy, sx, sy):
     """Normalized planet-star center distance using Taylor series expansion.
 
     Parameters
@@ -589,12 +627,13 @@ def z_taylor_st(t, b, vx, vy, ax, ay, jx, jy):
     """
     t2 = t * t
     t3 = t2 * t
-    px = vx * t + 0.5 * ax * t2 + jx * t3 / 6.0
-    py = - b + vy * t + 0.5 * ay * t2 + jy * t3 / 6.0
+    t4 = t3 * t
+    px =      vx * t + 0.5 * ax * t2 + jx * t3 / 6.0 + sx * t4 / 24.
+    py = y0 + vy * t + 0.5 * ay * t2 + jy * t3 / 6.0 + sy * t4 / 24.
     return sqrt(px ** 2 + py ** 2)
 
 @njit(fastmath=True)
-def z_taylor_v(times, t0, p, b, vx, vy, ax, ay, jx, jy):
+def z_taylor_v(times, t0, p, y0, vx, vy, ax, ay, jx, jy, sx, sy):
     z = zeros_like(times)
     npt = times.size
     for i in range(npt):
@@ -602,8 +641,9 @@ def z_taylor_v(times, t0, p, b, vx, vy, ax, ay, jx, jy):
         t = times[i] - (t0 + epoch * p)
         t2 = t * t
         t3 = t2 * t
-        px = vx * t + 0.5 * ax * t2 + jx * t3 / 6.0
-        py = - b + vy * t + 0.5 * ay * t2 + jy * t3 / 6.0
+        t4 = t3 * t
+        px =      vx * t + 0.5 * ax * t2 + jx * t3 / 6.0 + sx * t4 / 24.
+        py = y0 + vy * t + 0.5 * ay * t2 + jy * t3 / 6.0 + sy * t4 / 24.
         z[i] = sqrt(px ** 2 + py ** 2)
     return z
 
@@ -620,7 +660,7 @@ def xy_newton_v(times, t0, p, a, b, e, w):
 
 
 @njit(fastmath=True)
-def xy_taylor_v(times, t0, p, b, vx, vy, ax, ay, jx, jy):
+def xy_taylor_v(times, t0, p, y0, vx, vy, ax, ay, jx, jy, sx, sy):
     z = zeros_like(times)
     npt = times.size
     px = zeros(npt)
@@ -628,8 +668,8 @@ def xy_taylor_v(times, t0, p, b, vx, vy, ax, ay, jx, jy):
     for i in range(npt):
         epoch = floor((times[i] - t0 + 0.5 * p) / p)
         t = times[i] - (t0 + epoch * p)
-        px[i] = vx * t + 0.5 * ax * t ** 2 + jx * t ** 3 / 6.
-        py[i] = -b + vy * t + 0.5 * ay * t ** 2 + jy * t ** 3 / 6.
+        px[i] =      vx * t + 0.5 * ax * t ** 2 + jx * t ** 3 / 6. + sx * t**4 / 24.
+        py[i] = y0 + vy * t + 0.5 * ay * t ** 2 + jy * t ** 3 / 6. + sy * t**4 / 24.
     return px, py
 
 # Utility functions

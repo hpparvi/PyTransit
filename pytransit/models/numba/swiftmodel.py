@@ -17,7 +17,7 @@ from numba import njit, prange
 from numpy import arccos, sqrt, linspace, zeros, arange, dot, floor, pi, ndarray, atleast_1d, atleast_2d, isnan, inf, \
     atleast_3d, nan, fmax
 
-from pytransit.orbits.orbits_py import z_ip_s, z_ip_v, vaj_from_pabew, z_taylor_st, z_taylor_v
+from pytransit.orbits.orbits_py import z_ip_s, z_ip_v, vajs_from_paiew, z_taylor_st, z_taylor_v
 
 
 @njit
@@ -386,7 +386,7 @@ def swmodel_direct_s_simple(t, k, t0, p, a, b, e, w, ldp, istar, ze, zm, ng, spl
     """
     k = atleast_1d(k)
 
-    vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0, p, a, b, e, w)
+    vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0, p, a, b, e, w)
     z = z_taylor_v(t, t0, p, b, vx, vy, ax, ay, jx, jy)
 
     # Swift model branch
@@ -411,7 +411,7 @@ def _eval_s_serial(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lc
     npt = t.size
     flux = zeros(npt)
 
-    vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0, p, a, b, e, w)
+    vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0, p, a, b, e, w)
     half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
     for j in range(npt):
@@ -445,7 +445,7 @@ def _eval_s_parallel(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, 
     npt = t.size
     flux = zeros(npt)
 
-    vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0, p, a, b, e, w)
+    vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0, p, a, b, e, w)
     half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
     for j in prange(npt):
@@ -522,7 +522,7 @@ def swmodel_direct_v(t, k, t0, p, a, b, e, w, ldp, istar, ze, ng, lcids, pbids, 
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
-        vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0[ipv], p[ipv], a[ipv], b[ipv], e[ipv], w[ipv])
+        vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], b[ipv], e[ipv], w[ipv])
         half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
         gs, dg, weights = calculate_weights_2d(k[ipv,0], ze, ng)
@@ -574,7 +574,7 @@ def swmodel_interpolated_v(t, k, t0, p, a, b, e, w, ldp, istar, weights, dk, k0,
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
-        vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0[ipv], p[ipv], a[ipv], b[ipv], e[ipv], w[ipv])
+        vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], b[ipv], e[ipv], w[ipv])
         half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
         ldw = zeros((npb, ng))

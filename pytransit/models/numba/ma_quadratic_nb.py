@@ -45,7 +45,7 @@ from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, lins
     inf, isnan, cos, sign, sin, atleast_1d, ndarray, nan, copysign, fmax, any
 from numba import njit, prange
 
-from ...orbits.orbits_py import z_ip_s, z_ip_v, z_newton_s, vaj_from_pabew, z_taylor_st
+from ...orbits.orbits_py import z_ip_s, z_ip_v, z_newton_s, vajs_from_paiew, z_taylor_st
 
 HALF_PI = 0.5 * pi
 FOUR_PI = 4.0 * pi
@@ -600,7 +600,7 @@ def quadratic_model_v(t, k, t0, p, a, b, e, w, ldc, lcids, pbids, nsamples, expt
             flux[ipv, :] = inf
             continue
 
-        vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0[ipv], p[ipv], a[ipv], b[ipv], e[ipv], w[ipv])
+        vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], b[ipv], e[ipv], w[ipv])
         half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
         for j in range(npt):
             epoch = floor((t[j] - t0 + 0.5 * p) / p)
@@ -644,7 +644,7 @@ def quadratic_model_s(t, k, t0, p, a, b, e, w, ldc, lcids, pbids, nsamples, expt
     if ldc.size != 2*npb:
         raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
-    vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0, p, a, b, e, w)
+    vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0, p, a, b, e, w)
     half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
 
     npt = t.size
@@ -707,7 +707,7 @@ def quadratic_model_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes, npb, edt, 
 
     for ipv in prange(npv):
         t0, p, a, b, e, w = pvp[ipv, nk:]
-        vx, vy, ax, ay, jx, jy = vaj_from_pabew(t0, p, a, b, e, w)
+        vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0, p, a, b, e, w)
         half_window_width = fmax(0.125, (2 + pvp[ipv, 0]) / vx)
 
         if interpolate and (any(pvp[ipv, :nk] < kt[0]) or any(pvp[ipv, :nk] > kt[-1])):
