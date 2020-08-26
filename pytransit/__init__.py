@@ -51,6 +51,7 @@ from .models.ma_uniform import UniformModel
 from .models.ma_chromosphere import ChromosphereModel
 from .models.general import GeneralModel
 from .models.swiftmodel import SwiftModel
+from .models.osmodel import OblateStarModel
 
 # OpenCL models
 # -------------
