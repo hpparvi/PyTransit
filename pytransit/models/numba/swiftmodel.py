@@ -378,7 +378,7 @@ def swmodel_z_interpolated_parallel(z, k, istar, ldp, weights, dk, k0, dg):
 
 
 @njit(parallel=False, fastmath=True)
-def swmodel_direct_s_simple(t, k, t0, p, a, b, e, w, ldp, istar, ze, zm, ng, splimit, lcids, pbids, nsamples, exptimes, parallel):
+def swmodel_direct_s_simple(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, splimit, lcids, pbids, nsamples, exptimes, parallel):
     """Simple PT transit model for a homogeneous time series without supersampling and relatively small number of points.
 
     This version avoids the overheads from threading and supersampling. The fastest option if the number of datapoints
@@ -386,8 +386,8 @@ def swmodel_direct_s_simple(t, k, t0, p, a, b, e, w, ldp, istar, ze, zm, ng, spl
     """
     k = atleast_1d(k)
 
-    vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0, p, a, b, e, w)
-    z = z_taylor_v(t, t0, p, b, vx, vy, ax, ay, jx, jy)
+    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
+    z = z_taylor_v(t, t0, p, y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
     # Swift model branch
     # ------------------
@@ -407,11 +407,11 @@ def swmodel_direct_s_simple(t, k, t0, p, a, b, e, w, ldp, istar, ze, zm, ng, spl
 
 
 @njit(parallel=False, fastmath=True)
-def _eval_s_serial(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes):
+def _eval_s_serial(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes):
     npt = t.size
     flux = zeros(npt)
 
-    vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0, p, a, b, e, w)
+    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
     half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
     for j in range(npt):
@@ -426,7 +426,7 @@ def _eval_s_serial(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lc
 
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
                 if z > 1.0 + _k:
                     flux[j] += 1.
                 else:
@@ -441,11 +441,11 @@ def _eval_s_serial(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lc
 
 
 @njit(parallel=True, fastmath=True)
-def _eval_s_parallel(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes):
+def _eval_s_parallel(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes):
     npt = t.size
     flux = zeros(npt)
 
-    vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0, p, a, b, e, w)
+    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
     half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
     for j in prange(npt):
@@ -460,7 +460,7 @@ def _eval_s_parallel(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, 
 
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
                 if z > 1.0 + _k:
                     flux[j] += 1.
                 else:
@@ -475,7 +475,7 @@ def _eval_s_parallel(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, 
 
 
 @njit
-def swmodel_direct_s(t, k, t0, p, a, b, e, w, ldp, istar, ze, zm, ng, splimit, lcids, pbids, nsamples, exptimes, parallel):
+def swmodel_direct_s(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, splimit, lcids, pbids, nsamples, exptimes, parallel):
     k = atleast_1d(k)
     npb = ldp.shape[1]
     gs, dg, weights = calculate_weights_2d(k[0], ze, ng)
@@ -485,13 +485,13 @@ def swmodel_direct_s(t, k, t0, p, a, b, e, w, ldp, istar, ze, zm, ng, splimit, l
         ldw[ipb] = dot(weights, ldp[0, ipb])
 
     if parallel:
-        return _eval_s_parallel(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes)
+        return _eval_s_parallel(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes)
     else:
-        return _eval_s_serial(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes)
+        return _eval_s_serial(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes)
 
 
 @njit(fastmath=True)
-def swmodel_interpolated_s(t, k, t0, p, a, b, e, w, ldp, istar, weights, zm, dk, k0, dg, splimit,
+def swmodel_interpolated_s(t, k, t0, p, a, i, e, w, ldp, istar, weights, zm, dk, k0, dg, splimit,
                            lcids, pbids, nsamples, exptimes, parallel):
     k = atleast_1d(k)
     npb = ldp.shape[1]
@@ -504,13 +504,13 @@ def swmodel_interpolated_s(t, k, t0, p, a, b, e, w, ldp, istar, weights, zm, dk,
         ldw[ipb] = (1.0 - ak) * dot(weights[ik], ldp[0,ipb]) + ak * dot(weights[ik + 1], ldp[0,ipb])
 
     if parallel:
-        return _eval_s_parallel(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes)
+        return _eval_s_parallel(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes)
     else:
-        return _eval_s_serial(t, k, t0, p, a, b, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes)
+        return _eval_s_serial(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, nsamples, exptimes)
 
 
 @njit(parallel=True, fastmath=False)
-def swmodel_direct_v(t, k, t0, p, a, b, e, w, ldp, istar, ze, ng, lcids, pbids, nsamples, exptimes, npb):
+def swmodel_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, nsamples, exptimes, npb):
     npv = k.shape[0]
     npt = t.size
     ldp = atleast_3d(ldp)
@@ -518,11 +518,11 @@ def swmodel_direct_v(t, k, t0, p, a, b, e, w, ldp, istar, ze, ng, lcids, pbids, 
     if ldp.shape[0] != npv or ldp.shape[1] != npb:
         raise ValueError(f"The limb darkening profile array should have a shape [npv,npb,ng]")
 
-    t0, p, a, b = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(b)
+    t0, p, a, i = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i)
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
-        vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], b[ipv], e[ipv], w[ipv])
+        x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
         half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
         gs, dg, weights = calculate_weights_2d(k[ipv,0], ze, ng)
@@ -550,7 +550,7 @@ def swmodel_direct_v(t, k, t0, p, a, b, e, w, ldp, istar, ze, ng, lcids, pbids, 
                 else:
                     for isample in range(1, nsamples[ilc] + 1):
                         time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                        z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                        z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
                         if z > 1.0 + _k:
                             flux[ipv, j] += 1.
                         else:
@@ -561,7 +561,7 @@ def swmodel_direct_v(t, k, t0, p, a, b, e, w, ldp, istar, ze, ng, lcids, pbids, 
     return flux
 
 @njit(parallel=True, fastmath=False)
-def swmodel_interpolated_v(t, k, t0, p, a, b, e, w, ldp, istar, weights, dk, k0, dg, lcids, pbids, nsamples, exptimes, npb):
+def swmodel_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg, lcids, pbids, nsamples, exptimes, npb):
     npv = k.shape[0]
     npt = t.size
     ldp = atleast_3d(ldp)
@@ -570,11 +570,11 @@ def swmodel_interpolated_v(t, k, t0, p, a, b, e, w, ldp, istar, weights, dk, k0,
     if ldp.shape[0] != npv or ldp.shape[1] != npb:
         raise ValueError(f"The limb darkening profile array should have a shape [npv,npb,ng]")
 
-    t0, p, a, b = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(b)
+    t0, p, a, i = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i)
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
-        vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], b[ipv], e[ipv], w[ipv])
+        x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
         half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
         ldw = zeros((npb, ng))
@@ -605,7 +605,7 @@ def swmodel_interpolated_v(t, k, t0, p, a, b, e, w, ldp, istar, weights, dk, k0,
                 else:
                     for isample in range(1, nsamples[ilc] + 1):
                         time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                        z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                        z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
                         if z > 1.0 + _k:
                             flux[ipv, j] += 1.
                         else:

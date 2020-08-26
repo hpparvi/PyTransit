@@ -580,8 +580,8 @@ def quadratic_interpolated_z_s(z, k, u, edt, ldt, let, kt, zt):
 # Quadratic model for vector parameters
 # -------------------------------------
 @njit(parallel=True, fastmath=True)
-def quadratic_model_v(t, k, t0, p, a, b, e, w, ldc, lcids, pbids, nsamples, exptimes, npb,  edt, ldt, let, kt, zt, interpolate):
-    t0, p, a, b, e, w = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(b), atleast_1d(e), atleast_1d(w)
+def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb,  edt, ldt, let, kt, zt, interpolate):
+    t0, p, a, i, e, w = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w)
     ldc = atleast_2d(ldc)
 
     if ldc.shape[1] != 2*npb:
@@ -600,7 +600,7 @@ def quadratic_model_v(t, k, t0, p, a, b, e, w, ldc, lcids, pbids, nsamples, expt
             flux[ipv, :] = inf
             continue
 
-        vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], b[ipv], e[ipv], w[ipv])
+        x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
         half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
         for j in range(npt):
             epoch = floor((t[j] - t0 + 0.5 * p) / p)
@@ -622,7 +622,7 @@ def quadratic_model_v(t, k, t0, p, a, b, e, w, ldc, lcids, pbids, nsamples, expt
                 else:
                     for isample in range(1, nsamples[ilc] + 1):
                         time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                        z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                        z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
                         if z > 1.0 + _k:
                             flux[ipv, j] += 1.
                         else:
@@ -637,14 +637,14 @@ def quadratic_model_v(t, k, t0, p, a, b, e, w, ldc, lcids, pbids, nsamples, expt
 # Quadratic model for scalar parameters
 # -------------------------------------
 @njit(parallel=False, fastmath=True)
-def quadratic_model_s(t, k, t0, p, a, b, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, edt, ldt, let, kt, zt, interpolate):
+def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, edt, ldt, let, kt, zt, interpolate):
     ldc = atleast_1d(ldc)
     k = atleast_1d(k)
 
     if ldc.size != 2*npb:
         raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
-    vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0, p, a, b, e, w)
+    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
     half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
 
     npt = t.size
@@ -675,7 +675,7 @@ def quadratic_model_s(t, k, t0, p, a, b, e, w, ldc, lcids, pbids, nsamples, expt
             else:
                 for isample in range(1, nsamples[ilc] + 1):
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                    z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                    z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
                     if z > 1.0 + _k:
                         flux[j] += 1.
                     else:
@@ -706,8 +706,8 @@ def quadratic_model_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes, npb, edt, 
     flux = zeros((npv, npt))
 
     for ipv in prange(npv):
-        t0, p, a, b, e, w = pvp[ipv, nk:]
-        vx, vy, ax, ay, jx, jy = vajs_from_paiew(t0, p, a, b, e, w)
+        t0, p, a, i, e, w = pvp[ipv, nk:]
+        x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
         half_window_width = fmax(0.125, (2 + pvp[ipv, 0]) / vx)
 
         if interpolate and (any(pvp[ipv, :nk] < kt[0]) or any(pvp[ipv, :nk] > kt[-1])):
@@ -742,7 +742,7 @@ def quadratic_model_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes, npb, edt, 
 
                 for isample in range(1, nsamples[ilc]+1):
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                    z = z_taylor_st(tc + time_offset, b, vx, vy, ax, ay, jx, jy)
+                    z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
                     if z > 1.0+k:
                         flux[ipv, j] += 1.
                     else:
