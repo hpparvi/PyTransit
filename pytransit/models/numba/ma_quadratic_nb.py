@@ -588,6 +588,7 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, expt
         raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
     npv = k.shape[0]
+    nk = k.shape[1]
     npt = t.size
     flux = zeros((npv, npt))
     for ipv in prange(npv):
@@ -601,17 +602,17 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, expt
             continue
 
         x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
+        half_window_width = fmax(0.125, (2.0 + k[0,0]) / vx)
         for j in range(npt):
-            epoch = floor((t[j] - t0 + 0.5 * p) / p)
-            tc = t[j] - (t0 + epoch * p)
+            epoch = floor((t[j] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
+            tc = t[j] - (t0[ipv] + epoch * p[ipv])
             if abs(tc) > half_window_width:
                 flux[ipv, j] = 1.0
             else:
                 ilc = lcids[j]
                 ipb = pbids[ilc]
 
-                if k.shape[1] == 1:
+                if nk == 1:
                     _k = k[ipv, 0]
                 else:
                     _k = k[ipv, ipb]
