@@ -43,8 +43,7 @@ def z_s(x, y, r, f, sphi, cphi):
         sphi2, cphi2, f2 = sphi**2, cphi**2, f**2
 
         a = 1./(1. - f)**2
-        d = (4.*y2*sphi2*cphi2*(a - 1.)**2
-             - 4.*(cphi2 + a*sphi2)*(x2 + y2*(a*cphi2 + sphi2) - r2))
+        d = (4.*y2*sphi2*cphi2*(a - 1.)**2- 4.*(cphi2 + a*sphi2)*(x2 + y2*(a*cphi2 + sphi2) - r2))
         if d >= 0.0:
             return (-2.*y*cphi*sphi*(a - 1.) + sqrt(d))/(2.*(cphi2 + a*sphi2))
         else:
@@ -64,8 +63,7 @@ def z_v(xs, ys, r, f, sphi, cphi):
         if x2 + y2 > r2:
             z[i] = -1.0
         else:
-            d = (4.*y2*sphi2*cphi2*(a - 1.)**2
-                 - 4.*(cphi2 + a*sphi2)*(x2 + y2*(a*cphi2 + sphi2) - r2))
+            d = (4.*y2*sphi2*cphi2*(a - 1.)**2 - 4.*(cphi2 + a*sphi2)*(x2 + y2*(a*cphi2 + sphi2) - r2))
             if d >= 0.0:
                 z[i] = (-2.*ys[i]*cphi*sphi*(a - 1.) + sqrt(d))/(2.*(cphi2 + a*sphi2))
             else:
@@ -187,7 +185,7 @@ def mean_luminosity(xc, yc, k, xs, ys, feff, lt, xt, yt):
     weight = 0.0
     for i in range(ns):
         x = xc + xs[i]*k
-        y = yc + ys[i]*k*rf
+        y = (yc + ys[i]*k)*rf
 
         if x**2 + y**2 > 1.0:
             continue
@@ -203,9 +201,9 @@ def mean_luminosity(xc, yc, k, xs, ys, feff, lt, xt, yt):
         ay1 = (y - yt[iy])/dy
         ay2 = 1.0 - ay1
 
-        l = (lt[iy, ix]*ay2*ax2
-             + lt[iy + 1, ix]*ay1*ax2
-             + lt[iy, ix + 1]*ay2*ax1
+        l = (  lt[iy,     ix    ]*ay2*ax2
+             + lt[iy + 1, ix    ]*ay1*ax2
+             + lt[iy,     ix + 1]*ay2*ax1
              + lt[iy + 1, ix + 1]*ay1*ax1)
 
         if isfinite(l):
@@ -223,7 +221,7 @@ def xy_taylor_st(t, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy):
     t2 = t*t
     t3 = t2*t
     t4 = t3*t
-    px = vx*t + 0.5*ax*t2 + jx*t3/6.0 + sx*t4/24.
+    px =      vx*t + 0.5*ax*t2 + jx*t3/6.0 + sx*t4/24.
     py = y0 + vy*t + 0.5*ay*t2 + jy*t3/6.0 + sy*t4/24.
 
     x = ca*px - sa*py
@@ -243,7 +241,7 @@ def xy_taylor_vt(ts, a, y0, vx, vy, ax, ay, jx, jy, sx, sy):
         t2 = t*t
         t3 = t2*t
         t4 = t3*t
-        px = vx*t + 0.5*ax*t2 + jx*t3/6.0 + sx*t4/24.
+        px =      vx*t + 0.5*ax*t2 + jx*t3/6.0 + sx*t4/24.
         py = y0 + vy*t + 0.5*ay*t2 + jy*t3/6.0 + sy*t4/24.
 
         x[i] = ca*px - sa*py
@@ -252,15 +250,14 @@ def xy_taylor_vt(ts, a, y0, vx, vy, ax, ay, jx, jy, sx, sy):
     return x, y
 
 
-
-
 @njit
 def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
                    mstar, rstar, ostar, tpole, gpole,
                    f, feff, sphi, cphi, beta, wavelength,
                    ts, xs, ys, xp, yp,
-                   lcids, pbids, nsamples, exptimes, npb, ):
+                   lcids, pbids, nsamples, exptimes, npb):
     x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
+
     sa, ca = sin(aa), cos(aa)
     half_window_width = fmax(0.125, (2.0 + k[0])/vx)
 
@@ -298,9 +295,8 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
                         flux[j] += (istar - ml*ia)/istar
                     else:
                         flux[j] += 1.0
+                flux[j] /= nsamples[ilc]
     return flux
-
-
 
 
 def map_osm(rstar, rho, rperiod, tpole, phi):
