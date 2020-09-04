@@ -53,14 +53,14 @@ class OblateStarModel(TransitModel):
         self._ts, self._xs, self._ys = create_star_xy(sres)
         self._xp, self._yp = create_planet_xy(pres)
 
-    def visualize(self, k, b, a, rho, rperiod, tpole, phi, beta, ldc, ires: int = 256):
+    def visualize(self, k, b, alpha, rho, rperiod, tpole, phi, beta, ldc, ires: int = 256):
         """Visualize the model for a set of parameters.
 
         Parameters
         ----------
         k
         b
-        a
+        alpha
         rho
         rperiod
         tpole
@@ -73,10 +73,11 @@ class OblateStarModel(TransitModel):
         -------
 
         """
+        a = 4.5
         mstar, ostar, gpole, f, feff = map_osm(self.rstar, rho, rperiod, tpole, phi)
-        i = i_from_ba(b, 4.5)
+        i = i_from_ba(b, a)
         times = linspace(-1.1, 1.1)
-        ox, oy = xy_taylor_vt(times, a, b, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        ox, oy = xy_taylor_vt(times, alpha, -b, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
         x = linspace(-1.1, 1.1, ires)
         y = linspace(-1.1, 1.1, ires)
@@ -87,17 +88,18 @@ class OblateStarModel(TransitModel):
                          f, sphi, cphi, beta, ldc, self.wavelength)
 
         fig, axs = subplots(1, 2, figsize=(13, 4))
-        axs[0].imshow(l.reshape(x.shape), extent=(-1.1, 1.1, -1.1, 1.1))
+        axs[0].imshow(l.reshape(x.shape), extent=(-1.1, 1.1, -1.1, 1.1), origin='lower')
         axs[0].plot(ox, oy, 'w', lw=5, alpha=0.25)
         axs[0].plot(ox, oy, 'k', lw=2)
+
         setp(axs[0], ylabel='y [R$_\star$]', xlabel='x [R$_\star$]')
 
         times = linspace(-0.35, 0.35, 500)
-        flux = oblate_model_s(times, array([k]), 0.0, 4.0, 4.5, a, i, 0.0, 0.0, ldc, mstar, self.rstar, ostar, tpole, gpole,
+        flux = oblate_model_s(times, array([k]), 0.0, 4.0, a, alpha, i, 0.0, 0.0, ldc, mstar, self.rstar, ostar, tpole, gpole,
                               f, feff, sphi, cphi, beta, self.wavelength, self._ts, self._xs, self._ys, self._xp, self._yp,
                               self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb)
 
-        axs[1].plot(times, flux)
+        axs[1].plot(times, flux, 'k')
         setp(axs[1], ylabel='Normalized flux', xlabel='Time - T$_0$')
         fig.tight_layout()
 
