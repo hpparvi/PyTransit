@@ -70,7 +70,7 @@ class UniformModel(TransitModel):
             e = 0. if e is None else e
             w = 0. if w is None else w
             flux = uniform_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples,
-                                   self.exptimes, self._es, self._ms, self._tae, zsign=self._zsign)
+                                   self.exptimes, zsign=self._zsign)
 
         # Parameter population branch
         # ---------------------------
@@ -82,8 +82,7 @@ class UniformModel(TransitModel):
             if k.ndim == 1:
                 k = k.reshape((k.size,1))
 
-            flux = uniform_model_v(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples,
-                                   self.exptimes, self._es, self._ms, self._tae, zsign=self._zsign)
+            flux = uniform_model_v(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes, zsign=self._zsign)
         return squeeze(flux)
 
     def evaluate_ps(self, k: float, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0.) -> ndarray:
@@ -121,8 +120,7 @@ class UniformModel(TransitModel):
             raise ValueError("Need to set the data before calling the transit model.")
 
         k = asarray(k)
-        flux = uniform_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes,
-                               self._es, self._ms, self._tae, zsign=self._zsign)
+        flux = uniform_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes, zsign=self._zsign)
         return squeeze(flux)
 
     def evaluate_pv(self, pvp: ndarray) -> ndarray:
@@ -146,6 +144,5 @@ class UniformModel(TransitModel):
              Modelled flux either as a 1D or 2D ndarray.
          """
         assert self.time is not None, "Need to set the data before calling the transit model."
-        flux = uniform_model_pv(self.time, pvp, self.lcids, self.pbids, self.nsamples, self.exptimes,
-                                self._es, self._ms, self._tae, zsign=self._zsign)
+        flux = uniform_model_pv(self.time, pvp, self.lcids, self.pbids, self.nsamples, self.exptimes, zsign=self._zsign)
         return squeeze(flux)

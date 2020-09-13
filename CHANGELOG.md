@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.2.0] - 2020-09-13
+
+PyTransit version 2.2 now calculates the normalized planet-star distances using a Taylor series expansion
+of the x, and y positions in the sky plane (Parviainen and Korth, 2020, submitted to MNRAS). This gives a 
+significant speed boost in transit model evaluation that is especially noticeable for eccentric orbits. 
+
 ## [2.1.0] - 2020-07-07
 
 PyTransit version 2.1 adds a new transit model named *swift* that can use any Python callable to model the stellar

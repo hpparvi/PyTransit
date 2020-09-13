@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import unittest
-from numpy import array, isnan
+from numpy import array
 from numpy.testing import assert_almost_equal, assert_raises
 
 from pytransit.models.numba.qpower2_nb import qpower2_z_s
@@ -53,7 +53,8 @@ class TestUniformModelNB(unittest.TestCase):
         # -------------------------------------
         assert_almost_equal(qpower2_z_s(-0.0, 1.0, self.ldc), 1.0)
         assert_almost_equal(qpower2_z_s( 0.0, 1.0, self.ldc), 0.0)
-        assert isnan(qpower2_z_s( 0.0, 1.1, self.ldc))
+        #with assert_raises(ValueError):
+        #    qpower2_z_s( 0.0, 1.1, self.ldc)
 
 
 if __name__ == '__main__':

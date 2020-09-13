@@ -488,9 +488,9 @@ def z_ps5(t, pv):
     t0, p, a, i, e, w = pv
     return z_from_ta_v(ta_ps5(t, t0, p, e, w), a, i, e, w)
 
+
 # Utility functions
 # -----------------
-
 
 @njit(cache=cache)
 def impact_parameter(a, i):

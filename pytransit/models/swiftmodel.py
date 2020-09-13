@@ -144,7 +144,6 @@ class SwiftModel(TransitModel):
         super().set_data(time, lcids, pbids, nsamples, exptimes, epids)
         self.set_methods()
 
-
     def set_methods(self):
 
         if self.npb == 1 and all(self.nsamples == 1):
@@ -158,7 +157,6 @@ class SwiftModel(TransitModel):
         else:
             self._m_direct_s = self.choose_m_direct_s()
             self._m_direct_v = swmodel_direct_v
-
 
     def init_integration(self, nzin, nzlimb, zcut, ng, nk=None):
         self.nk = nk
@@ -180,13 +178,11 @@ class SwiftModel(TransitModel):
 
         model = swmodel_direct_s
         ds = """swmodel_direct_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.zm, self.ng, self.splimit,
-                                  self.lcids, self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae,
-                                  True)"""
+                                  self.lcids, self.pbids, self.nsamples, self.exptimes, True)"""
         tparallel = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
 
         ds = """swmodel_direct_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.zm, self.ng, self.splimit,
-                                  self.lcids, self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae,
-                                  False)"""
+                                  self.lcids, self.pbids, self.nsamples, self.exptimes, False)"""
         tserial = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
         if tparallel < tserial:
             self.parallel = True
@@ -194,8 +190,7 @@ class SwiftModel(TransitModel):
 
         if self.is_simple:
             ds = """swmodel_direct_s_simple(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.zm, self.ng, 
-                                             self.splimit, self.lcids, self.pbids, self.nsamples, self.exptimes, 
-                                             self._es, self._ms, self._tae, False)"""
+                                             self.splimit, self.lcids, self.pbids, self.nsamples, self.exptimes, False)"""
             tsimple = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
             if tsimple < tmin:
                 model = swmodel_direct_s_simple
@@ -212,12 +207,12 @@ class SwiftModel(TransitModel):
         model = swmodel_interpolated_s
         ds = """swmodel_interpolated_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.weights, self.zm, self.dk, 
                                         self.klims[0], self.dg, self.splimit, self.lcids, self.pbids, self.nsamples, self.exptimes, 
-                                        self._es, self._ms, self._tae, True)"""
+                                        True)"""
         tparallel = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
 
         ds = """swmodel_interpolated_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.weights, self.zm, self.dk, 
                                         self.klims[0], self.dg, self.splimit, self.lcids, self.pbids, self.nsamples, self.exptimes, 
-                                        self._es, self._ms, self._tae, False)"""
+                                        False)"""
         tserial = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
 
         if tparallel < tserial:
@@ -299,11 +294,11 @@ class SwiftModel(TransitModel):
             if self.interpolate:
                 flux = self._m_interp_v(self.time, k, t0, p, a, i, e, w, ldp, istar, self.weights, self.dk,
                                        self.klims[0], self.dg, self.lcids, self.pbids, self.nsamples,
-                                       self.exptimes, self.npb, self._es, self._ms, self._tae)
+                                       self.exptimes, self.parallel)
             else:
                 flux = self._m_direct_v(self.time, k, t0, p, a, i, e, w, ldp, istar, self.ze, self.ng,
                                        self.lcids, self.pbids, self.nsamples,
-                                       self.exptimes, self.npb, self._es, self._ms, self._tae)
+                                       self.exptimes, self.parallel)
         return squeeze(flux)
 
     def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
@@ -363,10 +358,9 @@ class SwiftModel(TransitModel):
         if self.interpolate:
             flux = self._m_interp_s(self.time, k, t0, p, a, i, e, w, ldp, istar, self.weights, self.zm,
                                     self.dk, self.klims[0], self.dg, self.splimit, self.lcids, self.pbids, self.nsamples,
-                                    self.exptimes, self._es, self._ms, self._tae, self.parallel)
+                                    self.exptimes, elf.parallel)
         else:
             flux = self._m_direct_s(self.time, k, t0, p, a, i, e, w, ldp, istar, self.ze, self.zm, self.ng, self.splimit,
-                                    self.lcids, self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae,
-                                    self.parallel)
+                                    self.lcids, self.pbids, self.nsamples, self.exptimes, self.parallel)
 
         return squeeze(flux)
