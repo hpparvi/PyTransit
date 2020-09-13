@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.2.0]
+## [2.2.0] - 2020-09-13
 
 PyTransit version 2.2 now calculates the normalized planet-star distances using a Taylor series expansion
 of the x, and y positions in the sky plane (Parviainen and Korth, 2020, submitted to MNRAS). This gives a 
