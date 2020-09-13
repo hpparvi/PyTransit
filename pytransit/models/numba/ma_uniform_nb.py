@@ -42,8 +42,8 @@
 
 from numba import njit, prange
 from numpy import pi, sqrt, arccos, abs, zeros_like, sign, sin, cos, abs, atleast_2d, zeros, atleast_1d, isnan, inf, \
-    nan, copysign
-from ...orbits.orbits_py import z_ip_s
+    nan, copysign, fmax, floor
+from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st
 
 TWO_PI = 2.0 * pi
 HALF_PI = 0.5 * pi
@@ -117,96 +117,120 @@ def uniform_z_s(z, k, zsign=1.0):
 
 
 @njit(parallel=True, fastmath=True)
-def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, es, ms, tae, zsign=1.0):
+def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, zsign):
     t0, p, a, i, e, w = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w)
     k = atleast_2d(k)
 
     npv = k.shape[0]
     npt = t.size
     flux = zeros((npv, npt))
-    for j in prange(npt):
-        for ipv in range(npv):
-            ilc = lcids[j]
-            ipb = pbids[ilc]
+    for ipv in prange(npv):
+        x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        half_window_width = fmax(0.125, (2.0 + k[0, 0])/vx)
 
-            if a[ipv] < 1.0 or e[ipv] > 0.94:
-                flux[ipv, j] = nan
-                continue
-
-            if k.shape[1] == 1:
-                _k = k[ipv, 0]
+        for j in range(npt):
+            epoch = floor((t[j] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
+            tc = t[j] - (t0[ipv] + epoch * p[ipv])
+            if abs(tc) > half_window_width:
+                flux[ipv, j] = 1.0
             else:
-                _k = k[ipv, ipb]
+                ilc = lcids[j]
+                ipb = pbids[ilc]
 
-            for isample in range(1, nsamples[ilc] + 1):
-                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = z_ip_s(t[j] + time_offset, t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], es, ms, tae)
-                if z > 1.0 + _k:
-                    flux[ipv, j] += 1.
+                if a[ipv] < 1.0 or e[ipv] > 0.94:
+                    flux[ipv, j] = nan
+                    continue
+
+                if k.shape[1] == 1:
+                    _k = k[ipv, 0]
                 else:
-                    flux[ipv, j] += uniform_z_s(z, _k, zsign)
-            flux[ipv, j] /= nsamples[ilc]
+                    _k = k[ipv, ipb]
+
+                for isample in range(1, nsamples[ilc] + 1):
+                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                    z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+                    if z > 1.0 + _k:
+                        flux[ipv, j] += 1.
+                    else:
+                        flux[ipv, j] += uniform_z_s(z, _k, zsign)
+                flux[ipv, j] /= nsamples[ilc]
     return flux
 
 
-@njit(parallel=True, fastmath=True)
-def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, es, ms, tae, zsign=1.0):
+@njit(parallel=False, fastmath=True)
+def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, zsign):
     k = atleast_1d(k)
     npt = t.size
     flux = zeros(npt)
 
-    if a < 1.0 or e > 0.94:
+    if a < 1.0:
         flux[:] = nan
         return flux
 
-    for j in prange(npt):
-        ilc = lcids[j]
-        ipb = pbids[ilc]
-        _k = k[0] if k.size == 1 else k[ipb]
+    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
+    half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
 
-        for isample in range(1, nsamples[ilc] + 1):
-            time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-            z = z_ip_s(t[j] + time_offset, t0, p, a, i, e, w, es, ms, tae)
-            if z > 1.0 + _k:
-                flux[j] += 1.
-            else:
-                flux[j] += uniform_z_s(z, _k, zsign)
-        flux[j] /= nsamples[ilc]
+    for j in range(npt):
+        epoch = floor((t[j] - t0 + 0.5 * p) / p)
+        tc = t[j] - (t0 + epoch * p)
+        if abs(tc) > half_window_width:
+            flux[j] = 1.0
+        else:
+            ilc = lcids[j]
+            ipb = pbids[ilc]
+            _k = k[0] if k.size == 1 else k[ipb]
+
+            for isample in range(1, nsamples[ilc] + 1):
+                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+                if z > 1.0 + _k:
+                    flux[j] += 1.
+                else:
+                    flux[j] += uniform_z_s(z, _k, zsign)
+            flux[j] /= nsamples[ilc]
     return flux
 
 
 @njit(parallel=True, fastmath=True)
-def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, es, ms, tae, zsign=1.0):
+def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, zsign):
     pvp = atleast_2d(pvp)
     npv = pvp.shape[0]
     npt = t.size
     nk = pvp.shape[1] - 6
 
     flux = zeros((npv, npt))
-    for j in prange(npt):
-        for ipv in range(npv):
-            t0, p, a, i, e, w = pvp[ipv,nk:]
-            ilc = lcids[j]
-            ipb = pbids[ilc]
+    for ipv in range(npv):
+        t0, p, a, i, e, w = pvp[ipv, nk:]
+        x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
+        half_window_width = fmax(0.125, (2 + pvp[ipv, 0])/vx)
 
-            if a < 1.0 or e > 0.94:
-                flux[ipv, j] = nan
-                continue
-
-            if nk == 1:
-                k = pvp[ipv, 0]
+        for j in prange(npt):
+            epoch = floor((t[j] - t0 + 0.5 * p) / p)
+            tc = t[j] - (t0 + epoch * p)
+            if abs(tc) > half_window_width:
+                flux[ipv, j] = 1.0
             else:
-                if ipb < nk:
-                    k = pvp[ipv, ipb]
-                else:
-                    k = nan
+                ilc = lcids[j]
+                ipb = pbids[ilc]
 
-            for isample in range(1,nsamples[ilc]+1):
-                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = z_ip_s(t[j]+time_offset, t0, p, a, i, e, w, es, ms, tae)
-                if z > 1.0+k:
-                    flux[ipv, j] += 1.
+                if a < 1.0 or e > 0.94:
+                    flux[ipv, j] = nan
+                    continue
+
+                if nk == 1:
+                    k = pvp[ipv, 0]
                 else:
-                    flux[ipv, j] += uniform_z_s(z, k, zsign)
-            flux[ipv, j] /= nsamples[ilc]
+                    if ipb < nk:
+                        k = pvp[ipv, ipb]
+                    else:
+                        k = nan
+
+                for isample in range(1,nsamples[ilc]+1):
+                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                    z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+                    if z > 1.0+k:
+                        flux[ipv, j] += 1.
+                    else:
+                        flux[ipv, j] += uniform_z_s(z, k, zsign)
+                flux[ipv, j] /= nsamples[ilc]
     return flux
