@@ -89,8 +89,7 @@ class QPower2Model(TransitModel):
             if e is None:
                 e, w = 0., 0.
 
-            flux = qpower2_model_s(self.time, k, ldc, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples,
-                                   self.exptimes, self._es, self._ms, self._tae)
+            flux = qpower2_model_s(self.time, k, ldc, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes)
         # Parameter population branch
         # ---------------------------
         else:
@@ -101,8 +100,7 @@ class QPower2Model(TransitModel):
             if k.ndim == 1:
                 k = k.reshape((k.size,1))
 
-            flux = qpower2_model_v(self.time, k, ldc, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples,
-                                   self.exptimes, self._es, self._ms, self._tae)
+            flux = qpower2_model_v(self.time, k, ldc, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes)
         return squeeze(flux)
 
     def evaluate_ps(self, k: float, ldc: ndarray, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0.) -> ndarray:
@@ -140,7 +138,7 @@ class QPower2Model(TransitModel):
           """
         assert self.time is not None, "Need to set the data before calling the transit model."
         k = asarray(k)
-        flux = qpower2_model_s(self.time, k, ldc, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
+        flux = qpower2_model_s(self.time, k, ldc, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes)
         return squeeze(flux)
 
     def evaluate_pv(self, pvp: ndarray, ldc: ndarray) -> ndarray:
@@ -164,6 +162,6 @@ class QPower2Model(TransitModel):
               Modelled flux either as a 1D or 2D ndarray.
           """
         assert self.time is not None, "Need to set the data before calling the transit model."
-        flux = qpower2_model_pv(self.time, pvp, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes, self._es, self._ms, self._tae)
+        flux = qpower2_model_pv(self.time, pvp, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes)
         return squeeze(flux)
 
