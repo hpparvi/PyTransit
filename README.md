@@ -173,7 +173,7 @@ period `p`, scaled semi-major axis `a`, orbital inclination `i`, eccentricity `e
 an array of limb darkening coefficients `ldc`
 
 ```Python
-flux = tm.evaluate_ps(k, ldc, t0, p, a, i, e, w)
+flux = tm.evaluate_ps(k,ldc,t0,p,a,i,e,w)
 ```
 
 or using either a parameter array
