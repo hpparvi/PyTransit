@@ -13,11 +13,11 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from numba import njit, prange
-from numpy import arccos, sqrt, linspace, zeros, arange, dot, floor, pi, ndarray, atleast_1d, atleast_2d, isnan, inf, \
-    atleast_3d, nan, fmax
 
-from pytransit.orbits.orbits_py import z_ip_s, z_ip_v, vajs_from_paiew, z_taylor_st, z_taylor_v
+from numba import njit, prange
+from numpy import arccos, sqrt, linspace, zeros, dot, floor, pi, ndarray, atleast_1d, isnan, inf, atleast_3d, nan, fmax
+
+from pytransit.orbits.taylor_z import vajs_from_paiew, z_taylor_st, z_taylor_v
 
 
 @njit
