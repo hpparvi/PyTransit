@@ -58,11 +58,18 @@ class QuadraticModel(TransitModel):
 
         # Interpolation tables for the model components
         # ---------------------------------------------
-        self.ed, self.le, self.ld, self.kt, self.zt = calculate_interpolation_tables(klims[0], klims[1], nk, nz)
-        self.klims = klims
-        self.nk = nk
-        self.nz = nz
-
+        if interpolate:
+            self._interpolation_initialised = True
+            self.ed, self.le, self.ld, self.kt, self.zt = calculate_interpolation_tables(klims[0], klims[1], nk, nz)
+            self.klims = klims
+            self.nk = nk
+            self.nz = nz
+        else:
+            self._interpolation_initialised = False
+            self.ed, self.le, self.ld, self.kt, self.zt = zeros((2,2)), zeros((2,2)), zeros((2,2)), zeros(2), zeros(2)
+            self.klims = klims
+            self.nk = 0
+            self.nz = 0
 
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List], t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Optional[Union[float, ndarray]] = None,

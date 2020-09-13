@@ -41,11 +41,11 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Tuple
 
-from numpy import pi, sqrt, arccos, abs, log, ones_like, zeros, zeros_like, linspace, array, atleast_2d, floor, full, \
-    inf, isnan, cos, sign, sin, atleast_1d, ndarray, nan, copysign, fmax, any
 from numba import njit, prange
+from numpy import pi, sqrt, arccos, abs, log, zeros, linspace, array, atleast_2d, floor, inf, isnan, atleast_1d, ndarray, nan, copysign, \
+    fmax, any
 
-from ...orbits.orbits_py import z_ip_s, z_ip_v, z_newton_s, vajs_from_paiew, z_taylor_st
+from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st
 
 HALF_PI = 0.5 * pi
 FOUR_PI = 4.0 * pi
@@ -603,6 +603,7 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, expt
 
         x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
         half_window_width = fmax(0.125, (2.0 + k[0,0]) / vx)
+
         for j in range(npt):
             epoch = floor((t[j] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
             tc = t[j] - (t0[ipv] + epoch * p[ipv])
