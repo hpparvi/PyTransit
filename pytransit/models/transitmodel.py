@@ -41,6 +41,7 @@ class TransitModel(object):
 
         # Declare the basic arrays
         # ------------------------
+        self.time_id: Optional[int] = None
         self.time: Optional[ndarray] = None
         self.lcids: Optional[ndarray] = None
         self.pbids: Optional[ndarray] = None
@@ -51,12 +52,6 @@ class TransitModel(object):
         self.nlc: int = 0
         self.npt: int = 0
         self.npb: int = 0
-
-
-        # Interpolation table for eccentric orbits
-        # ----------------------------------------
-        self._tae, self._es, self._ms = None, None, None
-        self.init_orbit_table()
 
     def set_data(self, time: Union[ndarray, List],
                  lcids: Optional[Union[ndarray, List]] = None,
@@ -85,6 +80,10 @@ class TransitModel(object):
 
         # Time samples
         # ------------
+        if id(time) == self.time_id and lcids is None and pbids is None and nsamples is None and exptimes is None and epids is None:
+            return
+
+        self.time_id  = id(time)
         self.time     = asarray(time, float64)
         self.npt      = self.time.size
 
@@ -124,9 +123,6 @@ class TransitModel(object):
         # A number of samples and the exposure time for each light curve.
         self.nsamples = atleast_1d(nsamples) if nsamples is not None else ones(self.nlc, 'int')
         self.exptimes = atleast_1d(exptimes) if exptimes is not None else zeros(self.nlc, 'int')
-
-    def init_orbit_table(self, ne: int = 256, nm: int = 512):
-        self._tae, self._es, self._ms = ta_ip_calculate_table(ne, nm)
 
     def __call__(self, *nargs, **kwargs):
         raise NotImplementedError
