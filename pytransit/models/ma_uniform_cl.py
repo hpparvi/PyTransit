@@ -39,6 +39,7 @@ import pyopencl as cl
 from pyopencl import CompilerWarning
 from numpy import array, uint32, float32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, empty, concatenate
 from .transitmodel import TransitModel
+from ..orbits.taylor_z import vajs_from_paiew_v
 
 warnings.filterwarnings('ignore', category=CompilerWarning)
 
@@ -69,6 +70,7 @@ class UniformModelCL(TransitModel):
         self.pbids:    ndarray = None       # Passband indices
         self.nsamples: ndarray = None       # Number of samples per light curve
         self.exptimes: ndarray = None       # Exposure times per light curve
+        self.vajs:     ndarray = None
         self.pv:       ndarray = array([])  # Parameter vector array
 
         # Declare the buffers
@@ -76,6 +78,7 @@ class UniformModelCL(TransitModel):
         self._b_time = None    # Buffer for the mid-exposure times
         self._b_flux = None    # Buffer for the model flux values
         self._b_pv   = None    # Parameter vector buffer
+        self._b_vajs = None
 
         # Build the program
         # -----------------
@@ -232,19 +235,25 @@ class UniformModelCL(TransitModel):
             if self._b_flux is not None:
                 self._b_flux.release()
                 self._b_pv.release()
+                self._b_vajs.release()
 
             self.pv = zeros(pvp.shape, float32)
             self.flux = zeros((self.npv, self.nptb), float32)
+            self.vajs = zeros((self.npv, 9), float32)
 
             mf = cl.mem_flags
             self._b_flux = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * self.npv)
             self._b_pv = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
+            self._b_vajs = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.vajs)
 
         self.pv[:] = pvp
         cl.enqueue_copy(self.queue, self._b_pv, self.pv)
 
+        self.vajs[:] = vajs_from_paiew_v(pvp[:, -5], pvp[:,-4], pvp[:,-3], pvp[:,-2], pvp[:,-1]).astype('float32')
+        cl.enqueue_copy(self.queue, self._b_vajs, self.vajs)
+
         self.prg.uniform_eccentric_pop(self.queue, (self.npv, self.nptb), None, self._b_time, self._b_lcids, self._b_pbids,
-                                  self._b_pv, self._b_nsamples, self._b_etimes,
+                                  self._b_pv, self._b_nsamples, self._b_etimes, self._b_vajs,
                                   self.spv, self.nlc, self.npb, self._b_flux)
 
         if copy:
