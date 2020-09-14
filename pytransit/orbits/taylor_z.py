@@ -102,6 +102,15 @@ def vajs_from_paiew(p, a, i, e, w):
     return y3, vx, vy, ax, ay, jx, jy, sx, sy
 
 
+@njit
+def vajs_from_paiew_v(p, a, i, e, w):
+    npv = p.size
+    vajs = zeros((npv, 9))
+    for j in range(npv):
+        vajs[j] = vajs_from_paiew(p[j], a[j], i[j], e[j], w[j])
+    return vajs
+
+
 @njit(fastmath=True)
 def z_taylor_s(tc, t0, p, y0, vx, vy, ax, ay, jx, jy, sx, sy):
     """Normalized planet-star center distance using Taylor series expansion.
