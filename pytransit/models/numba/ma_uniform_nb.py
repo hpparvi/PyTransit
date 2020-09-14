@@ -125,7 +125,7 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
     npt = t.size
     flux = zeros((npv, npt))
     for ipv in prange(npv):
-        x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
         half_window_width = fmax(0.125, (2.0 + k[0, 0])/vx)
 
         for j in range(npt):
@@ -167,7 +167,7 @@ def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
         flux[:] = nan
         return flux
 
-    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
+    y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
     half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
 
     for j in range(npt):
@@ -201,7 +201,7 @@ def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, zsign):
     flux = zeros((npv, npt))
     for ipv in range(npv):
         t0, p, a, i, e, w = pvp[ipv, nk:]
-        x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
+        y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
         half_window_width = fmax(0.125, (2 + pvp[ipv, 0])/vx)
 
         for j in prange(npt):

@@ -386,7 +386,7 @@ def swmodel_direct_s_simple(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, spl
     """
     k = atleast_1d(k)
 
-    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
+    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
     z = z_taylor_v(t, t0, p, y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
     # Swift model branch
@@ -411,7 +411,7 @@ def _eval_s_serial(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lc
     npt = t.size
     flux = zeros(npt)
 
-    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
+    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
     half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
     for j in range(npt):
@@ -445,7 +445,7 @@ def _eval_s_parallel(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, 
     npt = t.size
     flux = zeros(npt)
 
-    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
+    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
     half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
     for j in prange(npt):
@@ -522,7 +522,7 @@ def swmodel_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, 
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
-        x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
         half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
         gs, dg, weights = calculate_weights_2d(k[ipv,0], ze, ng)
@@ -574,7 +574,7 @@ def swmodel_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0,
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
-        x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
         half_window_width = fmax(0.125, (2 + k[0]) / vx)
 
         ldw = zeros((npb, ng))

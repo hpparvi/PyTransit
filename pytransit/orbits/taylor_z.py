@@ -21,7 +21,7 @@ from .orbits_py import ta_newton_s, ta_newton_v, i_from_baew
 
 
 @njit(fastmath=True)
-def vajs_from_paiew(t0, p, a, i, e, w):
+def vajs_from_paiew(p, a, i, e, w):
     """Planet velocity, acceleration, jerk, and snap at mid-transit in [R_star / day]"""
 
     # Time step for central finite difference
@@ -43,13 +43,13 @@ def vajs_from_paiew(t0, p, a, i, e, w):
     # manually unroll it because it seems to give a small
     # speed advantage with numba.
 
-    f0 = ta_newton_s(t0 - 3*dt, t0, p, e, w)
-    f1 = ta_newton_s(t0 - 2*dt, t0, p, e, w)
-    f2 = ta_newton_s(t0 - dt, t0, p, e, w)
-    f3 = ta_newton_s(t0, t0, p, e, w)
-    f4 = ta_newton_s(t0 + dt, t0, p, e, w)
-    f5 = ta_newton_s(t0 + 2*dt, t0, p, e, w)
-    f6 = ta_newton_s(t0 + 3*dt, t0, p, e, w)
+    f0 = ta_newton_s(-3*dt, 0.0, p, e, w)
+    f1 = ta_newton_s(-2*dt, 0.0, p, e, w)
+    f2 = ta_newton_s(  -dt, 0.0, p, e, w)
+    f3 = ta_newton_s(  0.0, 0.0, p, e, w)
+    f4 = ta_newton_s(   dt, 0.0, p, e, w)
+    f5 = ta_newton_s( 2*dt, 0.0, p, e, w)
+    f6 = ta_newton_s( 3*dt, 0.0, p, e, w)
 
     r0 = ae/(1. + e*cos(f0))
     r1 = ae/(1. + e*cos(f1))
@@ -99,7 +99,7 @@ def vajs_from_paiew(t0, p, a, i, e, w):
     sx = (-a*(x0 + x6) + b*(x1 + x5) - c*(x2 + x4) + d*x3)/dt**4
     sy = (-a*(y0 + y6) + b*(y1 + y5) - c*(y2 + y4) + d*y3)/dt**4
 
-    return x3, y3, vx, vy, ax, ay, jx, jy, sx, sy
+    return y3, vx, vy, ax, ay, jx, jy, sx, sy
 
 
 @njit(fastmath=True)
@@ -191,7 +191,6 @@ def xy_newton_v(times, t0, p, a, b, e, w):
 
 @njit(fastmath=True)
 def xy_taylor_v(times, t0, p, y0, vx, vy, ax, ay, jx, jy, sx, sy):
-    z = zeros_like(times)
     npt = times.size
     px = zeros(npt)
     py = zeros(npt)
