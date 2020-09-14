@@ -15,19 +15,6 @@ float z_taylor_tc2(const float t, const float y0, const float vx, const float vy
     return length(pos);
 }
 
-float z_taylor_tc(const float t, const float y0, const float vx, const float vy,
-               const float ax, const float ay, const float jx, const float jy, const float sx, const float sy){
-    float epoch, t1, t2, t3, t4, x, y;
-
-    t1 = t;
-    t2 = t1 * t1;
-    t3 = t2 * t1;
-    t4 = t3 * t1;
-    x =      vx * t1 + 0.5f * ax * t2 + jx * t3 / 6.0f + sx * t4 / 24.0f;
-    y = y0 + vy * t1 + 0.5f * ay * t2 + jy * t3 / 6.0f + sy * t4 / 24.0f;
-    return sqrt(x*x + y*y);
-}
-
 
 float ma_uniform(float z, float k){
     float flux, kap0, kap1, lambdae;
@@ -72,7 +59,7 @@ __kernel void uniform_eccentric_pop(__global const float *times, __global const 
       uint gid  = i_pv*n_tm + i_tm;    // global linear index
       uint lcid = lcids[i_tm];         // light curve index
       uint pbid = pbids[lcid];         // passband index
-      uint nks = pv_length - 6;
+      uint nks = pv_length - 6;        // Number of radius ratios
 
       __global const float *ks = &pv_pop[i_pv*pv_length];
       __global const float *pv = &pv_pop[i_pv*pv_length + nks];
@@ -93,14 +80,14 @@ __kernel void uniform_eccentric_pop(__global const float *times, __global const 
           }
       }
 
-      //float half_window_width = fmax(0.125f, (2.0f + k) / tt[1]);
+      float half_window_width = fmax(0.125f, (2.0f + k) / tt[1]);
       float epoch = floor((times[i_tm] - pv[0] + 0.5f * pv[1]) / pv[1]);
       float t = times[i_tm] - (pv[0] + epoch * pv[1]);
 
-      //if (fabs(t) > half_window_width){
-      //    flux[gid] = 1.0f;
-      //}
-      //else{
+      if (fabs(t) > half_window_width){
+          flux[gid] = 1.0f;
+      }
+      else{
           flux[gid] = 0.0f;
           for(int i=1; i<ns+1; i++){
             toffset = exptime * (((float) i - 0.5f)/ (float) ns - 0.5f);
@@ -108,5 +95,5 @@ __kernel void uniform_eccentric_pop(__global const float *times, __global const 
             flux[gid] += ma_uniform(z, k);
           }
           flux[gid] /= (float) ns;
-      //}
+      }
 }
