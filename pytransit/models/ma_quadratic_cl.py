@@ -26,14 +26,16 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-from typing import Union
+from pathlib import Path
+from typing import Union, Optional
 
 import numpy as np
 import pyopencl as cl
 from os.path import dirname, join
 
 import warnings
+
+from pkg_resources import resource_filename
 from pyopencl import CompilerWarning
 
 from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, empty, \
@@ -110,6 +112,7 @@ class QuadraticModelCL(TransitModel):
         self.pbids = None
         self.nsamples = None
         self.exptimes = None
+        self.vajs:     Optional[ndarray] = None
 
         # Declare the buffers for the ld coefficients, time, and flux arrays. These will
         # be initialised when the model is first evaluated, and reinitialised if the
@@ -119,10 +122,14 @@ class QuadraticModelCL(TransitModel):
         self._b_time = None    # Time buffer
         self._b_f = None       # Flux buffer
         self._b_p = None       # Parameter vector buffer
+        self._b_vajs = None
 
         self._time_id = None   # Time array ID
 
-        self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'opencl','ma_quadratic.cl'),'r').read()).build()
+        rd = Path(resource_filename('pytransit', 'models/opencl'))
+        po = rd / 'orbits.cl'
+        pm = rd / 'ma_quadratic.cl'
+        self.prg = cl.Program(self.ctx, po.read_text() + pm.read_text()).build()
 
     def set_data(self, time, lcids=None, pbids=None, nsamples=None, exptimes=None):
         mf = cl.mem_flags
@@ -221,15 +228,18 @@ class QuadraticModelCL(TransitModel):
                 self._b_f.release()
                 self._b_u.release()
                 self._b_p.release()
+                self._b_vajs.release()
 
             self.pv = zeros(pvp.shape, float32)
             self.u = zeros((self.npv, 2 * self.npb), float32)
             self.f = zeros((self.npv, self.nptb), float32)
+            self.vajs = zeros((self.npv, 9), float32)
 
             mf = cl.mem_flags
             self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * self.npv)
             self._b_u = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.u)
             self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
+            self._b_vajs = cl.Buffer(self.ctx, mf.READ_WRITE, float32().nbytes*self.npv*9)
 
         # Copy the limb darkening coefficient array to the GPU
         cl.enqueue_copy(self.queue, self._b_u, ldc)
@@ -238,9 +248,10 @@ class QuadraticModelCL(TransitModel):
         self.pv[:] = pvp
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
+        self.prg.vajs_from_paiew_v(self.queue, (self.npv, ), None, self.spv, self._b_p, self._b_vajs)
         self.prg.ma_eccentric_pop(self.queue, (self.npv, self.nptb), None, self._b_time, self._b_lcids, self._b_pbids,
                                   self._b_p, self._b_u,
-                                  self._b_ed, self._b_le, self._b_ld, self._b_nsamples, self._b_etimes,
+                                  self._b_ed, self._b_le, self._b_ld, self._b_nsamples, self._b_etimes, self._b_vajs,
                                   self.k0, self.k1, self.nk, self.nz, self.dk, self.dz,
                                   self.spv, self.nlc, self.npb, self._b_f)
 
@@ -324,15 +335,18 @@ class QuadraticModelCL(TransitModel):
                 self._b_f.release()
                 self._b_u.release()
                 self._b_p.release()
+                self._b_vajs.release()
 
             self.pv = zeros(pvp.shape, float32)
             self.u = zeros((self.npv, 2 * self.npb), float32)
             self.f = zeros((self.npv, self.nptb), float32)
+            self.vajs = zeros((self.npv, 9), float32)
 
             mf = cl.mem_flags
             self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * self.npv)
             self._b_u = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.u)
             self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
+            self._b_vajs = cl.Buffer(self.ctx, mf.READ_WRITE, float32().nbytes*self.npv*9)
 
         # Copy the limb darkening coefficient array to the GPU
         cl.enqueue_copy(self.queue, self._b_u, ldc)
@@ -341,9 +355,10 @@ class QuadraticModelCL(TransitModel):
         self.pv[:] = pvp
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
+        self.prg.vajs_from_paiew_v(self.queue, (self.npv, ), None, self.spv, self._b_p, self._b_vajs)
         self.prg.ma_eccentric_pop(self.queue, (self.npv, self.nptb), None, self._b_time, self._b_lcids, self._b_pbids,
                                   self._b_p, self._b_u,
-                                  self._b_ed, self._b_le, self._b_ld, self._b_nsamples, self._b_etimes,
+                                  self._b_ed, self._b_le, self._b_ld, self._b_nsamples, self._b_etimes, self._b_vajs,
                                   self.k0, self.k1, self.nk, self.nz, self.dk, self.dz,
                                   self.spv, self.nlc, self.npb, self._b_f)
 

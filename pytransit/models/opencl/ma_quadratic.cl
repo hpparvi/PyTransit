@@ -1,70 +1,5 @@
-__constant float TWO_PI = 2*M_PI_F;
-__constant float HALF_PI = M_PI_2_F;
-
-float mean_anomaly_offset(const float e, const float w){
-    float offset = atan2(sqrt(1.0f-e*e) * sin(HALF_PI - w), e + cos(HALF_PI - w));
-    return offset - e*sin(offset);
-}
-
-float mean_anomaly(const float t, const float t0, const float p, const float offset){
-    return fmod(TWO_PI * (t - (t0 - offset * p / TWO_PI)) / p, TWO_PI);
-}
-
-float z_iter(const float t, const float t0, const float p, const float a,
-             const float i, const float e,  const float w, const float ma_offset,
-             const float eclipse){
-    float Ma, ec, ect, Ea, sta, cta, Ta, z;
-
-    Ma = fmod(TWO_PI * (t - (t0 - ma_offset * p / TWO_PI)) / p, TWO_PI);
-    ec = e*sin(Ma)/(1.f - e*cos(Ma));
-
-    for(int i=0; i<15; i++){
-        ect = ec;
-        ec = e*sin(Ma+ec);
-        if (fabs(ect-ec) < 1e-4){
-            break;
-        }
-    }
-    Ea  = Ma + ec;
-    sta = sqrt(1.f-e*e) * sin(Ea)/(1.f-e*cos(Ea));
-    cta = (cos(Ea)-e)/(1.f-e*cos(Ea));
-    Ta  = atan2(sta, cta);
-
-    if (eclipse * sign(sin(w+Ta)) > 0.0f){
-        return a*(1.f-e*e)/(1.f+e*cos(Ta)) * sqrt(1.f - pow(sin(w+Ta)*sin(i), 2));
-    }
-    else{
-        return -1.f;
-    }
-}
-
-float z_newton(const float t, const float t0, const float p, const float a,
-               const float i, const float  e, const float w, const float ma_offset,
-               const float eclipse){
-    float Ma = fmod(TWO_PI * (t - (t0 - ma_offset * p / TWO_PI)) / p, TWO_PI);
-    float Ea = Ma;
-    float err = 0.05f;
-    int k = 0;
-    while ((fabs(err) > 1.f-8) & (k<1000)){
-        err   = Ea - e*sin(Ea) - Ma;
-        Ea = Ea - err/(1.f-e*cos(Ea));
-        k += 1;
-    }
-    float sta = sqrt(1.f-e*e) * sin(Ea)/(1.f-e*cos(Ea));
-    float cta = (cos(Ea)-e)/(1.f-e*cos(Ea));
-    float Ta  = atan2(sta, cta);
-
-    if (eclipse * sign(sin(w+Ta)) > 0.0f){
-        return a*(1.f-e*e)/(1.f+e*cos(Ta)) * sqrt(1.f - pow(sin(w+Ta)*sin(i), 2));
-    }
-    else{
-        return -1.f;
-    }
-}
-
-
 float z_circular(const float t, const float t0, const float p, const float a, const float i, const float eclipse){
-    // eclipse should be -1.f for eclipse and 1.0 for transit
+    // ``eclipse`` should be -1.f for an eclipse and 1.0 for a transit
     float cosph = cos(TWO_PI*(t-t0)/p);
     float sini = sin(i);
     if (eclipse * sign(cosph) > 0.0f){
@@ -126,57 +61,11 @@ float eval_ma_ip(const float z, __global const float *u,
   }
 }
 
-__kernel void ma_circular(__global const float *times, __global const uint *lcids, __global const uint *pbids,
-        __global const float *pv, __global const float *u,
-        __global const float *edt, __global const float *let, __global const float *ldt,
-        __global const int *nss, __global const float *exptimes,
-        const float k0, const float k1, const uint nk, const uint nz, const float dk, const float dz,
-        const uint nlc, const uint npb,
-        __global float *flux){
-      int gid = get_global_id(0);
-      uint lcid = lcids[gid];         // light curve index
-      uint pbid = pbids[lcid];         // passband index
-
-      float toffset = 0.0f;
-      float ma_offset = mean_anomaly_offset(pv[5], pv[6]);
-      float z = 0.0f;
-
-      uint ns = nss[lcid];
-      float exptime = exptimes[lcid];
-
-      flux[gid] = 0.0f;
-      for(int i=1; i<ns+1; i++){
-        toffset = exptime * (((float) i - 0.5f)/ (float) ns - 0.5f);
-        z = z_circular(times[gid]+toffset, pv[1], pv[2], pv[3], pv[4], 1.0f);
-        flux[gid] += eval_ma_ip(z, u, edt, let, ldt, pv[0], k0, k1, nk, nz, dk, dz);
-      }
-      flux[gid] /= (float) ns;
-}
-
-__kernel void ma_eccentric(__global const float *times, __global const float *pv, __global const float *u,
-		 __global const float *edt, __global const float *let, __global const float *ldt,
-		 const int nss, const float exptime, const float k0, const float k1,
-		 const uint nk, const uint nz, const float dk, const float dz, __global float *flux){
-      int gid = get_global_id(0);
-      float toffset = 0.0f;
-      float ma_offset = mean_anomaly_offset(pv[5], pv[6]);
-      float z = 0.0f;
-
-      flux[gid] = 0.0f;
-      for(int i=1; i<nss+1; i++){
-        toffset = exptime * (((float) i - 0.5f)/ (float) nss - 0.5f);
-        z = z_iter(times[gid]+toffset, pv[1], pv[2], pv[3], pv[4], pv[5], pv[6], ma_offset, 1.0f);
-//        z = z_newton(times[gid]+toffset, pv[1], pv[2], pv[3], pv[4], pv[5], pv[6], ma_offset, 1.0f);
-        flux[gid] += eval_ma_ip(z, u, edt, let, ldt, pv[0], k0, k1, nk, nz, dk, dz);
-      }
-      flux[gid] /= (float) nss;
-}
-
 
 __kernel void ma_eccentric_pop(__global const float *times, __global const uint *lcids, __global const uint *pbids,
          __global const float *pv_pop, __global const float *ldc_pop,
 		 __global const float *edt, __global const float *let, __global const float *ldt,
-		 __global const uint *nss, __global const float *exptimes,
+		 __global const uint *nss, __global const float *exptimes,  __global const float *vajs,
          float k0, float k1, uint nk, uint nz, float dk, float dz,
          uint pv_length, uint nlc, uint npb,
          __global float *flux){
@@ -193,11 +82,11 @@ __kernel void ma_eccentric_pop(__global const float *times, __global const uint 
     __global const float *ks  = &pv_pop[i_pv*pv_length];
     __global const float *pv  = &pv_pop[i_pv*pv_length + nks];
     __global const float *ldc = &ldc_pop[2*npb*i_pv + 2*pbid];
+    __global const float *tt = &vajs[i_pv*9];
 
     uint ns = nss[lcid];
     float exptime = exptimes[lcid];
     float toffset, z;
-    float ma_offset = mean_anomaly_offset(pv[4], pv[5]);
     float k = ks[0];
 
     if (nks > 1){
@@ -210,13 +99,22 @@ __kernel void ma_eccentric_pop(__global const float *times, __global const uint 
           }
     }
 
-    flux[gid] = 0.0f;
-    for(int i=1; i<ns+1; i++){
-        toffset = exptime * (((float) i - 0.5f)/ (float) ns - 0.5f);
-        z = z_iter(times[i_tm]+toffset, pv[0], pv[1], pv[2], pv[3], pv[4], pv[5], ma_offset, 1.0f);
-        flux[gid] += eval_ma_ip(z, ldc, edt, let, ldt, k, k0, k1, nk, nz, dk, dz);
+    float half_window_width = fmax(0.125f, (2.0f + k) / tt[1]);
+    float epoch = floor((times[i_tm] - pv[0] + 0.5f * pv[1]) / pv[1]);
+    float t = times[i_tm] - (pv[0] + epoch * pv[1]);
+
+    if (fabs(t) > half_window_width){
+        flux[gid] = 1.0f;
     }
-    flux[gid] /= (float) ns;
+    else{
+        flux[gid] = 0.0f;
+        for(int i=1; i<ns+1; i++){
+            toffset = exptime * (((float) i - 0.5f)/ (float) ns - 0.5f);
+            z = z_taylor_tc(t+toffset, tt[0], tt[1], tt[2], tt[3], tt[4], tt[5], tt[6], tt[7], tt[8]);
+            flux[gid] += eval_ma_ip(z, ldc, edt, let, ldt, k, k0, k1, nk, nz, dk, dz);
+        }
+        flux[gid] /= (float) ns;
+    }
 }
 
 
