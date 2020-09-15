@@ -1,21 +1,3 @@
-__constant float TWO_PI = 2*M_PI_F;
-__constant float HALF_PI = M_PI_2_F;
-
-float z_taylor_tc2(const float t, const float y0, const float vx, const float vy,
-               const float ax, const float ay, const float jx, const float jy, const float sx, const float sy){
-    float epoch, t1, t2, t3, t4;
-    float2 pos;
-
-    t1 = t;
-    t2 = t1 * t1;
-    t3 = t2 * t1;
-    t4 = t3 * t1;
-    pos.x =      vx * t1 + 0.5f * ax * t2 + jx * t3 / 6.0f + sx * t4 / 24.0f;
-    pos.y = y0 + vy * t1 + 0.5f * ay * t2 + jy * t3 / 6.0f + sy * t4 / 24.0f;
-    return length(pos);
-}
-
-
 float ma_uniform(float z, float k){
     float flux, kap0, kap1, lambdae;
 

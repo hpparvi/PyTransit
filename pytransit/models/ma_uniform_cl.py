@@ -33,7 +33,9 @@
 
 import warnings
 from os.path import dirname, join
+from pathlib import Path
 from typing import Union, Optional
+from pkg_resources import resource_filename
 
 import pyopencl as cl
 from pyopencl import CompilerWarning
@@ -82,7 +84,10 @@ class UniformModelCL(TransitModel):
 
         # Build the program
         # -----------------
-        self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'opencl','ma_uniform.cl'),'r').read()).build()
+        rd = Path(resource_filename('pytransit', 'models/opencl'))
+        po = rd / 'orbits.cl'
+        pm = rd / 'ma_uniform.cl'
+        self.prg = cl.Program(self.ctx, po.read_text() + pm.read_text()).build()
 
 
     def set_data(self, time: ndarray, lcids: ndarray = None, pbids: ndarray = None, nsamples: ndarray = None, exptimes: ndarray = None):
@@ -244,14 +249,12 @@ class UniformModelCL(TransitModel):
             mf = cl.mem_flags
             self._b_flux = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * self.npv)
             self._b_pv = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
-            self._b_vajs = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.vajs)
+            self._b_vajs = cl.Buffer(self.ctx, mf.READ_WRITE, float32().nbytes*self.npv*9)
 
         self.pv[:] = pvp
         cl.enqueue_copy(self.queue, self._b_pv, self.pv)
 
-        self.vajs[:] = vajs_from_paiew_v(pvp[:, -5], pvp[:,-4], pvp[:,-3], pvp[:,-2], pvp[:,-1]).astype('float32')
-        cl.enqueue_copy(self.queue, self._b_vajs, self.vajs)
-
+        self.prg.vajs_from_paiew_v(self.queue, (self.npv, ), None, self.spv, self._b_pv, self._b_vajs)
         self.prg.uniform_eccentric_pop(self.queue, (self.npv, self.nptb), None, self._b_time, self._b_lcids, self._b_pbids,
                                   self._b_pv, self._b_nsamples, self._b_etimes, self._b_vajs,
                                   self.spv, self.nlc, self.npb, self._b_flux)
