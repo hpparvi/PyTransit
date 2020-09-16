@@ -45,10 +45,22 @@ Read the docs at [pytransit.readthedocs.io](https://pytransit.readthedocs.io).
 
 ## News
 
-- **7.7.2020:** Now introducing the *Swift* transit model (Parviainen, submitted 2020), a fast exoplanet transit model 
-that can use any radially symmetric function to model stellar limb darkening while still being faster to evaluate than 
-the analytical transit model for quadratic limb darkening.
+- **16.9.2020, Version 2.3** 
+    - Version 2.3 adds ``OblateStarModel`` to model transits over gravity-darkened rapidly rotating star as presented by Barnes (2009).
 
+- **13.9.2020, Version 2.2**
+    - Version 2.2 brings a significant speedup to the evaluation speed of all models. The normalised planet-star distances are
+    now calculated using a Taylor-series expansion of the planet's (x,y) sky-plane position. The method gives a 2-6 x speedup to the transit
+    model evaluation and is detailed in Parviainen & Korth (2020, submitted to MNRAS)
+
+- **7.7.2020, Version 2.1** 
+    - Version 2.1 introduces the *RoadRunner* transit model (Parviainen, submitted to MNRAS, 2020), a fast exoplanet transit model 
+    that can use any radially symmetric function to model stellar limb darkening while still being faster to evaluate than 
+    the analytical transit model for quadratic limb darkening.
+    - See the [basic example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_1.ipynb),
+   the [custom limb darkening notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_2.ipynb),
+   and the [LDTk limb darkening model example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_3.ipynb).
+  
 ## Examples and tutorials
 
 - [TESS transit modelling example](https://github.com/hpparvi/PyTransit/blob/master/notebooks/tess_examples/WASP-4b.ipynb) 
@@ -59,16 +71,7 @@ the analytical transit model for quadratic limb darkening.
   as detailed in [Parviainen et al. (A&A, 2019)](https://www.aanda.org/articles/aa/pdf/2019/10/aa35709-19.pdf), and used 
   in [Parviainen et al. (A&A, 2020)](https://www.aanda.org/articles/aa/pdf/2020/01/aa35958-19.pdf).
 
-## What's new in PyTransit v2.1
 
-**Added** 
- - A new transit model, ``pytransit.SwiftModel``, that can use any radially symmetric function to model stellar limb
-   darkening while still giving performance similar to the analytical transit model for quadratic limb darkening 
-   (``pytransit.QuadraticModel``).
- - See the [basic example notebook](https://github.com/hpparvi/PyTransit/blob/dev/notebooks/swift/swift_model_example_1.ipynb),
-   the [custom limb darkening notebook](https://github.com/hpparvi/PyTransit/dev/ptmodel/notebooks/swift/swift_model_example_2.ipynb),
-   and the [LDTk limb darkening model example notebook](https://github.com/hpparvi/PyTransit/blob/dev/notebooks/swift/swift_model_example_3.ipynb).
-  
 ## What's new in PyTransit v2.0
 
 **Freedom from Fortran**
