@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.3.0] - 2020-09-16
+
+### Added
+
+ - *osmodel:* transit model to model transits over rapidly rotating gravity-darkened stars by Barnes (2009).
+   This is an initial release of the model (only a CPU version works at the moment) but I expect to 
+   have it on-par with the rest of the models by v2.4.
+ 
+### Changed
+
+ - Renamed the *Swift* transit model introduced in v2.1 to *RoadRunner* transit model.
+ - Fixed several *RoadRunner* model issues caused by the transition to calculating the
+   projected distances using Taylor series expansion.
+ - Changed several of the OpenCL models use the Taylor series expansion approach to calculate
+   the projected distances.
+ - Lots of minor bug fixes.
+
 ## [2.2.0] - 2020-09-13
 
 PyTransit version 2.2 now calculates the normalized planet-star distances using a Taylor series expansion
