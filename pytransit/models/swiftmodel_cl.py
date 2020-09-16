@@ -26,7 +26,7 @@ from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, a
     concatenate, empty, linspace, diff, trapz
 from .ldmodel import LDModel
 
-from pytransit.models.numba.swiftmodel import create_z_grid
+from pytransit.models.numba.rrmodel import create_z_grid
 
 from .transitmodel import TransitModel
 from .numba.ldmodels import *

@@ -69,7 +69,7 @@ class LDTkLDModel(LDModel):
     def __init__(self, pbs: Tuple, teff: Tuple[float, float], logg: Tuple[float, float], z: Tuple[float, float],
                  samples: int = 500, frozen: bool = False, cache: Optional[Union[str, Path]] = None, lowres: bool = True):
         super().__init__()
-        self._sc = LDPSetCreator(teff, logg, z, pbs, cache=cache, lowres=lowres)
+        self._sc = LDPSetCreator(teff, logg, z, pbs, cache=cache, dataset='vis_lowres')
         self._ps = self._sc.create_profiles(samples)
         self._i = 0
 

@@ -18,8 +18,8 @@ from numba import njit, prange
 from scipy.constants import G, k, h, c
 from numpy import exp, pi, sqrt, zeros, sin, cos, nan, inf, linspace, meshgrid, floor, isfinite, fmax, isnan, nanmean, arange
 
-from .swiftmodel import circle_circle_intersection_area
-from ...orbits.orbits_py import vajs_from_paiew
+from .rrmodel import circle_circle_intersection_area
+from ...orbits.taylor_z import vajs_from_paiew
 
 d2sec = 24.*60.*60.
 
