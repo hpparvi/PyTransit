@@ -3,7 +3,6 @@ scipy>=1.5.0
 pandas~=1.1.1
 xarray~=0.12.3
 tables
-seaborn~=0.10.1
 uncertainties~=3.1.1
 numba~=0.50.1
 astropy~=4.0.1.post1
