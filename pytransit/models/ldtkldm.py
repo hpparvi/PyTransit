@@ -17,13 +17,18 @@
 from typing import Tuple, Optional, Union
 from pathlib import Path
 
-from ldtk import LDPSetCreator
 from numba import njit
 from numpy import zeros, interp, pi, ndarray
 from numpy.random import randint
 
 from .ldmodel import LDModel
 
+try:
+    from ldtk import LDPSetCreator
+except ImportError:
+    class LDPSetCreator:
+        def __init__(self, *nargs, **kwargs):
+            raise ModuleNotFoundError('LDTkLDModel requires LDTk.')
 
 @njit
 def ntrapz(x, y):
