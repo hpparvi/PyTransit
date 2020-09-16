@@ -34,14 +34,7 @@ from .rrmodel import RoadRunnerModel
 
 __all__ = ['SwiftModel']
 
+@deprecated(version='2.3.0', action='once',
+            reason='SwiftModel has been renamed to RoadRunnnerModel, please use it instead.')
 class SwiftModel(RoadRunnerModel):
-
-    @deprecated(version='2.3.0', reason='SwiftModel has been renamed to RoadRunnnerModel, please use it instead.')
-    def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
-                 interpolate: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
-                 nzin: int = 20, nzlimb: int = 20, zcut: float = 0.7, ng: int = 50,
-                 parallel: bool = False, small_planet_limit: float = 0.01):
-
-        super().__init__(ldmodel, interpolate, klims, nk, nzin, nzlimb, zcut, ng, parallel,
-                 small_planet_limit)
     pass
