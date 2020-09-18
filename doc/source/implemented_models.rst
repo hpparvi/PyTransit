@@ -4,6 +4,15 @@ Implemented transit models
 PyTransit implements a set of transit models that all share a common interface that is described in more detail in
 :doc:`models`.
 
+Road Runner model
+-----------------
+RoadRunner (:class:`pytransit.RoadRunnerModel`)  is a fast and flexible transit model presented in Parviainen (accepted to MNRAS 2020).
+I'll write a proper documentation soon, but these example notebooks should help you up to speed until then
+
+- `Example 1: basics <https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_1.ipynb>`_
+- `Example 2: custom limb darkening <https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_2.ipynb>`_
+- `Example 3: LDTk limb darkening model <https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_3.ipynb>`_
+
 Uniform model
 -------------
 
@@ -22,10 +31,10 @@ in `Mandel & Agol (ApJ 580, 2001) <https://iopscience.iop.org/article/10.1086/34
 
 - `Quadratic model example <https://github.com/hpparvi/PyTransit/blob/master/notebooks/example_quadratic_model.ipynb>`_
 
-**Notes:**
+Oblate star model
+-----------------
 
-- The current implementation requires the minimum and maximum radius ratios to be given. **The model evaluates to unity
-  for radius ratios outside these limits.**
+TBD
 
 Power-2 model
 -------------
