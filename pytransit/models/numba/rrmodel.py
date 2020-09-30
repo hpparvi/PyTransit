@@ -15,10 +15,119 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numba import njit, prange
-from numpy import arccos, sqrt, linspace, zeros, dot, floor, pi, ndarray, atleast_1d, isnan, inf, atleast_3d, nan, fmax
+from numpy import arccos, sqrt, linspace, zeros, dot, floor, pi, ndarray, atleast_1d, isnan, inf, atleast_3d, nan, fmax, \
+    arctan2
 
 from pytransit.orbits.taylor_z import vajs_from_paiew, z_taylor_st, z_taylor_v
 
+
+@njit
+def tsort(r1, r2, b):
+    if r1 > r2:
+        if r1 > b:
+            x = r1
+            if r2 > b:
+                y = r2
+                z = b
+            else:
+                y = b
+                z = r2
+        else:
+            x = b
+            y = r1
+            z = r2
+    else:
+        if r2 > b:
+            x = r2
+            if r1 > b:
+                y = r1
+                z = b
+            else:
+                y = b
+                z = r1
+        else:
+            x = b
+            y = r2
+            z = r1
+    return x, y, z
+
+
+@njit
+def circle_circle_intersection_area_kite(r1, r2, b):
+    """Circle-circle intersection routine adapted from Agol et al. (2020)
+
+    Circle-circle intersection routine adapted from Agol et al. (2020). The only
+    major change is that the radius of the first circle is also a a free parameter.
+    """
+    if r1 + r2 <= b:
+        return 0.0, 0.0
+    elif abs(r1 - r2) < b and b <= r1 + r2:
+        x, y, z = tsort(r1, r2, b)
+        a_kite = 0.5 * sqrt((x + (y + z)) * (z - (x - y)) * (z + (x - y)) * (x + (y - z)))
+        k0 = arctan2(2.0 * a_kite, (r2 - r1) * (r2 + r1) + b * b)
+        k1 = arctan2(2.0 * a_kite, (r1 - r2) * (r1 + r2) + b * b)
+        a_lens = r1 * r1 * k1 + r2 * r2 * k0 - a_kite
+        return a_lens, k0
+    elif b <= r1 - r2:
+        return pi * r2 ** 2, 2 * pi
+    elif b <= r2 - r1:
+        return pi * r1 ** 2, 0.0
+    else:
+        return nan, nan
+
+
+@njit
+def circle_circle_intersection_area_kite_v(r1, r2, b):
+    n = r1.size
+    a = zeros(n)
+    k0 = zeros(n)
+    for i in range(n):
+        a[i], k0[i] = circle_circle_intersection_area_kite(r1[i], r2[i], b[i])
+    return a, k0
+
+
+@njit
+def dfdk(k, b, k0, lda, dg, ist):
+    if b < 1.0+k-1e-5:
+        g =  b / (1.0+k)
+        ig = int(floor(g / dg))
+        ag = g - ig*dg
+        l = (1.0-ag)*lda[ig] + ag*lda[ig+1]
+        return -2.0*k*k0*l/ist
+    else:
+        return 0.0
+
+@njit
+def dfdb(k, b, a, ak, lda, dg, ist):
+    if b < 0.005 or b >= 1.0+k-1e-5:
+        return 0.0
+    else:
+        g = b / (1.0+k)
+        ig = int(floor(g / dg))
+        ag = g - ig*dg
+        l1 = lda[ig]
+        l2 = lda[ig+1]
+        l = (1.-ag)*l1 + ag*l2
+        dldb = -(l2-l1) / (dg * (1+k))
+        return 2 * ak * l / (b * ist) + dldb * a / ist
+
+
+@njit
+def dfdk_v(b, k, k0, lda, dg, ist):
+    n = b.size
+    df = zeros(n)
+    for i in range(n):
+        df[i] = dfdk(k, b[i], k0, lda, dg, ist)
+    return df
+
+
+@njit
+def dfdb_v(b, k, a, ak, lda, dg, ist):
+    n = b.size
+    df = zeros(n)
+    for i in range(n):
+        df[i] = dfdb(k, b[i], a, ak, lda, dg, ist)
+    return df
 
 @njit
 def circle_circle_intersection_area(r1, r2, b):
@@ -141,7 +250,7 @@ def calculate_weights_3d(nk: int, k0: float, k1: float, ze: ndarray, ng: int):
     ks = linspace(k0, k1, nk)
     gs = linspace(0., 1. - 1e-7, ng)
     nz = ze.size
-    weights = zeros((nk,ng, nz))
+    weights = zeros((nk, ng, nz))
 
     for ik in range(nk):
         for ig in range(ng):
