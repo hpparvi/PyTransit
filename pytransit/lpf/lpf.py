@@ -261,9 +261,9 @@ class BaseLPF(LogPosteriorFunction):
         self.tm.set_data(self.timea-self._tref, self.lcids, self.pbids, self.nsamples, self.exptimes)
 
         if errors is None:
-            self.errors = array([full(t.size, nan) for t in self.times])
+            self.errors = [full(t.size, nan) for t in self.times]
         else:
-            self.errors = asarray(errors)
+            self.errors = errors
         self.errora = concatenate(self.errors)
 
         # Initialise the light curves slices
