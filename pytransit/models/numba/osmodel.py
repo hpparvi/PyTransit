@@ -256,7 +256,7 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
                    f, feff, sphi, cphi, beta, wavelength,
                    ts, xs, ys, xp, yp,
                    lcids, pbids, nsamples, exptimes, npb):
-    x0, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(t0, p, a, i, e, w)
+    y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
 
     sa, ca = sin(aa), cos(aa)
     half_window_width = fmax(0.125, (2.0 + k[0])/vx)
