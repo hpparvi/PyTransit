@@ -17,7 +17,7 @@
 from numba import njit
 from numpy import zeros_like, cos, sin, floor, sqrt, zeros
 
-from .orbits_py import ta_newton_s, ta_newton_v, i_from_baew
+from .orbits_py import ta_newton_s, ta_newton_v, i_from_baew, eclipse_phase
 
 
 @njit(fastmath=True)
@@ -100,6 +100,90 @@ def vajs_from_paiew(p, a, i, e, w):
     sy = (-a*(y0 + y6) + b*(y1 + y5) - c*(y2 + y4) + d*y3)/dt**4
 
     return y3, vx, vy, ax, ay, jx, jy, sx, sy
+
+
+@njit(fastmath=True)
+def vajs_from_paiew_eclipse(p, a, i, e, w):
+    """Planet velocity, acceleration, jerk, and snap at mid-eclipse in [R_star / day]"""
+
+    # Time step for central finite difference
+    # ---------------------------------------
+    # I've tried to choose a value that is small enough to
+    # work with ultra-short-period orbits and large enough
+    # not to cause floating point problems with the fourth
+    # derivative (anything much smaller starts hitting the
+    # double precision limit.)
+    dt = 2e-2
+
+    ae = a * (1. - e ** 2)
+    ci = cos(i)
+
+    # Calculation of X and Y positions
+    # --------------------------------
+    # These could just as well be calculated with a single
+    # loop with X and Y as arrays, but I've decided to
+    # manually unroll it because it seems to give a small
+    # speed advantage with numba.
+
+    te = eclipse_phase(p, i, e, w)
+
+    f0 = ta_newton_s(te - 3 * dt, 0.0, p, e, w)
+    f1 = ta_newton_s(te - 2 * dt, 0.0, p, e, w)
+    f2 = ta_newton_s(te - dt, 0.0, p, e, w)
+    f3 = ta_newton_s(te, 0.0, p, e, w)
+    f4 = ta_newton_s(te + dt, 0.0, p, e, w)
+    f5 = ta_newton_s(te + 2 * dt, 0.0, p, e, w)
+    f6 = ta_newton_s(te + 3 * dt, 0.0, p, e, w)
+
+    r0 = ae / (1. + e * cos(f0))
+    r1 = ae / (1. + e * cos(f1))
+    r2 = ae / (1. + e * cos(f2))
+    r3 = ae / (1. + e * cos(f3))
+    r4 = ae / (1. + e * cos(f4))
+    r5 = ae / (1. + e * cos(f5))
+    r6 = ae / (1. + e * cos(f6))
+
+    x0 = -r0 * cos(w + f0)
+    x1 = -r1 * cos(w + f1)
+    x2 = -r2 * cos(w + f2)
+    x3 = -r3 * cos(w + f3)
+    x4 = -r4 * cos(w + f4)
+    x5 = -r5 * cos(w + f5)
+    x6 = -r6 * cos(w + f6)
+
+    y0 = -r0 * sin(w + f0) * ci
+    y1 = -r1 * sin(w + f1) * ci
+    y2 = -r2 * sin(w + f2) * ci
+    y3 = -r3 * sin(w + f3) * ci
+    y4 = -r4 * sin(w + f4) * ci
+    y5 = -r5 * sin(w + f5) * ci
+    y6 = -r6 * sin(w + f6) * ci
+
+    # First time derivative of position: velocity
+    # -------------------------------------------
+    a, b, c = 1 / 60, 9 / 60, 45 / 60
+    vx = (a * (x6 - x0) + b * (x1 - x5) + c * (x4 - x2)) / dt
+    vy = (a * (y6 - y0) + b * (y1 - y5) + c * (y4 - y2)) / dt
+
+    # Second time derivative of position: acceleration
+    # ------------------------------------------------
+    a, b, c, d = 1 / 90, 3 / 20, 3 / 2, 49 / 18
+    ax = (a * (x0 + x6) - b * (x1 + x5) + c * (x2 + x4) - d * x3) / dt ** 2
+    ay = (a * (y0 + y6) - b * (y1 + y5) + c * (y2 + y4) - d * y3) / dt ** 2
+
+    # Third time derivative of position: jerk
+    # ---------------------------------------
+    a, b, c = 1 / 8, 1, 13 / 8
+    jx = (a * (x0 - x6) + b * (x5 - x1) + c * (x2 - x4)) / dt ** 3
+    jy = (a * (y0 - y6) + b * (y5 - y1) + c * (y2 - y4)) / dt ** 3
+
+    # Fourth time derivative of position: snap
+    # ----------------------------------------
+    a, b, c, d = 1 / 6, 2, 13 / 2, 28 / 3
+    sx = (-a * (x0 + x6) + b * (x1 + x5) - c * (x2 + x4) + d * x3) / dt ** 4
+    sy = (-a * (y0 + y6) + b * (y1 + y5) - c * (y2 + y4) + d * y3) / dt ** 4
+
+    return te, y3, vx, vy, ax, ay, jx, jy, sx, sy
 
 
 @njit
