@@ -44,9 +44,15 @@ The package has been used in research since 2010, and is described in [Parviaine
 Read the docs at [pytransit.readthedocs.io](https://pytransit.readthedocs.io).
 
 ## News
+- **14.10.2020, version 2.4**
+    - Version 2.4 adds ``pytransit.EclipseModel`` to model secondary eclipses with as little hassle as possible.
+    - See the [secondary eclipse model example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/example_eclipse_model.ipynb)
+    for an example of how to use it.
 
 - **16.9.2020, Version 2.3** 
     - Version 2.3 adds ``OblateStarModel`` to model transits over gravity-darkened rapidly rotating star as presented by Barnes (2009).
+    - See the [oblate star model example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/osmodel_example_1.ipynb)
+    for an example of usage.
 
 - **13.9.2020, Version 2.2**
     - Version 2.2 brings a significant speedup to the evaluation speed of all models. The normalised planet-star distances are
