@@ -43,7 +43,7 @@
 from numba import njit, prange
 from numpy import pi, sqrt, arccos, abs, zeros_like, sign, sin, cos, abs, atleast_2d, zeros, atleast_1d, isnan, inf, \
     nan, copysign, fmax, floor
-from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st
+from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st, vajs_from_paiew_eclipse
 
 TWO_PI = 2.0 * pi
 HALF_PI = 0.5 * pi
@@ -86,7 +86,7 @@ def uniform_z_v(zs, k, zsign=1.0):
 
 
 @njit(fastmath=True)
-def uniform_z_s(z, k, zsign=1.0):
+def uniform_z_s(z, k, zsign):
     z *= zsign
 
     # Out of transit
@@ -125,12 +125,17 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
     npt = t.size
     flux = zeros((npv, npt))
     for ipv in prange(npv):
-        y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        half_window_width = fmax(0.125, (2.0 + k[0, 0])/vx)
+        if zsign >= 0:
+            y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+            half_window_width = fmax(0.125, (2.0 + k[0, 0])/vx)
+            et = 0.0
+        else:
+            et, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew_eclipse(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+            half_window_width = fmax(0.125, (2.0 + k[0, 0]) / (-vx))
 
         for j in range(npt):
-            epoch = floor((t[j] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
-            tc = t[j] - (t0[ipv] + epoch * p[ipv])
+            epoch = floor((t[j] - t0[ipv] - et + 0.5 * p[ipv]) / p[ipv])
+            tc = t[j] - (t0[ipv] + et + epoch * p[ipv])
             if abs(tc) > half_window_width:
                 flux[ipv, j] = 1.0
             else:
@@ -152,7 +157,7 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
                     if z > 1.0 + _k:
                         flux[ipv, j] += 1.
                     else:
-                        flux[ipv, j] += uniform_z_s(z, _k, zsign)
+                        flux[ipv, j] += uniform_z_s(z, _k, 1.0)
                 flux[ipv, j] /= nsamples[ilc]
     return flux
 
@@ -167,12 +172,17 @@ def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
         flux[:] = nan
         return flux
 
-    y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
-    half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
+    if zsign >= 0:
+        y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
+        half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
+        et = 0.0
+    else:
+        et, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew_eclipse(p, a, i, e, w)
+        half_window_width = fmax(0.125, (2.0 + k[0]) / (-vx))
 
     for j in range(npt):
-        epoch = floor((t[j] - t0 + 0.5 * p) / p)
-        tc = t[j] - (t0 + epoch * p)
+        epoch = floor((t[j] - t0 - et + 0.5 * p) / p)
+        tc = t[j] - (t0 + et + epoch * p)
         if abs(tc) > half_window_width:
             flux[j] = 1.0
         else:
@@ -186,7 +196,7 @@ def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
                 if z > 1.0 + _k:
                     flux[j] += 1.
                 else:
-                    flux[j] += uniform_z_s(z, _k, zsign)
+                    flux[j] += uniform_z_s(z, _k, 1.0)
             flux[j] /= nsamples[ilc]
     return flux
 
@@ -201,12 +211,18 @@ def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, zsign):
     flux = zeros((npv, npt))
     for ipv in range(npv):
         t0, p, a, i, e, w = pvp[ipv, nk:]
-        y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
-        half_window_width = fmax(0.125, (2 + pvp[ipv, 0])/vx)
+
+        if zsign >= 0:
+            y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
+            half_window_width = fmax(0.125, (2 + pvp[ipv, 0])/vx)
+            et = 0.0
+        else:
+            et, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew_eclipse(p, a, i, e, w)
+            half_window_width = fmax(0.125, (2.0 + pvp[ipv, 0]) / (-vx))
 
         for j in prange(npt):
-            epoch = floor((t[j] - t0 + 0.5 * p) / p)
-            tc = t[j] - (t0 + epoch * p)
+            epoch = floor((t[j] - t0 - et + 0.5 * p) / p)
+            tc = t[j] - (t0 + et + epoch * p)
             if abs(tc) > half_window_width:
                 flux[ipv, j] = 1.0
             else:
@@ -231,6 +247,6 @@ def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, zsign):
                     if z > 1.0+k:
                         flux[ipv, j] += 1.
                     else:
-                        flux[ipv, j] += uniform_z_s(z, k, zsign)
+                        flux[ipv, j] += uniform_z_s(z, k, 1.0)
                 flux[ipv, j] /= nsamples[ilc]
     return flux

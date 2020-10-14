@@ -52,6 +52,7 @@ from .models.transitmodel import TransitModel
 from .models.qpower2 import QPower2Model
 from .models.ma_quadratic import QuadraticModel
 from .models.ma_uniform import UniformModel
+from .models.eclipse_model import EclipseModel
 from .models.ma_chromosphere import ChromosphereModel
 from .models.general import GeneralModel
 from .models.rrmodel import RoadRunnerModel
