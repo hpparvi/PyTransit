@@ -614,6 +614,7 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
 
             epoch = floor((t[j] - t0[ipv, iep] + 0.5 * p[ipv]) / p[ipv])
             tc = t[j] - (t0[ipv, iep] + epoch * p[ipv])
+
             if abs(tc) > half_window_width:
                 flux[ipv, j] = 1.0
             else:
