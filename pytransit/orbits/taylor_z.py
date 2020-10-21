@@ -315,7 +315,6 @@ def find_contact_point(k: float, point: int, y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
     z0 = z_taylor_s(t0, 0.0, 1.0, y0, vx, vy, ax, ay, jx, jy, sx, sy) - zt
     z1 = z_taylor_s(t1, 0.0, 1.0, y0, vx, vy, ax, ay, jx, jy, sx, sy) - zt
-    z2 = z_taylor_s(t2, 0.0, 1.0, y0, vx, vy, ax, ay, jx, jy, sx, sy) - zt
 
     i = 0
     while abs(t2 - t0) > 1e-6 and i < 100:
