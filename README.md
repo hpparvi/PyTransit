@@ -44,6 +44,10 @@ The package has been used in research since 2010, and is described in [Parviaine
 Read the docs at [pytransit.readthedocs.io](https://pytransit.readthedocs.io).
 
 ## News
+- **21.10.2020, version 2.5**
+    - Version 2.5 makes modelling of TTVs trivial with ``pytransit.RoadRunnerModel`` and ``pytransit.QuadraticModel``.
+    - See the [TTV modelling example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/ttv_model_example.ipynb) for an example of how to evaluate the models for a TTV analysis.
+
 - **14.10.2020, version 2.4**
     - Version 2.4 adds ``pytransit.EclipseModel`` to model secondary eclipses with as little hassle as possible.
     - See the [secondary eclipse model example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/example_eclipse_model.ipynb)
