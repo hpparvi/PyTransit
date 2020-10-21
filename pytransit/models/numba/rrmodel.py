@@ -488,7 +488,7 @@ def rrmodel_z_interpolated_parallel(z, k, istar, ldp, weights, dk, k0, dg):
 
 @njit(parallel=False, fastmath=True)
 def rrmodel_direct_s_simple(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, splimit, lcids, pbids, epids, nsamples, exptimes, parallel):
-    """Simple PT transit model for a homogeneous time series without supersampling and relatively small number of points.
+    """Simple RoadRunner transit model for a homogeneous time series without supersampling and relatively small number of points.
 
     This version avoids the overheads from threading and supersampling. The fastest option if the number of datapoints
     is smaller than some thousands.
@@ -498,8 +498,8 @@ def rrmodel_direct_s_simple(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, spl
     y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
     z = z_taylor_v(t, t0, p, y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
-    # Swift model branch
-    # ------------------
+    # RoadRunner model branch
+    # -----------------------
     if k[0] > splimit:
         gs, dg, weights = calculate_weights_2d(k[0], ze, ng)
         ldw = dot(weights, ldp[0,0,:])
@@ -597,6 +597,7 @@ def _eval_rrm_parallel(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit
 @njit
 def rrmodel_direct_s(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, splimit, lcids, pbids, epids, nsamples, exptimes, parallel):
     k = atleast_1d(k)
+    t0  = atleast_1d(t0)
     npb = ldp.shape[1]
     gs, dg, weights = calculate_weights_2d(k[0], ze, ng)
 
@@ -614,6 +615,7 @@ def rrmodel_direct_s(t, k, t0, p, a, i, e, w, ldp, istar, ze, zm, ng, splimit, l
 def rrmodel_interpolated_s(t, k, t0, p, a, i, e, w, ldp, istar, weights, zm, dk, k0, dg, splimit,
                            lcids, pbids, epids, nsamples, exptimes, parallel):
     k = atleast_1d(k)
+    t0  = atleast_1d(t0)
     npb = ldp.shape[1]
     nk = (k[0] - k0) / dk
     ik = int(floor(nk))
@@ -629,19 +631,10 @@ def rrmodel_interpolated_s(t, k, t0, p, a, i, e, w, ldp, istar, weights, zm, dk,
         return _eval_rrm_serial(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, lcids, pbids, epids, nsamples, exptimes)
 
 
-#@njit(parallel=True, fastmath=False)
-def rrmodel_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, epids, nsamples, exptimes, npb):
+@njit(parallel=False, fastmath=False)
+def _eval_rrm_direct_v_serial(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, epids, nsamples, exptimes, npb):
     npv = k.shape[0]
     npt = t.size
-    ldp = atleast_3d(ldp)
-
-    if ldp.shape[0] != npv or ldp.shape[1] != npb:
-        raise ValueError(f"The limb darkening profile array should have a shape [npv,npb,ng]")
-
-    if epids.max() != t0.shape[1] - 1:
-        raise ValueError("The number of transit centers must equal to the number of individual epoch IDs.")
-
-    p, a, i = atleast_1d(p), atleast_1d(a), atleast_1d(i)
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
@@ -685,12 +678,59 @@ def rrmodel_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, 
                     flux[ipv, j] /= nsamples[ilc]
     return flux
 
+
 @njit(parallel=True, fastmath=False)
-def rrmodel_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg, lcids, pbids, epids, nsamples, exptimes, npb):
+def _eval_rrm_direct_v_parallel(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, epids, nsamples, exptimes, npb):
     npv = k.shape[0]
     npt = t.size
+
+    flux = zeros((npv, npt))
+    for ipv in prange(npv):
+        y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        half_window_width = fmax(0.125, (2 + k[ipv,0]) / vx)
+
+        gs, dg, weights = calculate_weights_2d(k[ipv,0], ze, ng)
+
+        ldw = zeros((npb, ng))
+        for ipb in range(npb):
+            ldw[ipb] = dot(weights, ldp[ipv, ipb])
+
+        for j in range(npt):
+            ilc = lcids[j]
+            iep = epids[ilc]
+            epoch = floor((t[j] - t0[ipv, iep] + 0.5 * p[ipv]) / p[ipv])
+            tc = t[j] - (t0[ipv, iep] + epoch * p[ipv])
+
+            if abs(tc) > half_window_width:
+                flux[ipv, j] = 1.0
+            else:
+                ipb = pbids[ilc]
+
+                if k.shape[1] == 1:
+                    _k = k[ipv, 0]
+                else:
+                    _k = k[ipv, ipb]
+
+                if isnan(_k) or isnan(a[ipv]):
+                    flux[ipv, j] = inf
+                else:
+                    for isample in range(1, nsamples[ilc] + 1):
+                        time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                        z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+                        if z > 1.0 + _k:
+                            flux[ipv, j] += 1.
+                        else:
+                            iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
+                            aplanet = circle_circle_intersection_area(1.0, _k, z)
+                            flux[ipv, j] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
+                    flux[ipv, j] /= nsamples[ilc]
+    return flux
+
+
+def rrmodel_direct_v(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, epids, nsamples, exptimes, npb, parallel):
+
+    npv = k.shape[0]
     ldp = atleast_3d(ldp)
-    ng = weights.shape[1]
 
     if ldp.shape[0] != npv or ldp.shape[1] != npb:
         raise ValueError(f"The limb darkening profile array should have a shape [npv,npb,ng]")
@@ -699,6 +739,18 @@ def rrmodel_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0,
         raise ValueError("The number of transit centers must equal to the number of individual epoch IDs.")
 
     p, a, i = atleast_1d(p), atleast_1d(a), atleast_1d(i)
+
+    if parallel:
+        return _eval_rrm_direct_v_parallel(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, epids, nsamples, exptimes, npb)
+    else:
+        return _eval_rrm_direct_v_serial(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids, pbids, epids, nsamples, exptimes, npb)
+
+
+@njit(parallel=False, fastmath=False)
+def _eval_rrm_interpolated_v_serial(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg, lcids, pbids, epids, nsamples, exptimes, npb):
+    npv = k.shape[0]
+    npt = t.size
+    ng = weights.shape[1]
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
@@ -744,3 +796,74 @@ def rrmodel_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0,
                             flux[ipv, j] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
                     flux[ipv, j] /= nsamples[ilc]
     return flux
+
+@njit(parallel=True, fastmath=False)
+def _eval_rrm_interpolated_v_parallel(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg, lcids, pbids, epids, nsamples, exptimes, npb):
+    npv = k.shape[0]
+    npt = t.size
+    ng = weights.shape[1]
+
+    flux = zeros((npv, npt))
+    for ipv in prange(npv):
+        y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        half_window_width = fmax(0.125, (2 + k[ipv,0]) / vx)
+
+        ldw = zeros((npb, ng))
+
+        nk = (k[ipv, 0] - k0) / dk
+        ik = int(floor(nk))
+        ak = nk - ik
+
+        for ipb in range(npb):
+            ldw[ipb] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb]) + ak * dot(weights[ik + 1], ldp[ipv, ipb])
+
+        for j in range(npt):
+            ilc = lcids[j]
+            iep = epids[ilc]
+
+            epoch = floor((t[j] - t0[ipv, iep] + 0.5 * p[ipv]) / p[ipv])
+            tc = t[j] - (t0[ipv, iep] + epoch * p[ipv])
+            if abs(tc) > half_window_width:
+                flux[ipv, j] = 1.0
+            else:
+                ipb = pbids[ilc]
+
+                if k.shape[1] == 1:
+                    _k = k[ipv, 0]
+                else:
+                    _k = k[ipv, ipb]
+
+                if isnan(_k) or isnan(a[ipv]):
+                    flux[ipv, j] = inf
+                else:
+                    for isample in range(1, nsamples[ilc] + 1):
+                        time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                        z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+                        if z > 1.0 + _k:
+                            flux[ipv, j] += 1.
+                        else:
+                            iplanet = lerp(z / (1. + _k), dg, ldw[ipb])
+                            aplanet = circle_circle_intersection_area(1.0, _k, z)
+                            flux[ipv, j] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
+                    flux[ipv, j] /= nsamples[ilc]
+    return flux
+
+
+def rrmodel_interpolated_v(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg, lcids, pbids, epids, nsamples, exptimes, npb, parallel):
+    npv = k.shape[0]
+    ldp = atleast_3d(ldp)
+
+    if ldp.shape[0] != npv or ldp.shape[1] != npb:
+        raise ValueError(f"The limb darkening profile array should have a shape [npv,npb,ng]")
+
+    if epids.max() != t0.shape[1] - 1:
+        raise ValueError("The number of transit centers must equal to the number of individual epoch IDs.")
+
+    p, a, i = atleast_1d(p), atleast_1d(a), atleast_1d(i)
+
+    if parallel:
+        return _eval_rrm_interpolated_v_parallel(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg, lcids, pbids, epids, nsamples,
+                                           exptimes, npb)
+    else:
+        return _eval_rrm_interpolated_v_serial(t, k, t0, p, a, i, e, w, ldp, istar, weights, dk, k0, dg, lcids, pbids, epids, nsamples,
+                                         exptimes, npb)
