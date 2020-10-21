@@ -579,17 +579,21 @@ def quadratic_interpolated_z_s(z, k, u, edt, ldt, let, kt, zt):
 
 # Quadratic model for vector parameters
 # -------------------------------------
-@njit(parallel=True, fastmath=True)
-def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb,  edt, ldt, let, kt, zt, interpolate):
-    t0, p, a, i, e, w = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w)
+@njit(parallel=True, fastmath=False)
+def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsamples, exptimes, npb,  edt, ldt, let, kt, zt, interpolate):
+    p, a, i, e, w = atleast_1d(p), atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w)
     ldc = atleast_2d(ldc)
-
-    if ldc.shape[1] != 2*npb:
-        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
     npv = k.shape[0]
     nk = k.shape[1]
     npt = t.size
+
+    if ldc.shape[1] != 2*npb:
+        raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+
+    if epids.max() != t0.shape[1] - 1:
+        raise ValueError("The number of transit centers must equal to the number of individual epoch IDs.")
+
     flux = zeros((npv, npt))
     for ipv in prange(npv):
 
@@ -605,12 +609,14 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, expt
         half_window_width = fmax(0.125, (2.0 + k[0,0]) / vx)
 
         for j in range(npt):
-            epoch = floor((t[j] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
-            tc = t[j] - (t0[ipv] + epoch * p[ipv])
+            ilc = lcids[j]
+            iep = epids[ilc]
+
+            epoch = floor((t[j] - t0[ipv, iep] + 0.5 * p[ipv]) / p[ipv])
+            tc = t[j] - (t0[ipv, iep] + epoch * p[ipv])
             if abs(tc) > half_window_width:
                 flux[ipv, j] = 1.0
             else:
-                ilc = lcids[j]
                 ipb = pbids[ilc]
 
                 if nk == 1:
@@ -639,12 +645,16 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, expt
 # Quadratic model for scalar parameters
 # -------------------------------------
 @njit(parallel=False, fastmath=True)
-def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, exptimes, npb, edt, ldt, let, kt, zt, interpolate):
+def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsamples, exptimes, npb, edt, ldt, let, kt, zt, interpolate):
     ldc = atleast_1d(ldc)
     k = atleast_1d(k)
+    t0 = atleast_1d(t0)
 
     if ldc.size != 2*npb:
         raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
+
+    if epids.max() != t0.size - 1:
+        raise ValueError("The number of transit centers must equal to the number of individual epoch IDs.")
 
     y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
     half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
@@ -657,12 +667,14 @@ def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, nsamples, expt
         return flux
 
     for j in range(npt):
-        epoch = floor((t[j] - t0 + 0.5 * p) / p)
-        tc = t[j] - (t0 + epoch * p)
+        ilc = lcids[j]
+        iep = epids[ilc]
+
+        epoch = floor((t[j] - t0[iep] + 0.5 * p) / p)
+        tc = t[j] - (t0[iep] + epoch * p)
         if abs(tc) > half_window_width:
             flux[j] = 1.0
         else:
-            ilc = lcids[j]
             ipb = pbids[ilc]
 
             if k.size == 1:

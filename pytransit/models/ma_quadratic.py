@@ -109,7 +109,7 @@ class QuadraticModel(TransitModel):
 
         # Scalar parameters branch
         # ------------------------
-        if isinstance(t0, float):
+        if isinstance(p, float):
             e = 0. if e is None else e
             w = 0. if w is None else w
             return self.evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
@@ -123,16 +123,20 @@ class QuadraticModel(TransitModel):
             if k.ndim == 1:
                 k = k.reshape((k.size,1))
 
-            npv = t0.size
+            if t0.ndim == 1:
+                t0 = t0.reshape((t0.size, 1))
+
+            npv = p.size
             e = zeros(npv) if e is None else e
             w = zeros(npv) if w is None else w
 
-            flux = quadratic_model_v(self.time, k, t0, p, a, i, e, w, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb,
+            flux = quadratic_model_v(self.time, k, t0, p, a, i, e, w, ldc,
+                                     self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes, self.npb,
                                      self.ed, self.ld, self.le, self.kt, self.zt, self.interpolate)
 
         return squeeze(flux)
 
-    def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
+    def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: float, a: float, i: float,
                     e: float = 0.0, w: float = 0.0, copy: bool = True) -> ndarray:
         """Evaluate the transit model for a set of scalar parameters.
 
@@ -169,13 +173,15 @@ class QuadraticModel(TransitModel):
 
         ldc = asarray(ldc)
         k = asarray(k)
+        t0 = asarray(t0)
 
         if self.time is None:
             raise ValueError("Need to set the data before calling the transit model.")
         if ldc.size != 2 * self.npb:
             raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
-        flux = quadratic_model_s(self.time, k, t0, p, a, i, e, w, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb,
+        flux = quadratic_model_s(self.time, k, t0, p, a, i, e, w, ldc,
+                                 self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes, self.npb,
                                  self.ed, self.ld, self.le, self.kt, self.zt, self.interpolate)
         return squeeze(flux)
 
