@@ -30,7 +30,7 @@ import timeit
 from typing import Tuple, Callable, Union, List, Optional
 
 from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, linspace, sqrt, pi, ones, log, exp, \
-    tile
+    tile, full
 from scipy.integrate import trapz
 
 from .ldmodel import LDModel
@@ -146,7 +146,7 @@ class RoadRunnerModel(TransitModel):
 
     def set_methods(self):
 
-        if self.npb == 1 and all(self.nsamples == 1):
+        if self.npb == 1 and all(self.nsamples == 1) and all(self.epids == 0):
             self.is_simple = True
         else:
             self.is_simple = False
@@ -172,17 +172,18 @@ class RoadRunnerModel(TransitModel):
     def choose_m_direct_s(self):
         time = linspace(-0.1, 0.1, self.npt)
         ldc = tile([0.2, 0.3], (1,self.npb,1))
+        epids = full(self.nlc, 0)
         ldp = evaluate_ld(ld_quadratic, self.mu, ldc)
         istar = evaluate_ldi(ldi_quadratic, ldc)
         k = asarray([0.1])
 
         model = rrmodel_direct_s
-        ds = """rrmodel_direct_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.zm, self.ng, self.splimit,
-                                  self.lcids, self.pbids, self.nsamples, self.exptimes, True)"""
+        ds = """rrmodel_direct_s(time, k, array([0.0]), 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.zm, self.ng, self.splimit,
+                                  self.lcids, self.pbids, epids, self.nsamples, self.exptimes, True)"""
         tparallel = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
 
-        ds = """rrmodel_direct_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.zm, self.ng, self.splimit,
-                                  self.lcids, self.pbids, self.nsamples, self.exptimes, False)"""
+        ds = """rrmodel_direct_s(time, k, array([0.0]), 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.zm, self.ng, self.splimit,
+                                  self.lcids, self.pbids, epids, self.nsamples, self.exptimes, False)"""
         tserial = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
         if tparallel < tserial:
             self.parallel = True
@@ -190,7 +191,7 @@ class RoadRunnerModel(TransitModel):
 
         if self.is_simple:
             ds = """rrmodel_direct_s_simple(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.ze, self.zm, self.ng, 
-                                             self.splimit, self.lcids, self.pbids, self.nsamples, self.exptimes, False)"""
+                                             self.splimit, self.lcids, self.pbids, epids, self.nsamples, self.exptimes, False)"""
             tsimple = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
             if tsimple < tmin:
                 model = rrmodel_direct_s_simple
@@ -200,18 +201,19 @@ class RoadRunnerModel(TransitModel):
     def choose_m_interp_s(self):
         time = linspace(-0.1, 0.1, self.npt)
         ldc = tile([0.2, 0.3], (1,self.npb,1))
+        epids = full(self.nlc, 0)
         ldp = evaluate_ld(ld_quadratic, self.mu, ldc)
         istar = evaluate_ldi(ldi_quadratic, ldc)
         k = asarray([0.1])
 
         model = rrmodel_interpolated_s
-        ds = """rrmodel_interpolated_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.weights, self.zm, self.dk, 
-                                        self.klims[0], self.dg, self.splimit, self.lcids, self.pbids, self.nsamples, self.exptimes, 
+        ds = """rrmodel_interpolated_s(time, k, array([0.0]), 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.weights, self.zm, self.dk, 
+                                        self.klims[0], self.dg, self.splimit, self.lcids, self.pbids, epids, self.nsamples, self.exptimes, 
                                         True)"""
         tparallel = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
 
-        ds = """rrmodel_interpolated_s(time, k, 0.0, 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.weights, self.zm, self.dk, 
-                                        self.klims[0], self.dg, self.splimit, self.lcids, self.pbids, self.nsamples, self.exptimes, 
+        ds = """rrmodel_interpolated_s(time, k, array([0.0]), 1.0, 4.0, 0.5*pi, 0., 0., ldp, istar, self.weights, self.zm, self.dk, 
+                                        self.klims[0], self.dg, self.splimit, self.lcids, self.pbids, epids, self.nsamples, self.exptimes, 
                                         False)"""
         tserial = timeit.repeat(ds, repeat=3, number=50, globals={**globals(), **locals()})[-1]
 
@@ -260,7 +262,7 @@ class RoadRunnerModel(TransitModel):
 
         # Scalar parameters branch
         # ------------------------
-        if isinstance(t0, float):
+        if isinstance(p, float):
             if e is None:
                 e, w = 0.0, 0.0
             return self.evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
@@ -273,7 +275,10 @@ class RoadRunnerModel(TransitModel):
             if k.ndim == 1:
                 k = k.reshape((k.size, 1))
 
-            npv = t0.size
+            if t0.ndim == 1:
+                t0 = t0.reshape((t0.size, 1))
+
+            npv = p.size
             if e is None:
                 e, w = zeros(npv), zeros(npv)
 
@@ -293,11 +298,11 @@ class RoadRunnerModel(TransitModel):
 
             if self.interpolate:
                 flux = self._m_interp_v(self.time, k, t0, p, a, i, e, w, ldp, istar, self.weights, self.dk,
-                                       self.klims[0], self.dg, self.lcids, self.pbids, self.nsamples,
+                                       self.klims[0], self.dg, self.lcids, self.pbids, self.epids, self.nsamples,
                                        self.exptimes, self.npb)
             else:
                 flux = self._m_direct_v(self.time, k, t0, p, a, i, e, w, ldp, istar, self.ze, self.ng,
-                                       self.lcids, self.pbids, self.nsamples,
+                                       self.lcids, self.pbids, self.epids, self.nsamples,
                                        self.exptimes, self.npb)
         return squeeze(flux)
 
@@ -338,6 +343,7 @@ class RoadRunnerModel(TransitModel):
 
         k = asarray(k)
         ldc = asarray(ldc)
+        t0 = asarray(t0)
 
         if isinstance(self.ldmodel, LDModel):
             ldp, istar = self.ldmodel(self.mu, ldc)
@@ -357,10 +363,10 @@ class RoadRunnerModel(TransitModel):
 
         if self.interpolate:
             flux = self._m_interp_s(self.time, k, t0, p, a, i, e, w, ldp, istar, self.weights, self.zm,
-                                    self.dk, self.klims[0], self.dg, self.splimit, self.lcids, self.pbids, self.nsamples,
-                                    self.exptimes, self.parallel)
+                                    self.dk, self.klims[0], self.dg, self.splimit,
+                                    self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes, self.parallel)
         else:
             flux = self._m_direct_s(self.time, k, t0, p, a, i, e, w, ldp, istar, self.ze, self.zm, self.ng, self.splimit,
-                                    self.lcids, self.pbids, self.nsamples, self.exptimes, self.parallel)
+                                    self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes, self.parallel)
 
         return squeeze(flux)
