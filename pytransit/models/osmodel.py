@@ -29,7 +29,7 @@ class OblateStarModel(TransitModel):
 
     Transit model for a gravity-darkened fast-rotating oblate star following Barnes (ApJ, 2009, 705).
     """
-    def __init__(self, rstar: float = 1.0, wavelength: float = 510, sres: int = 80, pres: int = 6):
+    def __init__(self, rstar: float = 1.0, wavelength: float = 510, sres: int = 80, pres: int = 5, tres: int = 60):
         """
 
         Parameters
@@ -49,6 +49,7 @@ class OblateStarModel(TransitModel):
         self.wavelength = wavelength*1e-9  # Effective wavelength    [m]
         self.sres = sres                   # Integration resolution for the star
         self.pres = pres                   # Integration resolution for the planet
+        self.tres = tres
 
         self._ts, self._xs, self._ys = create_star_xy(sres)
         self._xp, self._yp = create_planet_xy(pres)
@@ -96,7 +97,7 @@ class OblateStarModel(TransitModel):
 
         times = linspace(-0.35, 0.35, 500)
         flux = oblate_model_s(times, array([k]), 0.0, 4.0, a, alpha, i, 0.0, 0.0, ldc, mstar, self.rstar, ostar, tpole, gpole,
-                              f, feff, sphi, cphi, beta, self.wavelength, self._ts, self._xs, self._ys, self._xp, self._yp,
+                              f, feff, sphi, cphi, beta, self.wavelength, self.tres, self._ts, self._xs, self._ys, self._xp, self._yp,
                               self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb)
 
         axs[1].plot(times, flux, 'k')
@@ -163,7 +164,7 @@ class OblateStarModel(TransitModel):
         sphi, cphi = sin(phi), cos(phi)
 
         flux = oblate_model_s(self.time, k, t0, p, a, l, i, e, w, ldc, mstar, self.rstar, ostar, tpole, gpole,
-                              f, feff, sphi, cphi, beta, self.wavelength, self._ts, self._xs, self._ys, self._xp, self._yp,
+                              f, feff, sphi, cphi, beta, self.wavelength, self.tres, self._ts, self._xs, self._ys, self._xp, self._yp,
                               self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb)
 
         return squeeze(flux)

@@ -16,10 +16,11 @@
 
 from numba import njit, prange
 from scipy.constants import G, k, h, c
-from numpy import exp, pi, sqrt, zeros, sin, cos, nan, inf, linspace, meshgrid, floor, isfinite, fmax, isnan, nanmean, arange
+from numpy import exp, pi, sqrt, zeros, sin, cos, nan, inf, linspace, meshgrid, floor, isfinite, fmax, isnan, nanmean, \
+    arange, zeros_like
 
 from .rrmodel import circle_circle_intersection_area
-from ...orbits.taylor_z import vajs_from_paiew
+from ...orbits.taylor_z import vajs_from_paiew, find_contact_point
 
 d2sec = 24.*60.*60.
 
@@ -216,6 +217,51 @@ def mean_luminosity(xc, yc, k, xs, ys, feff, lt, xt, yt):
         return nan
 
 
+@njit
+def mean_luminosity_under_planet(x, y, mstar, rstar, ostar, tpole, gpole, f, feff, sphi, cphi, beta, ldc, wavelength):
+    x = x * rstar
+    y = y * rstar * (1 - feff)
+    l = luminosity_v(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, wavelength)
+    return nanmean(l)
+
+
+@njit
+def calculate_luminosity_interpolation_table(res, k, xp, yp, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy,
+                                             mstar, rstar, ostar, tpole, gpole, f, feff, sphi, cphi, beta, ldc,
+                                             wavelength):
+    t1 = find_contact_point(k, 1, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+    t4 = find_contact_point(k, 4, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+    times = linspace(t1, t4, res)
+
+    lt = zeros_like(times)
+    for i in range(lt.size):
+        x, y = xy_taylor_st(times[i], sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+        xs = x + k * xp
+        ys = y + k * yp
+        lt[i] = mean_luminosity_under_planet(xs, ys, mstar, rstar, ostar, tpole, gpole, f, feff, sphi, cphi, beta, ldc,
+                                             wavelength)
+
+    i = 0
+    while isnan(lt[i]):
+        i += 1
+
+    ifill = lt[i]
+    while i >= 0:
+        lt[i] = ifill
+        i -= 1
+
+    i = lt.size - 1
+    while isnan(lt[i]):
+        i -= 1
+
+    ifill = lt[i]
+    while i < lt.size:
+        lt[i] = ifill
+        i += 1
+
+    return times, lt
+
+
 @njit(fastmath=True)
 def xy_taylor_st(t, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy):
     t2 = t*t
@@ -254,7 +300,7 @@ def xy_taylor_vt(ts, a, y0, vx, vy, ax, ay, jx, jy, sx, sy):
 def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
                    mstar, rstar, ostar, tpole, gpole,
                    f, feff, sphi, cphi, beta, wavelength,
-                   ts, xs, ys, xp, yp,
+                   tres, ts, xs, ys, xp, yp,
                    lcids, pbids, nsamples, exptimes, npb):
     y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
 
@@ -263,6 +309,12 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
 
     npt = t.size
     flux = zeros(npt)
+
+    tp, lp = calculate_luminosity_interpolation_table(tres, k[0], xp, yp, sa, ca,
+                                                      y0, vx, vy, ax, ay, jx, jy, sx, sy,
+                                                      mstar, rstar, ostar, tpole, gpole, f, feff,
+                                                      sphi, cphi, beta, ldc, wavelength)
+    dtp = tp[1] - tp[0]
 
     ls = create_star_luminosity(ts.size, xs, ys, mstar, rstar, ostar, tpole, gpole,
                                 f, feff, sphi, cphi, beta, ldc, wavelength)
@@ -286,15 +338,26 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
                 flux[j] = inf
             else:
                 for isample in range(1, nsamples[ilc] + 1):
-                    time_offset = exptimes[ilc]*((isample - 0.5)/nsamples[ilc] - 0.5)
-                    x, y = xy_taylor_st(tc + time_offset, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
-                    ml = mean_luminosity(x, y, _k, xp, yp, feff, ls, ts, ts)
-                    if isfinite(ml):
-                        b = sqrt(x**2 + (y/(1. - feff))**2)
-                        ia = circle_circle_intersection_area(1., _k, b)
-                        flux[j] += (istar - ml*ia)/istar
+                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+
+                    to = tc + time_offset
+                    it = int(floor((to - tp[0]) / dtp))
+                    if it < 0:
+                        it = 0
+                        at = 0.0
+                    elif it > lp.size - 2:
+                        it = lp.size - 2
+                        at = 1.0
                     else:
-                        flux[j] += 1.0
+                        at = (to - tp[it]) / dtp
+                    ml = (1.0 - at) * lp[it] + at * lp[it + 1]
+
+                    x, y = xy_taylor_st(to, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+
+                    b = sqrt(x ** 2 + (y / (1. - feff)) ** 2)
+                    ia = circle_circle_intersection_area(1., _k, b)
+                    flux[j] += (istar - ml * ia) / istar
+
                 flux[j] /= nsamples[ilc]
     return flux
 
