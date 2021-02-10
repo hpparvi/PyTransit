@@ -220,7 +220,7 @@ def mean_luminosity(xc, yc, k, xs, ys, feff, lt, xt, yt):
 @njit
 def mean_luminosity_under_planet(x, y, mstar, rstar, ostar, tpole, gpole, f, feff, sphi, cphi, beta, ldc, wavelength):
     x = x * rstar
-    y = y * rstar * (1 - feff)
+    y = y * rstar
     l = luminosity_v(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, wavelength)
     return nanmean(l)
 
