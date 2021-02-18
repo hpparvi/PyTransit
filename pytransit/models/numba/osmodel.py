@@ -171,9 +171,7 @@ def create_planet_xy(res: int = 6):
 
 @njit
 def create_star_luminosity(res, x, y, mstar, rstar, ostar, tpole, gpole, f, feff, sphi, cphi, beta, ldc, wavelength):
-    x = x*rstar
-    y = y*rstar*(1 - feff)
-    l = luminosity_v(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, wavelength)
+    l = luminosity_v(x*rstar, y*rstar, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, wavelength)
     return l.reshape((res, res))
 
 
@@ -219,9 +217,7 @@ def mean_luminosity(xc, yc, k, xs, ys, feff, lt, xt, yt):
 
 @njit
 def mean_luminosity_under_planet(x, y, mstar, rstar, ostar, tpole, gpole, f, feff, sphi, cphi, beta, ldc, wavelength):
-    x = x * rstar
-    y = y * rstar
-    l = luminosity_v(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, wavelength)
+    l = luminosity_v(x*rstar, y*rstar, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, wavelength)
     return nanmean(l)
 
 
@@ -318,7 +314,9 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
 
     ls = create_star_luminosity(ts.size, xs, ys, mstar, rstar, ostar, tpole, gpole,
                                 f, feff, sphi, cphi, beta, ldc, wavelength)
-    istar = nanmean(ls)*pi
+
+    astar = pi * (1. - feff)      # Area of an ellipse = pi * a * b, where a = 1 and b = (1 - feff)
+    istar = astar * nanmean(ls)
 
     for j in range(npt):
         epoch = floor((t[j] - t0 + 0.5*p)/p)
@@ -354,7 +352,7 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
 
                     x, y = xy_taylor_st(to, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
-                    b = sqrt(x ** 2 + (y / (1. - feff)) ** 2)
+                    b = sqrt(x**2 + (y / (1. - feff))**2)
                     ia = circle_circle_intersection_area(1., _k, b)
                     flux[j] += (istar - ml * ia) / istar
 
