@@ -3,7 +3,7 @@ scipy>=1.5.0
 pandas~=1.2.2
 xarray~=0.12.1
 tables
-uncertainties~=3.1.1
+uncertainties~=3.1.5
 numba~=0.51.2
 astropy~=4.2
 matplotlib~=3.3.1
