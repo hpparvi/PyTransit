@@ -16,12 +16,18 @@
 from typing import Union
 
 from astropy.constants import R_sun, M_sun
+from matplotlib.patches import Circle
 from matplotlib.pyplot import subplots, setp
-from numpy import linspace, meshgrid, sin, cos, array, ndarray, asarray, squeeze
+from numpy import linspace, sin, cos, array, ndarray, asarray, squeeze, cross, newaxis, pi, where, nan, full, degrees
+from numpy.linalg import norm
+from scipy.spatial.transform.rotation import Rotation
 
 from .transitmodel import TransitModel
-from .numba.osmodel import create_star_xy, create_planet_xy, map_osm, xy_taylor_vt, luminosity_v, oblate_model_s
-from ..orbits import i_from_ba
+from .numba.osmodel import create_star_xy, create_planet_xy, map_osm, xy_taylor_vt, luminosity_v, oblate_model_s, \
+    luminosity_v2
+from ..orbits import as_from_rhop, i_from_baew
+from ..orbits.taylor_z import vajs_from_paiew, find_contact_point
+from ..utils.octasphere import octasphere
 
 
 class OblateStarModel(TransitModel):
@@ -54,55 +60,74 @@ class OblateStarModel(TransitModel):
         self._ts, self._xs, self._ys = create_star_xy(sres)
         self._xp, self._yp = create_planet_xy(pres)
 
-    def visualize(self, k, b, alpha, rho, rperiod, tpole, phi, beta, ldc, ires: int = 256):
-        """Visualize the model for a set of parameters.
+    def visualize(self, k, p, rho, b, e, w, alpha, rperiod, tpole, istar, beta, ldc, figsize=(5, 5), ax=None,
+                  ntheta=18):
+        if ax is None:
+            fig, ax = subplots(figsize=figsize)
+            ax.set_aspect(1.)
+        else:
+            fig, ax = None, ax
 
-        Parameters
-        ----------
-        k
-        b
-        alpha
-        rho
-        rperiod
-        tpole
-        phi
-        beta
-        ldc
-        ires
+        a = as_from_rhop(rho, p)
+        inc = i_from_baew(b, a, e, w)
+        mstar, ostar, gpole, f, _ = map_osm(rstar=self.rstar, rho=rho, rperiod=rperiod, tpole=tpole, phi=0.0)
 
-        Returns
-        -------
+        # Plot the star
+        # -------------
+        vertices_original, faces = octasphere(4)
+        vertices = vertices_original.copy()
+        vertices[:, 1] *= (1.0 - f)
 
-        """
-        a = 4.5
-        mstar, ostar, gpole, f, feff = map_osm(self.rstar, rho, rperiod, tpole, phi)
-        i = i_from_ba(b, a)
-        times = linspace(-1.1, 1.1)
-        ox, oy = xy_taylor_vt(times, alpha, -b, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        triangles = vertices[faces]
+        centers = triangles.mean(1)
+        normals = cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
+        nlength = norm(normals, axis=1)
+        normals /= nlength[:, newaxis]
 
-        x = linspace(-1.1, 1.1, ires)
-        y = linspace(-1.1, 1.1, ires)
-        x, y = meshgrid(x, y)
-        sphi, cphi = sin(phi), cos(phi)
+        rotation = Rotation.from_rotvec((0.5 * pi - istar) * array([1, 0, 0]))
+        rn = rotation.apply(normals)
+        rc = rotation.apply(centers)
 
-        l = luminosity_v(x.ravel()*self.rstar, y.ravel()*self.rstar, mstar, self.rstar, ostar, tpole, gpole,
-                         f, sphi, cphi, beta, ldc, self.wavelength)
+        mask = rn[:, 2] < 0.0
+        l = luminosity_v2(centers[mask], normals[mask], istar, mstar, self.rstar, ostar, tpole, gpole, beta,
+                         ldc, self.wavelength)
+        ax.tripcolor(rc[mask, 0], rc[mask, 1], l, shading='gouraud')
 
-        fig, axs = subplots(1, 2, figsize=(13, 4))
-        axs[0].imshow(l.reshape(x.shape), extent=(-1.1, 1.1, -1.1, 1.1), origin='lower')
-        axs[0].plot(ox, oy, 'w', lw=5, alpha=0.25)
-        axs[0].plot(ox, oy, 'k', lw=2)
+        nphi = 180
+        theta = linspace(0 + 0.1, pi - 0.1, ntheta)
+        phi = linspace(0, 2 * pi, nphi)
+        for i in range(theta.size):
+            y = (1.0 - f) * cos(theta[i])
+            x = cos(phi) * sin(theta[i])
+            z = sin(phi) * sin(theta[i])
+            v = rotation.apply(array([x, full(nphi, y), z]).T)
+            m = v[:, 2] < 0.0
+            ax.plot(where(m, v[:, 0], nan), v[:, 1], 'k--', lw=1.5, alpha=0.25)
 
-        setp(axs[0], ylabel='y [R$_\star$]', xlabel='x [R$_\star$]')
+        # Plot the orbit
+        # --------------
+        y0, vx, vy, ax_, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, inc, e, w)
+        c1 = find_contact_point(k, 1, y0, vx, vy, ax_, ay, jx, jy, sx, sy)
+        c4 = find_contact_point(k, 4, y0, vx, vy, ax_, ay, jx, jy, sx, sy)
+        time = linspace(2 * c1, 2 * c4, 100)
 
-        times = linspace(-0.35, 0.35, 500)
-        flux = oblate_model_s(times, array([k]), 0.0, 4.0, a, alpha, i, 0.0, 0.0, ldc, mstar, self.rstar, ostar, tpole, gpole,
-                              f, feff, sphi, cphi, beta, self.wavelength, self.tres, self._ts, self._xs, self._ys, self._xp, self._yp,
-                              self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb)
+        ox, oy = xy_taylor_vt(time, alpha, y0, vx, vy, ax_, ay, jx, jy, sx, sy)
+        ax.plot(ox, oy, 'k')
 
-        axs[1].plot(times, flux, 'k')
-        setp(axs[1], ylabel='Normalized flux', xlabel='Time - T$_0$')
-        fig.tight_layout()
+        pxy = xy_taylor_vt(array([0.0]), alpha, y0, vx, vy, ax_, ay, jx, jy, sx, sy)
+        ax.add_artist(Circle(pxy, k, zorder=10, fc='k'))
+
+        # Plot the info
+        # -------------
+        ax.text(0.025, 0.95, f"i$_\star$ = {degrees(istar):.1f}$^\circ$", transform=ax.transAxes)
+        ax.text(0.025, 0.90, f"i$_\mathrm{{p}}$ = {degrees(inc):.1f}$^\circ$", transform=ax.transAxes)
+        ax.text(1 - 0.025, 0.95, fr"$\alpha$ = {degrees(alpha):.1f}$^\circ$", transform=ax.transAxes, ha='right')
+        ax.text(0.025, 0.05, f"f = {f:.1f}", transform=ax.transAxes)
+
+        setp(ax, xlim=(-1.1, 1.1), ylim=(-1.1, 1.1), xticks=[], yticks=[])
+        if fig is not None:
+            fig.tight_layout()
+        return ax
 
     def evaluate_ps(self, k: Union[float, ndarray], rho: float, rperiod: float, tpole: float, phi: float,
                     beta: float, ldc: ndarray, t0: float, p: float, a: float, i: float, l: float = 0.0,

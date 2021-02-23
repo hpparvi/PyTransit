@@ -2,6 +2,21 @@
   <profile version="1.0">
     <option name="myName" value="Project Default" />
     <inspection_tool class="PyMethodOverridingInspection" enabled="false" level="WARNING" enabled_by_default="false" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <value>
+          <list size="7">
+            <item index="0" class="java.lang.String" itemvalue="xarray" />
+            <item index="1" class="java.lang.String" itemvalue="tqdm" />
+            <item index="2" class="java.lang.String" itemvalue="numba" />
+            <item index="3" class="java.lang.String" itemvalue="semantic_version" />
+            <item index="4" class="java.lang.String" itemvalue="astropy" />
+            <item index="5" class="java.lang.String" itemvalue="setuptools" />
+            <item index="6" class="java.lang.String" itemvalue="pandas" />
+          </list>
+        </value>
+      </option>
+    </inspection_tool>
     <inspection_tool class="PyPep8Inspection" enabled="true" level="WEAK WARNING" enabled_by_default="true">
       <option name="ignoredErrors">
         <list>

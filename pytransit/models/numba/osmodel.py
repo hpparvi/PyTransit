@@ -154,6 +154,72 @@ def luminosity_v(xs, ys, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta,
             l[i] = planck(wavelength, t)*(1. - ldc[0]*(1. - mu) - ldc[1]*(1. - mu)**2)
     return l
 
+@njit
+def luminosity_v2(ps, normals, istar, mstar, rstar, ostar, tpole, gpole, beta, ldc, wavelength):
+    npt = ps.shape[0]
+    l = zeros(npt)
+    dc = zeros(3)
+
+    vx = 0.0
+    vy = -cos(istar)
+    vz = -sin(istar)
+
+    for i in range(npt):
+        px, py, pz = ps[i] * rstar         # Position vector components
+        nx, ny, nz = normals[i]            # Normal vector components
+
+        mu =  vy*ny + vz*nz
+
+        lp2 = (px**2 + py**2 + pz**2)      # Squared distance from center
+        lc = sqrt(px**2 + pz**2)           # Centrifugal vector length
+        cx, cz = px/lc, pz/lc              # Normalized centrifugal vector
+
+        gg = -G * mstar / lp2              # Newtionian surface gravity component
+        gc = ostar * ostar * lc            # Centrifugal surface gravity component
+
+        gx = gg*nx + gc*cx                 # Surface gravity x component
+        gy = gg*ny                         # Surface gravity y component
+        gz = gg*nz + gc*cz                 # Surface gravity z component
+
+        g = sqrt((gx**2 + gy**2 + gz**2))  # Surface gravity
+        t = tpole*g**beta / gpole**beta    # Temperature [K]
+        l[i] = planck(wavelength, t)     # Thermal radiation
+        l[i] *= (1.-ldc[0]*(1.-mu) - ldc[1]*(1.-mu)**2) # Quadratic limb darkening
+
+
+    return l
+
+
+@njit
+def luminosity_s2(p, normal, istar, mstar, rstar, ostar, tpole, gpole, beta, ldc, wavelength):
+
+    vx = 0.0
+    vy = -cos(istar)
+    vz = -sin(istar)
+
+    px, py, pz = p * rstar             # Position vector components
+    nx, ny, nz = normal                # Normal vector components
+
+    mu =  vy*ny + vz*nz
+
+    lp2 = (px**2 + py**2 + pz**2)      # Squared distance from center
+    lc = sqrt(px**2 + pz**2)           # Centrifugal vector length
+    cx, cz = px/lc, pz/lc              # Normalized centrifugal vector
+
+    gg = -G * mstar / lp2              # Newtionian surface gravity component
+    gc = ostar * ostar * lc            # Centrifugal surface gravity component
+
+    gx = gg*nx + gc*cx                 # Surface gravity x component
+    gy = gg*ny                         # Surface gravity y component
+    gz = gg*nz + gc*cz                 # Surface gravity z component
+
+    g = sqrt((gx**2 + gy**2 + gz**2))  # Surface gravity
+    t = tpole*g**beta / gpole**beta    # Temperature [K]
+    l = planck(wavelength, t)
+    l *= (1.-ldc[0]*(1.-mu) - ldc[1]*(1.-mu)**2) # Quadratic limb darkening
+
+    return l
+
 
 def create_star_xy(res: int = 64):
     st = linspace(-1., 1., res)
