@@ -16,6 +16,6 @@ emcee~=0.0.0
 pytransit~=2.5.2
 ldtk~=1.0
 pyopencl~=2019.1.2
-corner~=2.0.1
+corner~=2.1.0
 celerite~=0.4.0
 pyrr~=0.10.3
