@@ -18,7 +18,7 @@ import math as m
 
 from numpy import inf, zeros, pi, log, where, exp
 from numpy.random import normal, uniform
-from scipy.stats import gamma as gm
+from scipy.stats import gamma as gm, laplace
 
 
 class Prior:
@@ -93,6 +93,25 @@ class JeffreysPrior(Prior):
 
     def rvs(self, size=1):
         return exp(uniform(log(self.x0), log(self.x1), size))
+
+
+class LaplacePrior(Prior):
+    def __init__(self, mean, mad):
+        self.mean = mean
+        self.mad = mad
+        self._p = laplace(mean, mad)
+
+    def logpdf(self, v):
+        return self._p.logpdf(v)
+
+    def rvs(self, size):
+        return self._p.rvs(size)
+
+    def __str__(self):
+        return f'L(μ = {self.mean}, MAD = {self.mad})'
+
+    def __repr__(self):
+        return f'LaplacePrior({self.mean}, {self.mad})'
 
 
 class LogLogisticPrior(Prior):
