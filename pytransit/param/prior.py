@@ -99,10 +99,12 @@ class LaplacePrior(Prior):
     def __init__(self, mean, mad):
         self.mean = mean
         self.mad = mad
+        self._n = 1. / (2 * mad)
+        self._ln = log(self._n)
         self._p = laplace(mean, mad)
 
     def logpdf(self, v):
-        return self._p.logpdf(v)
+        return self._ln - abs(v - self.mean) / self.mad
 
     def rvs(self, size):
         return self._p.rvs(size)
