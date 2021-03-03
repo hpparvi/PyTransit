@@ -32,7 +32,7 @@ def linear_model(pvp, cids, cstart, ncov, cova):
             ilc = cids[ipt]  # Current local light curve index
             cst = cstart[ilc]  # Start of the coefficients in the parameter vector
             nc = ncov[ilc]  # Number of covariates for the current light curve
-            bl[ipv, ipt] = pvp[ipv, cst] + dot(pvp[ipv, cst + 1:cst + nc], cova[ii:ii + nc - 1])
+            bl[ipv, ipt] = pvp[ipv, cst] + dot(pvp[ipv, cst + 1:cst + nc + 1], cova[ii:ii + nc])
             ii += nc
     return bl
 
