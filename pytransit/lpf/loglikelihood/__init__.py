@@ -16,3 +16,4 @@
 
 from .celeriteloglikelihood import CeleriteLogLikelihood
 from .wnloglikelihood import WNLogLikelihood
+from .logisticloglikelihood import LogisticLogLikelihood
