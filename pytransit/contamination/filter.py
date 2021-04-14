@@ -13,18 +13,24 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+from typing import Optional
 
-from numpy import array, ones_like, zeros_like, diff, arange
+from numpy import array, ones_like, zeros_like, diff, arange, linspace
 from scipy.interpolate import interp1d
 
 
 class Filter:
-    def __init__(self, name):
-        self.name = name
+    def __init__(self, name: str):
+        self.name: str = name
+        self.wl_min: float = 250.
+        self.wl_max: float = 1000.
 
     def __call__(self, wl):
         return NotImplementedError
 
+    def sample(self, n: Optional[int] = 100):
+        wl = linspace(self.wl_min+1e-5, self.wl_max-1e-5, n)
+        return wl, self(wl)
 
 class ClearFilter(Filter):
     """Constant unity transmission.
@@ -72,6 +78,8 @@ class TabulatedFilter(Filter):
         super().__init__(name)
         self.wl = array(wl)
         self.tm = array(tm)
+        self.wl_min = self.wl.min()
+        self.wl_max = self.wl.max()
         assert self.wl.size == self.tm.size, "The wavelength and transmission arrays must be of same size"
         assert all(diff(self.wl) > 0.), "Wavelength array must be monotonously increasing"
         assert all((self.tm >= 0.0) & (self.tm <= 1.0)), "Transmission must always be between 0.0 and 1.0"
@@ -79,6 +87,9 @@ class TabulatedFilter(Filter):
 
     def __call__(self, wl):
         return self._ip(wl)
+
+    def sample(self, n: Optional[int] = 100):
+        return self.wl, self.tm
 
 
 sdss_g = BoxcarFilter("g'", 400, 550) #: SDSS G filter
