@@ -38,6 +38,10 @@ from .instrument import Instrument
 from ..utils.phasecurves import planck
 
 
+def read_phoenix_spectrum_table():
+    return pd.DataFrame(pd.read_hdf(resource_filename(__name__, join("data", "spectra.h5")), 'Z0'))
+
+
 @njit
 def contaminate_light_curve(flux: ndarray, contamination: ndarray, pbids: ndarray) -> ndarray:
     """Contaminates a transit light curve.
