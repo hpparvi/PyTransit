@@ -17,11 +17,9 @@
 from numba import njit, prange
 from scipy.constants import G, k, h, c
 from numpy import exp, pi, sqrt, zeros, sin, cos, nan, inf, linspace, meshgrid, floor, isfinite, fmax, isnan, nanmean, \
-    arange, zeros_like, atleast_2d, polyfit
-from scipy.interpolate import interp1d
+    arange, zeros_like, atleast_2d
 
 from .rrmodel import circle_circle_intersection_area
-from ...contamination.contamination import read_phoenix_spectrum_table
 from ...orbits.taylor_z import vajs_from_paiew, find_contact_point
 
 d2sec = 24.*60.*60.
@@ -311,7 +309,7 @@ def mean_luminosity_under_planet(x, y, mstar, rstar, ostar, tpole, gpole, f, sph
 
 @njit
 def calculate_luminosity_interpolation_table(res, k, xp, yp, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy,
-                                             mstar, rstar, ostar, tpole, gpole, f, feff, sphi, cphi, beta, ldc,
+                                             mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc,
                                              tref, fcoeffs):
     t1 = find_contact_point(k, 1, y0, vx, vy, ax, ay, jx, jy, sx, sy)
     t4 = find_contact_point(k, 4, y0, vx, vy, ax, ay, jx, jy, sx, sy)
@@ -397,7 +395,7 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
     flux = zeros(npt)
     tp, lp = calculate_luminosity_interpolation_table(tres, k[0], xp, yp, sa, ca,
                                                       y0, vx, vy, ax, ay, jx, jy, sx, sy,
-                                                      mstar, rstar, ostar, tpole, gpole, f, feff,
+                                                      mstar, rstar, ostar, tpole, gpole, f,
                                                       sphi, cphi, beta, ldc, tref, fcoeffs)
     dtp = tp[1] - tp[0]
     ls = create_star_luminosity(ts.size, xs, ys, mstar, rstar, ostar, tpole, gpole,

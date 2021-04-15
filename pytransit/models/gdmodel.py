@@ -101,14 +101,22 @@ class GravityDarkenedModel(TransitModel):
 
         Parameters
         ----------
+        filters
+            Either the effective wavelength [nm], a Filter object, or a list of Filter objects.
         rstar
             Stellar radius [R_Sun]
-        wavelength
-            Effective wavelength [nm]
         sres
-            Stellar discretization resolution
+            Stellar discretization resolution.
         pres
-            Planet discretization resolution
+            Planet discretization resolution.
+        tres
+            Orbit discretization resolution.
+        model
+            The spectroscopic model to use. Can be either 'blackbody' or 'phoenix'.
+        tmin
+            Minimum allowed temperature [K].
+        tmax
+            Maximum allowed temperature [K].
         """
         super().__init__()
 
@@ -245,9 +253,8 @@ class GravityDarkenedModel(TransitModel):
 
         Notes
         -----
-        This version of the `evaluate` method is optimized for calculating a single transit model (such as when using a
-        local optimizer). If you want to evaluate the model for a large number of parameters simultaneously, use either
-        `evaluate` or `evaluate_pv`.
+        This version of the `evaluate` method is optimized for calculating a single transit model. If you want to
+        evaluate the model for a large number of parameters simultaneously, use `evaluate`.
 
         Returns
         -------
@@ -266,8 +273,8 @@ class GravityDarkenedModel(TransitModel):
         mstar, ostar, gpole, f, feff = map_osm(self.rstar, rho, rperiod, tpole, phi)
         sphi, cphi = sin(phi), cos(phi)
 
-        flux = oblate_model_s(self.time, k, t0, p, a, l, i, e, w, ldc, mstar, self.rstar, ostar, tpole, gpole,
-                              f, feff, sphi, cphi, beta, self.ttref, self._flux_coeffs, self.tres, self._ts, self._xs, self._ys, self._xp, self._yp,
-                              self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb)
+        flux = oblate_model_s(self.time, k, t0, p, a, l, i, e, w, ldc, mstar, self.rstar, ostar, tpole, gpole, f, feff,
+                              sphi, cphi, beta, self.ttref, self._flux_coeffs, self.tres, self._ts, self._xs, self._ys,
+                              self._xp, self._yp, self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb)
 
         return squeeze(flux)
