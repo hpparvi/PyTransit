@@ -46,6 +46,7 @@ from .version import __version__
 # Generic
 # -------
 from .models.transitmodel import TransitModel
+from .contamination.filter import DeltaFilter, BoxcarFilter, TabulatedFilter
 
 # Numba models
 # ------------
@@ -58,6 +59,7 @@ from .models.general import GeneralModel
 from .models.rrmodel import RoadRunnerModel
 from .models.swiftmodel import SwiftModel
 from .models.osmodel import OblateStarModel
+from .models.gdmodel import GravityDarkenedModel
 
 # OpenCL models
 # -------------

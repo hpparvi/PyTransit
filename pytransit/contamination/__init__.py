@@ -20,7 +20,7 @@
 from numpy import sqrt
 from .instrument import Instrument
 from .contamination import SMContamination, BBContamination, contaminate_light_curve
-from .filter import ClearFilter, BoxcarFilter, TabulatedFilter, sdss_z, sdss_i, sdss_r, sdss_g
+from .filter import DeltaFilter, BoxcarFilter, TabulatedFilter, sdss_z, sdss_i, sdss_r, sdss_g
 
 
 def true_radius_ratio(apparent_k: float, contamination: float) -> float:
@@ -32,6 +32,6 @@ def apparent_radius_ratio(true_k: float, contamination: float) -> float:
 
 sdss_griz = (sdss_g, sdss_r, sdss_i, sdss_z)
 
-__all__ = ("SMContamination BBContamination Instrument ClearFilter BoxcarFilter TabulatedFilter".split() +
+__all__ = ("SMContamination BBContamination Instrument DeltaFilter BoxcarFilter TabulatedFilter".split() +
            "true_radius_ratio apparent_radius_ratio sdss_z sdss_i sdss_r sdss_g sdss_griz".split() +
            ["contaminate_light_curve"])
