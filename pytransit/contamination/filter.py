@@ -15,29 +15,41 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Optional
 
-from numpy import array, ones_like, zeros_like, diff, arange, linspace
+from numpy import array, ones_like, zeros_like, diff, arange, linspace, ndarray, where, ones
 from scipy.interpolate import interp1d
 
 
 class Filter:
     def __init__(self, name: str):
         self.name: str = name
-        self.wl_min: float = 250.
-        self.wl_max: float = 1000.
+        self.bbox: ndarray = array([250, 1000], dtype='d')
 
     def __call__(self, wl):
-        return NotImplementedError
+        raise NotImplementedError
 
     def sample(self, n: Optional[int] = 100):
-        wl = linspace(self.wl_min+1e-5, self.wl_max-1e-5, n)
-        return wl, self(wl)
+        raise NotImplementedError
+
+
+class DeltaFilter(Filter):
+    def __init__(self, name: str, wl: float):
+        super().__init__(name)
+        self.wl: float = wl
+        self.bbox = array([wl-1e-5, wl+1e-5])
+
+    def __call__(self, wl):
+        return where(abs(wl - self.wl) < 1e-5, 1.0, 0.0)
+
+    def sample(self, n: Optional[int] = 100):
+        return array(self.wl), array(1.0)
+
 
 class ClearFilter(Filter):
     """Constant unity transmission.
-
     """
-    def __call__(self, wl):
-        return ones_like(wl).astype("d")
+
+    def __init__(self, name: str):
+        raise NotImplementedError("CleanFilter has been removed, please use a wide BoxcarFilter instead.")
 
 
 class BoxcarFilter(Filter):
@@ -53,13 +65,15 @@ class BoxcarFilter(Filter):
         :param wl_max: maximum wavelength
         """
         super().__init__(name)
-        self.wl_min = wl_min
-        self.wl_max = wl_max
+        self.bbox = array([wl_min, wl_max], dtype='d')
 
     def __call__(self, wl):
         w = zeros_like(wl)
-        w[(wl > self.wl_min) & (wl < self.wl_max)] = 1.
+        w[(wl >= self.bbox[0]) & (wl <= self.bbox[1])] = 1.
         return w
+
+    def sample(self, n: Optional[int] = 100):
+        return linspace(*self.bbox, num=n), ones(n)
 
 
 class TabulatedFilter(Filter):
@@ -78,8 +92,7 @@ class TabulatedFilter(Filter):
         super().__init__(name)
         self.wl = array(wl)
         self.tm = array(tm)
-        self.wl_min = self.wl.min()
-        self.wl_max = self.wl.max()
+        self.bbox = array([self.wl.min(), self.wl.max()])
         assert self.wl.size == self.tm.size, "The wavelength and transmission arrays must be of same size"
         assert all(diff(self.wl) > 0.), "Wavelength array must be monotonously increasing"
         assert all((self.tm >= 0.0) & (self.tm <= 1.0)), "Transmission must always be between 0.0 and 1.0"
