@@ -28,10 +28,12 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Iterable, Optional
 
-from matplotlib.pyplot import subplots
+from astropy.table import Column
+from corner import corner
+from matplotlib.pyplot import subplots, setp
 from numba import njit
 from numpy import zeros, log, pi, inf, atleast_2d, arange, arctan2, cos, squeeze, median, linspace, \
-    percentile, argsort, sum, concatenate, full, sqrt
+    percentile, argsort, sum, concatenate, full, sqrt, ndarray
 from numpy.random.mtrand import permutation
 
 from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
@@ -41,12 +43,58 @@ from pytransit.orbits.orbits_py import ta_newton_v
 
 
 @njit(cache=False)
+def lnlike_normal_s(o, m, e):
+    return -sum(log(e)) - 0.5*o.size*log(2.*pi) - 0.5*sum((o-m)**2/e**2)
+
+
+@njit(cache=False)
 def lnlike_normal(o, m, e):
     npv = m.shape[0]
     lnl = zeros(npv)
     for ipv in range(npv):
         lnl[ipv] = -sum(log(e[ipv])) - 0.5*o.size*log(2.*pi) - 0.5*sum((o-m[ipv])**2/e[ipv]**2)
     return lnl
+
+
+class RVLPF(LogPosteriorFunction):
+    def __init__(self, name: str, nplanets: int, times, rvs, rves, rvis=None):
+        super().__init__(name)
+
+        def transform_input(a):
+            if isinstance(a, (list, tuple)):
+                return a
+            elif isinstance(a, ndarray):
+                return [a]
+            elif isinstance(a, Column):
+                return [a.data]
+
+        times = transform_input(times)
+        rvs = transform_input(rvs)
+        rves = transform_input(rves)
+        if rvis:
+            rvis = transform_input(rvis)
+        else:
+            rvis = zeros(len(times), 'int')
+
+        self._tref = concatenate(times).mean()
+        self.rvm: RVModel = RVModel(self, nplanets, times, rvs, rves, rvis)
+
+    def model(self, pv):
+        return self.rvm.rv_model(pv)
+
+    def lnlikelihood(self, pv):
+        return squeeze(self.rvm.lnlikelihood(pv))
+
+    def plot_rv_vs_time(self, method='de', pv=None, nsamples: int = 200, ntimes: int = 500, axs=None):
+        return self.rvm.plot_rv_vs_time(method, pv, nsamples, ntimes, axs)
+
+    def plot_rv_vs_phase(self, planet: int, method='de', pv=None, nsamples: int = 200, ntimes: int = 500, axs=None):
+        return self.rvm.plot_rv_vs_phase(planet, method, pv, nsamples, ntimes, axs)
+
+    def plot_posteriors(self):
+        df = self.posterior_samples()
+        labels = [f"{d} [{u}]" if u else d for d,u in zip(self.ps.descriptions, self.ps.units)]
+        return corner(df, labels=labels)
 
 
 class RVModel:
@@ -104,10 +152,10 @@ class RVModel:
         pp = []
         for i in range(1, self.nplanets + 1):
             pp.extend([
-                GParameter(f'tc_{i}', f'zero_epoch_{i}', 'd', NP(0.0, 0.1), (-inf, inf)),
-                GParameter(f'p_{i}', f'period_{i}', 'd', NP(1.0, 1e-5), (0, inf)),
-                GParameter(f'secw_{i}', f'sqrt(e)_cos(w)_{i}', 'rad', UP(-1.0, 1.0), (-1, 1)),
-                GParameter(f'sesw_{i}', f'sqrt(e)_sin(w)_{i}', '', UP(-1.0, 1.0), (-1, 1)),
+                GParameter(f'tc_{i}', f'zero epoch {i}', 'd', NP(0.0, 0.1), (-inf, inf)),
+                GParameter(f'p_{i}', f'period {i}', 'd', NP(1.0, 1e-5), (0, inf)),
+                GParameter(f'secw_{i}', f'sqrt(e) cos(w) {i}', '', UP(-1.0, 1.0), (-1, 1)),
+                GParameter(f'sesw_{i}', f'sqrt(e) sin(w) {i}', '', UP(-1.0, 1.0), (-1, 1)),
             ])
         ps.add_global_block('planets', pp)
         self._start_pl = ps.blocks[-1].start
@@ -116,7 +164,7 @@ class RVModel:
     def _init_p_rv(self):
         self.ps.thaw()
         ps = self.ps
-        prv = [GParameter(f'rv_shift_{self.rvis[i]}', 'systemic_velocity', 'm/s', NP(0.0, 0.1), (-inf, inf)) for i in
+        prv = [GParameter(f'rv_shift_{self.rvis[i]}', f'systemic velocity {self.rvis[i]}', 'm/s', NP(0.0, 0.1), (-inf, inf)) for i in
                range(len(self.times))]
         ps.add_global_block('rv_shifts', prv)
         self._start_rvs = ps.blocks[-1].start
@@ -130,10 +178,15 @@ class RVModel:
 
         prv = []
         for i in range(1, self.nplanets + 1):
-            prv.append(GParameter(f'rv_k_{i}', f'rv_semiamplitude_{i}', 'm/s', UP(0.0, 1.0), (0, inf)))
+            prv.append(GParameter(f'rv_k_{i}', f'rv semiamplitude {i}', 'm/s', UP(0.0, 1.0), (0, inf)))
         ps.add_global_block('rv_semiamplitudes', prv)
         self._start_rvk = ps.blocks[-1].start
         self._sl_rvk = ps.blocks[-1].slice
+
+        psl = [GParameter('rv_slope', 'linear rv slope', 'm/s', NP(0.0, 1.0), (-inf, inf))]
+        ps.add_global_block('rv_slope', psl)
+        self._start_rv_slope = ps.blocks[-1].start
+        self._sl_rv_slope = ps.blocks[-1].slice
         self.ps.freeze()
 
         pnames = "rv_k_{} tc_{} p_{} secw_{} sesw_{}".split()
@@ -147,7 +200,11 @@ class RVModel:
         pvp = atleast_2d(pvp)
         return squeeze(pvp[:, self._sl_rvs][:, self._rv_ids])
 
-    def rv_model(self, pvp, times=None, planets=None, add_sv=True):
+    def rv_slope(self, pvp, times):
+        pvp = atleast_2d(pvp)
+        return times * pvp[:, self._sl_rv_slope]
+
+    def rv_model(self, pvp, times=None, planets=None, add_sv=True, add_slope=True):
         times = self._timea if times is None else times - self._tref
         pvp = atleast_2d(pvp)
         rvs = zeros((pvp.shape[0], times.size))
@@ -164,12 +221,17 @@ class RVModel:
                 rvs[ipv] += pv[ipv, 0] * (cos(w[ipv] + ta) + e[ipv] * cos(w[ipv]))
         if add_sv:
             rvs += self.rv_shifts(pvp)
+        if add_slope:
+            rvs += self.rv_slope(pvp, times)
         return squeeze(rvs)
 
     def lnlikelihood(self, pvp):
-        pvp = atleast_2d(pvp)
-        errors = sqrt(self._rvea ** 2 + pvp[:, self._sl_rv_err][:, self._rv_ids] ** 2)
-        return lnlike_normal(self._rva, self.rv_model(pvp), errors)
+        if pvp.ndim == 2:
+            errors = sqrt(self._rvea**2 + pvp[:, self._sl_rv_err][:, self._rv_ids]**2)
+            return lnlike_normal(self._rva, self.rv_model(pvp), errors)
+        else:
+            errors = sqrt(self._rvea**2 + pvp[self._sl_rv_err][self._rv_ids]**2)
+            return lnlike_normal_s(self._rva, self.rv_model(pvp), errors)
 
     def plot_rv_vs_time(self, method='de', pv=None, nsamples: int = 200, ntimes: int = 500, axs=None):
 
@@ -277,9 +339,12 @@ class RVModel:
                                 facecolor='darkblue',
                                 alpha=0.25)
 
-        axs[0].errorbar(phase, self._rva - rv_others + self.rv_shifts(pv), self._rvea, fmt='ok')
+        axs[0].errorbar(phase, self._rva - rv_others - self.rv_shifts(pv), self._rvea, fmt='ok')
         axs[0].plot(phase_model[msids], rv_model[msids], 'k')
         axs[1].errorbar(phase, self._rva - self.rv_model(pv), self._rvea, fmt='ok')
+
+        setp(axs[0], ylabel='RV [m/s]')
+        setp(axs[1], xlabel='Phase [d]', ylabel='O-M [m/s]')
 
         axs[0].autoscale(axis='x', tight=True)
         if fig is not None:

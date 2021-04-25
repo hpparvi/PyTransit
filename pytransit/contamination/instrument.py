@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numpy import ndarray
-from .filter import Filter, ClearFilter
+from .filter import Filter, BoxcarFilter
 
 
 class Instrument:
@@ -35,4 +35,4 @@ class Instrument:
             elif isinstance(qes, Filter):
                 self.qes = npb * [qes]
         else:
-            self.qes = npb * [ClearFilter('QE')]
+            self.qes = npb * [BoxcarFilter('QE', 0., 10000.)]

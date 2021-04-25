@@ -46,7 +46,7 @@ from .version import __version__
 # Generic
 # -------
 from .models.transitmodel import TransitModel
-from .contamination.filter import DeltaFilter, BoxcarFilter, TabulatedFilter
+from .contamination.filter import DeltaFilter, BoxcarFilter, TabulatedFilter, sdss_g, sdss_r, sdss_i, sdss_z
 
 # Numba models
 # ------------
@@ -96,6 +96,7 @@ except ModuleNotFoundError:
 # Log posterior functions
 # -----------------------
 from .lpf.lpf import BaseLPF
+from .lpf.transitlpf import TransitLPF
 from .lpf.cntlpf import PhysContLPF
 from .lpf.baselines.legendrebaseline import LegendreBaseline
 from .lpf.baselines.linearbaseline import LinearModelBaseline
