@@ -1,0 +1,59 @@
+version: 2
+updates:
+- package-ecosystem: pip
+  directory: "/"
+  schedule:
+    interval: daily
+  open-pull-requests-limit: 10
+  ignore:
+  - dependency-name: pyopencl
+    versions:
+    - 2021.1.2
+    - 2021.1.3
+    - 2021.1.4
+    - 2021.1.5
+  - dependency-name: matplotlib
+    versions:
+    - 3.3.3
+    - 3.3.4
+    - 3.4.0
+  - dependency-name: setuptools
+    versions:
+    - 52.0.0
+    - 53.0.0
+    - 53.1.0
+    - 54.0.0
+    - 54.1.1
+    - 54.1.2
+    - 54.2.0
+  - dependency-name: corner
+    versions:
+    - 2.1.0
+    - 2.2.0
+  - dependency-name: tqdm
+    versions:
+    - 4.56.0
+    - 4.56.1
+    - 4.56.2
+    - 4.57.0
+    - 4.58.0
+    - 4.59.0
+  - dependency-name: pytransit
+    versions:
+    - 2.5.4
+  - dependency-name: deprecated
+    versions:
+    - 1.2.11
+  - dependency-name: xarray
+    versions:
+    - 0.16.2
+  - dependency-name: pandas
+    versions:
+    - 1.2.1
+    - 1.2.2
+  - dependency-name: numba
+    versions:
+    - 0.51.2
+  - dependency-name: astropy
+    versions:
+    - "4.2"
