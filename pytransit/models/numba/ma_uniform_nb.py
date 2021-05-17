@@ -201,7 +201,7 @@ def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
     return flux
 
 
-@njit(parallel=True, fastmath=True)
+@njit(parallel=True, fastmath=False)
 def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, zsign):
     pvp = atleast_2d(pvp)
     npv = pvp.shape[0]
