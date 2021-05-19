@@ -1,7 +1,7 @@
 numpy>=1.19.0
 scipy>=1.5.0
 pandas~=1.2.2
-xarray~=0.12.1
+xarray~=0.18.1
 tables
 uncertainties~=3.1.1
 numba~=0.51.2
