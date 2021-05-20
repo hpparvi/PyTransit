@@ -43,7 +43,7 @@
 from numba import njit, prange
 from numpy import pi, sqrt, arccos, abs, zeros_like, sign, sin, cos, abs, atleast_2d, zeros, atleast_1d, isnan, inf, \
     nan, copysign, fmax, floor
-from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st, vajs_from_paiew_eclipse
+from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st, vajs_from_paiew_eclipse, t14
 
 TWO_PI = 2.0 * pi
 HALF_PI = 0.5 * pi
@@ -127,11 +127,12 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
     for ipv in prange(npv):
         if zsign >= 0:
             y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-            half_window_width = fmax(0.125, (2.0 + k[0, 0])/vx)
+            half_window_width = 0.025 + 0.5 * t14(k[0, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
             et = 0.0
         else:
             et, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew_eclipse(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
             half_window_width = fmax(0.125, (2.0 + k[0, 0]) / (-vx))
+            # TODO: Fix the bounding box for eclipses.
 
         for j in range(npt):
             epoch = floor((t[j] - t0[ipv] - et + 0.5 * p[ipv]) / p[ipv])
@@ -174,10 +175,11 @@ def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
 
     if zsign >= 0:
         y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
-        half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
+        half_window_width = 0.025 + 0.5 * t14(k[0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
         et = 0.0
     else:
         et, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew_eclipse(p, a, i, e, w)
+        # TODO: Fix the bounding box for eclipses.
         half_window_width = fmax(0.125, (2.0 + k[0]) / (-vx))
 
     for j in range(npt):
@@ -214,11 +216,13 @@ def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, zsign):
 
         if zsign >= 0:
             y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
-            half_window_width = fmax(0.125, (2 + pvp[ipv, 0])/vx)
+            half_window_width = 0.025 + 0.5 * t14(pvp[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
             et = 0.0
         else:
             et, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew_eclipse(p, a, i, e, w)
-            half_window_width = fmax(0.125, (2.0 + pvp[ipv, 0]) / (-vx))
+            half_window_width = 0.025 + 0.5 * t14(pvp[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
+            #TODO: Fix the bounding box for eclipses.
+            #half_window_width = fmax(0.125, (2.0 + pvp[ipv, 0]) / (-vx))
 
         for j in prange(npt):
             epoch = floor((t[j] - t0 - et + 0.5 * p) / p)

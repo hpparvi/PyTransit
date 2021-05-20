@@ -45,7 +45,7 @@ from numba import njit, prange
 from numpy import pi, sqrt, arccos, abs, log, zeros, linspace, array, atleast_2d, floor, inf, isnan, atleast_1d, ndarray, nan, copysign, \
     fmax, any
 
-from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st
+from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st, t14
 
 HALF_PI = 0.5 * pi
 FOUR_PI = 4.0 * pi
@@ -606,7 +606,7 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
             continue
 
         y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        half_window_width = fmax(0.125, (2.0 + k[0,0]) / vx)
+        half_window_width = 0.025 + 0.5 * t14(k[ipv,0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
         for j in range(npt):
             ilc = lcids[j]
@@ -658,7 +658,7 @@ def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
         raise ValueError("The number of transit centers must equal to the number of individual epoch IDs.")
 
     y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
-    half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
+    half_window_width = 0.025 + 0.5 * t14(k[0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
     npt = t.size
     flux = zeros(npt)
@@ -723,7 +723,7 @@ def quadratic_model_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes, npb, edt, 
     for ipv in prange(npv):
         t0, p, a, i, e, w = pvp[ipv, nk:]
         y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
-        half_window_width = fmax(0.125, (2 + pvp[ipv, 0]) / vx)
+        half_window_width = 0.025 + 0.5 * t14(pvp[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
         if interpolate and (any(pvp[ipv, :nk] < kt[0]) or any(pvp[ipv, :nk] > kt[-1])):
             flux[ipv, :] = inf

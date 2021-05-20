@@ -355,7 +355,7 @@ def find_z_min(tc, p, y0, vx, vy, ax, ay, jx, jy, sx, sy):
     else:
         return x2, f2
 
-
+@njit
 def t14(k: float, y0, vx, vy, ax, ay, jx, jy, sx, sy):
     t1 = find_contact_point(k, 1, y0, vx, vy, ax, ay, jx, jy, sx, sy)
     t4 = find_contact_point(k, 4, y0, vx, vy, ax, ay, jx, jy, sx, sy)
