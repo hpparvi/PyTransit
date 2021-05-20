@@ -53,6 +53,7 @@ class KeplerLC(object):
         self.min_pts = kwargs.get('min_pts', 5)
 
         orbit, phase = fold_orbit_and_phase(time, period, zero_epoch, 0.5)
+        orbit -= orbit.min()
         msk_phase = abs(phase-0.5)*period < 0.5*d_baseline             # phase inclusion mask
         msk_oot   = abs(phase-0.5)*period > 0.5*d_transit              # out-of-transit mask
         msk_inc   = isfinite(time) & isfinite(flux) & msk_phase        # final data inclusion mask
