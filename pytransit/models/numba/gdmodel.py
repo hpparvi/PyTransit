@@ -20,7 +20,7 @@ from numpy import exp, pi, sqrt, zeros, sin, cos, nan, inf, linspace, meshgrid, 
     arange, zeros_like, atleast_2d
 
 from .rrmodel import circle_circle_intersection_area
-from ...orbits.taylor_z import vajs_from_paiew, find_contact_point
+from ...orbits.taylor_z import vajs_from_paiew, find_contact_point, t14
 
 d2sec = 24.*60.*60.
 
@@ -389,7 +389,7 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
     y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
 
     sa, ca = sin(aa), cos(aa)
-    half_window_width = fmax(0.125, (2.0 + k[0])/vx)
+    half_window_width = 0.025 + 0.5 * t14(k[0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
     npt = t.size
     flux = zeros(npt)

@@ -50,7 +50,7 @@ This module implements the qpower2 transit model by Maxted & Gill (A&A, 622, A33
 from numpy import any, sqrt, pi, arccos, ones_like, atleast_2d, zeros, atleast_1d, nan, copysign, fmax, floor
 from numba import njit, prange
 
-from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st
+from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st, t14
 
 
 @njit(fastmath=True)
@@ -112,7 +112,7 @@ def qpower2_model_v(t, k, ldc, t0, p, a, i, e, w, lcids, pbids, nsamples, exptim
     flux = zeros((npv, npt))
     for ipv in prange(npv):
         y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        half_window_width = fmax(0.125, (2.0 + k[0, 0])/vx)
+        half_window_width = 0.025 + 0.5 * t14(k[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
         for j in range(npt):
             epoch = floor((t[j] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
@@ -146,7 +146,7 @@ def qpower2_model_s(t, k, ldc, t0, p, a, i, e, w, lcids, pbids, nsamples, exptim
     npt = t.size
 
     y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
-    half_window_width = fmax(0.125, (2.0 + k[0]) / vx)
+    half_window_width = 0.025 + 0.5 * t14(k[0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
     flux = zeros(npt)
     for j in range(npt):
@@ -182,7 +182,8 @@ def qpower2_model_pv(t, pvp, ldc, lcids, pbids, nsamples, exptimes):
     for ipv in prange(npv):
         t0, p, a, i, e, w = pvp[ipv, nk:]
         y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
-        half_window_width = fmax(0.125, (2 + pvp[ipv, 0])/vx)
+        half_window_width = 0.025 + 0.5 * t14(pvp[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
+
         for j in range(npt):
             epoch = floor((t[j] - t0 + 0.5*p)/p)
             tc = t[j] - (t0 + epoch*p)

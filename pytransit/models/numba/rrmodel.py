@@ -18,7 +18,7 @@ from numba import njit, prange
 from numpy import arccos, sqrt, linspace, zeros, dot, floor, pi, ndarray, atleast_1d, isnan, inf, atleast_3d, nan, fmax, \
     arctan2
 
-from pytransit.orbits.taylor_z import vajs_from_paiew, z_taylor_st, z_taylor_v
+from pytransit.orbits.taylor_z import vajs_from_paiew, z_taylor_st, z_taylor_v, t14
 
 
 @njit
@@ -97,6 +97,7 @@ def dfdk(k, b, k0, lda, dg, ist):
     else:
         return 0.0
 
+
 @njit
 def dfdb(k, b, a, ak, lda, dg, ist):
     if b < 0.005 or b >= 1.0+k-1e-5:
@@ -128,6 +129,7 @@ def dfdb_v(b, k, a, ak, lda, dg, ist):
     for i in range(n):
         df[i] = dfdb(k, b[i], a, ak, lda, dg, ist)
     return df
+
 
 @njit
 def circle_circle_intersection_area(r1, r2, b):
@@ -163,6 +165,7 @@ def circle_circle_intersection_area_v(r1, r2, bs):
                     r1 ** 2 * arccos((b ** 2 + r1 ** 2 - r2 ** 2) / (2 * b * r1)) -
                     0.5 * sqrt((-b + r2 + r1) * (b + r2 - r1) * (b - r2 + r1) * (b + r2 + r1)))
     return a
+
 
 @njit
 def create_z_grid(zcut: float, nin: int, nedge: int):
@@ -451,6 +454,7 @@ def rrmodel_z_direct_parallel(z, k, istar, ng, ldp, ze):
         flux[i] = (istar - iplanet * aplanet) / istar
     return flux
 
+
 @njit
 def rrmodel_z_direct_serial(z, k, istar, ng, ldp, ze):
     gs, dg, weights = calculate_weights_2d(k, ze, ng)
@@ -458,6 +462,7 @@ def rrmodel_z_direct_serial(z, k, istar, ng, ldp, ze):
     iplanet = im_p_v(z*ztog, dg, weights, ldp)
     aplanet = circle_circle_intersection_area_v(1.0, k, z)
     return (istar - iplanet * aplanet) / istar
+
 
 @njit
 def rrmodel_z_interpolated_serial(z, k, istar, ldp, weights, dk, k0, dg):
@@ -524,7 +529,7 @@ def _eval_rrm_serial(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit, 
         raise ValueError("The number of transit centers must equal to the number of individual epoch IDs.")
 
     y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
-    half_window_width = fmax(0.125, (2 + k[0]) / vx)
+    half_window_width = 0.025 + 0.5 * t14(k[0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
     for j in range(npt):
         ilc = lcids[j]
@@ -563,7 +568,7 @@ def _eval_rrm_parallel(t, k, t0, p, a, i, e, w, istar, zm, dg, ldp, ldw, splimit
         raise ValueError("The number of transit centers must equal to the number of individual epoch IDs.")
 
     y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
-    half_window_width = fmax(0.125, (2 + k[0]) / vx)
+    half_window_width = 0.025 + 0.5 * t14(k[0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
     for j in prange(npt):
         ilc = lcids[j]
@@ -639,7 +644,7 @@ def _eval_rrm_direct_v_serial(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids
     flux = zeros((npv, npt))
     for ipv in prange(npv):
         y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        half_window_width = fmax(0.125, (2 + k[ipv,0]) / vx)
+        half_window_width = 0.025 + 0.5 * t14(k[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
         gs, dg, weights = calculate_weights_2d(k[ipv,0], ze, ng)
 
@@ -687,7 +692,7 @@ def _eval_rrm_direct_v_parallel(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lci
     flux = zeros((npv, npt))
     for ipv in prange(npv):
         y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        half_window_width = fmax(0.125, (2 + k[ipv,0]) / vx)
+        half_window_width = 0.025 + 0.5 * t14(k[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
         gs, dg, weights = calculate_weights_2d(k[ipv,0], ze, ng)
 
@@ -755,7 +760,7 @@ def _eval_rrm_interpolated_v_serial(t, k, t0, p, a, i, e, w, ldp, istar, weights
     flux = zeros((npv, npt))
     for ipv in prange(npv):
         y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        half_window_width = fmax(0.125, (2 + k[ipv,0]) / vx)
+        half_window_width = 0.025 + 0.5 * t14(k[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
         ldw = zeros((npb, ng))
 
@@ -806,7 +811,7 @@ def _eval_rrm_interpolated_v_parallel(t, k, t0, p, a, i, e, w, ldp, istar, weigh
     flux = zeros((npv, npt))
     for ipv in prange(npv):
         y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        half_window_width = fmax(0.125, (2 + k[ipv,0]) / vx)
+        half_window_width = 0.025 + 0.5 * t14(k[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
         ldw = zeros((npb, ng))
 
