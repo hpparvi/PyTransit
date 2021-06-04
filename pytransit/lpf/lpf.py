@@ -92,7 +92,9 @@ class BaseLPF(LogPosteriorFunction):
 
     def __init__(self, name: str, passbands: list, times: list = None, fluxes: Iterable = None, errors: list = None,
                  pbids: list = None, covariates: list = None, wnids: list = None, tm: TransitModel = None,
-                 nsamples: tuple = 1, exptimes: tuple = 0., init_data=True, result_dir: Path = None, tref: float = 0.0,
+                 nsamples: Union[List[int], int] = 1,
+                 exptimes: Union[List[float], float] = 0.,
+                 init_data=True, result_dir: Path = None, tref: float = 0.0,
                  lnlikelihood: str = 'wn'):
         """The base Log Posterior Function class.
 
