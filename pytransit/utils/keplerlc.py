@@ -19,11 +19,13 @@ import numpy as np
 from numpy import inf, isfinite, abs, sum, unique, ones, compress, array, mean, round, int, where, float64, full_like, \
     nan
 
+from pytransit.orbits import epoch
+
 
 def fold_orbit_and_phase(time, period, origo, shift):
-    phase  = ((time - origo)/period + shift)
+    phase  = ((time - origo) / period + shift)
     orbit  = (phase // 1).astype(np.int)
-    phase  = phase % 1.
+    phase  = (phase % 1. - 0.5) * period
     return  orbit, phase
 
 class KeplerLC(object):
@@ -54,11 +56,12 @@ class KeplerLC(object):
 
         orbit, phase = fold_orbit_and_phase(time, period, zero_epoch, 0.5)
         orbit -= orbit.min()
-        msk_phase = abs(phase-0.5)*period < 0.5*d_baseline             # phase inclusion mask
-        msk_oot   = abs(phase-0.5)*period > 0.5*d_transit              # out-of-transit mask
+        msk_phase = abs(phase) < 0.5*d_baseline             # phase inclusion mask
+        msk_oot   = abs(phase) > 0.5*d_transit              # out-of-transit mask
         msk_inc   = isfinite(time) & isfinite(flux) & msk_phase        # final data inclusion mask
 
         self.time   = array(time, float64)
+        self.phase = phase
         self.flux   = array(flux, float64)
         self.qidarr = array(quarter)                                   # quarter indices
         self.tidarr, nt = orbit, orbit[-1]                             # transit indices
@@ -82,16 +85,15 @@ class KeplerLC(object):
                 msk_inc[self.tidarr==tid] = 0
         self._compress_data(msk_inc)
         self._compute_indices()
- 
- 
+
     def _compress_data(self, mask):
         self.time    = compress(mask, self.time)
+        self.phase   = compress(mask, self.phase)
         self.flux    = compress(mask, self.flux)
         self.error   = compress(mask, self.error)
         self.qidarr  = compress(mask, self.qidarr)
         self.tidarr  = compress(mask, self.tidarr)
         self.msk_oot = compress(mask, self.msk_oot)
-
 
     def _compute_indices(self): 
         self.qids = unique(self.qidarr)
@@ -106,9 +108,7 @@ class KeplerLC(object):
             self.tidarr[self.tidarr==tid] = i
         self.tids = unique(self.tidarr)
         self.tslices = [slice(*where(self.tidarr==tid)[0][[0,-1]]+[0,1]) for tid in self.tids]
-
-        self.orbit_n = round((array(list(map(mean, self.time_per_transit))) - self.t0) / self.p).astype(int)
-
+        self.orbit_n = array([epoch(t.mean(), self.t0, self.p) for t in self.time_per_transit])
 
     def get_transit(self, tid, normalize=False, mask_transit=False):
         mask = self.tidarr==tid
