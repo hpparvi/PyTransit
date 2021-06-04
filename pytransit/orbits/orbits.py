@@ -28,7 +28,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numpy import pi, array
-from .orbits_py import mean_anomaly, duration_eccentric, eclipse_phase, ea_iter_v, ea_newton_v, z_ps5, z_newton_v, \
+from .orbits_py import epoch, fold, mean_anomaly, duration_eccentric, eclipse_phase, ea_iter_v, ea_newton_v, z_ps5, z_newton_v, \
     z_ps3, z_iter_v, ta_ip, ta_ps5, ta_ps3, ta_newton_v, ta_iter_v, z_circular
 
 TWO_PI = 2 * pi

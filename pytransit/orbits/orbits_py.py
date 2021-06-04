@@ -26,10 +26,11 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+from typing import Optional
 
 from numba import njit, prange
 from numpy import (pi, arccos, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like, zeros, linspace, floor, arcsin,
-                   int, around, nan, full)
+                   int, around, nan, full, ndarray)
 from scipy.constants import G
 
 HALF_PI = 0.5 * pi
@@ -52,17 +53,45 @@ cache = False
 def epoch(time, zero_epoch, period):
     return around((time - zero_epoch) / period).astype(int)
 
+
+def fold(time: ndarray, period: float, t0: Optional[float] = 0.0, shift: Optional[float] = 0.0):
+    """Folds time over a given period.
+
+    Parameters
+    ----------
+    time
+      An array of time values.
+
+    period
+      Folding period.
+
+    origo
+      Time of zero phase.
+
+    shift
+      Shift in normalized phase [0, 1].
+
+    Returns
+    -------
+    An array of phase values in the same units as the period.
+    """
+    phase = ((time - t0) / period + shift + 0.5) % 1.
+    return period * (phase - 0.5)
+
+
 @njit
 def mean_anomaly_offset(e, w):
     mean_anomaly_offset = arctan2(sqrt(1.0-e**2) * sin(HALF_PI - w), e + cos(HALF_PI - w))
     mean_anomaly_offset -= e*sin(mean_anomaly_offset)
     return mean_anomaly_offset
 
+
 @njit
 def z_from_ta_s(Ta, a, i, e, w):
     z  = a*(1.0-e**2)/(1.0+e*cos(Ta)) * sqrt(1.0 - sin(w+Ta)**2 * sin(i)**2)
     z *= copysign(1.0, sin(w+Ta))
     return z
+
 
 @njit(parallel=True)
 def z_from_ta_v(Ta, a, i, e, w):
@@ -74,9 +103,11 @@ def z_from_ta_v(Ta, a, i, e, w):
 def rclip(v, vmin, vmax):
     return min(max(v, vmin), vmax)
 
+
 @njit
 def iclip(v, vmin, vmax):
     return int(min(max(v, vmin), vmax))
+
 
 # Mean Anomaly
 # ============

@@ -14,4 +14,4 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from .orbits_py import i_from_ba, i_from_baew, d_from_pkaiews, as_from_rhop, rho_from_asp, epoch, eclipse_phase
+from .orbits_py import epoch, fold, i_from_ba, i_from_baew, d_from_pkaiews, as_from_rhop, rho_from_asp, epoch, eclipse_phase
