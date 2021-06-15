@@ -13,7 +13,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
+from celerite.solver import LinAlgError
 from numpy import asarray, unique, zeros, inf, squeeze, zeros_like, isfinite, log10, diff, sqrt
 from astropy.stats import mad_std
 
@@ -84,8 +84,11 @@ class CeleriteLogLikelihood:
             self.gp.compute(self.times, yerr=10 ** parameters[-1])
 
     def compute_gp_lnlikelihood(self, pv, model):
-        self.compute_gp(pv)
-        return self.gp.log_likelihood(self.fluxes - model[self.mask])
+        try:
+            self.compute_gp(pv)
+            return self.gp.log_likelihood(self.fluxes - model[self.mask])
+        except LinAlgError:
+            return -inf
 
     def predict_baseline(self, pv):
         self.compute_gp(pv)
