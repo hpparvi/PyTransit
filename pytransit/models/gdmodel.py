@@ -29,25 +29,27 @@ from .numba.gdmodel import create_star_xy, create_planet_xy, map_osm, xy_taylor_
     luminosity_v2, planck
 from ..contamination.contamination import read_phoenix_spectrum_table
 from ..contamination.filter import Filter, DeltaFilter
+from ..stars import read_bt_settl_table
 from ..orbits import as_from_rhop, i_from_baew
 from ..orbits.taylor_z import vajs_from_paiew, find_contact_point
 from ..utils.octasphere import octasphere
 
 
-def ph_coefficients(filters, tmin: float = 2500, tmax: float = 9000, nt: int = 100):
-    """Calculates polynomial coefficients for passband-integrated flux as a function of temperature.
-
-    Calculates polynomial coefficients for passband-integrated flux as a function of temperature
-    normalized to the maximum flux.
+def bt_settl_table(filters, tmin: float = 1200., tmax: float = 7000., nt: int = 200):
+    """Calculates an interpolation table for passband-integrated flux as a function of temperature.
     """
+    if tmax > 7000:
+        raise ValueError('tmax for BT-SETTL model has to be smaller or equal to 7000 K.')
+    if tmin < 1200:
+        raise ValueError('tmax for BT-SETTL model has to be larger or equal to 1200 K.')
+
     temperatures = linspace(tmin, tmax, nt)
-    tref = temperatures.mean()
     npb = len(filters)
 
-    spectra = read_phoenix_spectrum_table()
-    wl_table = spectra.index.values
-    t_table = spectra.columns.values
-    spectra = interp1d(wl_table, spectra.T)
+    spectra = read_bt_settl_table()
+    wl_table = spectra.columns.values.astype('d')
+    t_table = spectra.index.values
+    spectra = interp1d(wl_table, spectra, bounds_error=False, fill_value=0.0)
     fluxes = zeros((npb, t_table.size))
     for i, f in enumerate(filters):
         wl, tr = f.sample()
@@ -56,22 +58,42 @@ def ph_coefficients(filters, tmin: float = 2500, tmax: float = 9000, nt: int = 1
         else:
             fluxes[i] = (spectra(wl) * tr).mean(1)
     fluxes = interp1d(t_table, fluxes)(temperatures)
-    fluxes /= fluxes.max()
+    fluxes /= fluxes.max(1)[:, newaxis]
 
-    coeffs = zeros((npb, 6))
-    for i, f in enumerate(fluxes):
-        coeffs[i] = polyfit(temperatures - tref, f, 5)
-    return tref, coeffs
+    return fluxes, tmin, temperatures[1] - temperatures[0]
 
 
-def bb_coefficients(filters, tmin: float = 2500, tmax: float = 9000, nt: int = 100):
-    """Calculates polynomial coefficients for passband-integrated flux as a function of temperature.
+def husser2013_table(filters, tmin: float = 2500, tmax: float = 12000, nt: int = 200):
+    """Calculates an interpolation table for passband-integrated flux as a function of temperature.
+    """
+    if tmax > 12000:
+        raise ValueError('tmax for the Husser2013 model has to be smaller or equal to 12000 K.')
+    if tmin < 2500:
+        raise ValueError('tmax for the Husser2013 model has to be larger or equal to 2500 K.')
 
-    Calculates polynomial coefficients for passband-integrated flux as a function of temperature
-    normalized to the maximum flux.
+    temperatures = linspace(tmin, tmax, nt)
+    npb = len(filters)
+
+    spectra = read_phoenix_spectrum_table().T
+    wl_table = spectra.columns.values.astype('d')
+    t_table = spectra.index.values
+    spectra = interp1d(wl_table, spectra, bounds_error=False, fill_value=0.0)
+    fluxes = zeros((npb, t_table.size))
+    for i, f in enumerate(filters):
+        wl, tr = f.sample()
+        if wl.ndim == 0:
+            fluxes[i] = spectra(wl) * tr
+        else:
+            fluxes[i] = (spectra(wl) * tr).mean(1)
+    fluxes = interp1d(t_table, fluxes)(temperatures)
+    fluxes /= fluxes.max(1)[:, newaxis]
+    return fluxes, tmin, temperatures[1] - temperatures[0]
+
+
+def blackbody_table(filters, tmin: float = 1200, tmax: float = 12000, nt: int = 200):
+    """Calculates an interpolation table for passband-integrated flux as a function of temperature.
     """
     temperatures = linspace(tmin, tmax, nt)
-    tref = temperatures.mean()
     npb = len(filters)
 
     fluxes = zeros((npb, nt))
@@ -80,12 +102,8 @@ def bb_coefficients(filters, tmin: float = 2500, tmax: float = 9000, nt: int = 1
         wl *= 1e-9
         for j, t in enumerate(temperatures):
             fluxes[i, j] = (planck(wl, t) * tr).mean()
-    fluxes /= fluxes.max()
-
-    coeffs = zeros((npb, 6))
-    for i, fl in enumerate(fluxes):
-        coeffs[i] = polyfit(temperatures - tref, fl, 5)
-    return tref, coeffs
+    fluxes /= fluxes.max(1)[:,newaxis]
+    return fluxes, tmin, temperatures[1] - temperatures[0]
 
 
 class GravityDarkenedModel(TransitModel):
@@ -96,7 +114,7 @@ class GravityDarkenedModel(TransitModel):
 
     def __init__(self, filters: Union[float, Filter, Iterable[Filter]], rstar: float = 1.0,
                  sres: int = 80, pres: int = 5, tres: int = 60, model: str = 'blackbody',
-                 tmin: float = 2500, tmax: float = 7500):
+                 tmin: float = 5000, tmax: float = 7000):
         """
 
         Parameters
@@ -112,7 +130,7 @@ class GravityDarkenedModel(TransitModel):
         tres
             Orbit discretization resolution.
         model
-            The spectroscopic model to use. Can be either 'blackbody' or 'phoenix'.
+            The spectroscopic model to use. Can be either 'blackbody', 'husser2013', or 'bt-settl'.
         tmin
             Minimum allowed temperature [K].
         tmax
@@ -120,7 +138,7 @@ class GravityDarkenedModel(TransitModel):
         """
         super().__init__()
 
-        assert model in ('blackbody', 'phoenix')
+        assert model in ('blackbody', 'husser2013', 'bt-settl')
         self.model = model
 
         if isinstance(filters, (float, int)):
@@ -138,9 +156,11 @@ class GravityDarkenedModel(TransitModel):
         self.tmax = tmax                   # Maximum temperature [K]
 
         if self.model == 'blackbody':
-            self.ttref, self._flux_coeffs = bb_coefficients(self.filters, tmin, tmax)
+            self._flux_table, self._teff0, self._dteff = blackbody_table(self.filters, tmin, tmax)
+        elif self.model == 'husser2013':
+            self._flux_table, self._teff0, self._dteff = husser2013_table(self.filters, tmin, tmax)
         else:
-            self.ttref, self._flux_coeffs = ph_coefficients(self.filters, tmin, tmax)
+            self._flux_table, self._teff0, self._dteff = bt_settl_table(self.filters, tmin, tmax)
 
         self._ts, self._xs, self._ys = create_star_xy(sres)
         self._xp, self._yp = create_planet_xy(pres)
@@ -175,7 +195,7 @@ class GravityDarkenedModel(TransitModel):
 
         mask = rn[:, 2] < 0.0
         l = luminosity_v2(centers[mask], normals[mask], istar, mstar, self.rstar, ostar, tpole, gpole, beta,
-                         ldc, self.ttref, passband, self._flux_coeffs)
+                         ldc, passband, self._flux_table, self._teff0, self._dteff)
         l /= l.max()
         ax.tripcolor(rc[mask, 0], rc[mask, 1], l, shading='gouraud', vmin=vmin, vmax=vmax)
 
@@ -274,7 +294,8 @@ class GravityDarkenedModel(TransitModel):
         sphi, cphi = sin(phi), cos(phi)
 
         flux = oblate_model_s(self.time, k, t0, p, a, l, i, e, w, ldc, mstar, self.rstar, ostar, tpole, gpole, f, feff,
-                              sphi, cphi, beta, self.ttref, self._flux_coeffs, self.tres, self._ts, self._xs, self._ys,
+                              sphi, cphi, beta, self._flux_table, self._teff0, self._dteff,
+                              self.tres, self._ts, self._xs, self._ys,
                               self._xp, self._yp, self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb)
 
         return squeeze(flux)

@@ -24,25 +24,30 @@ from ...orbits.taylor_z import vajs_from_paiew, find_contact_point, t14
 
 d2sec = 24.*60.*60.
 
+@njit
+def lerpflux_multiband(t, fluxes, t0, dt):
+    npb = fluxes.shape[0]
+    x = (t-t0) / dt
+    i = int(floor(x))
+    fs = zeros(npb)
+    if i < 0 or i > fluxes.shape[1]:
+        fs[:] = nan
+    else:
+        a = x - i
+        for ipb in range(npb):
+            fs[ipb] = (1.-a)*fluxes[ipb, i] + a*fluxes[ipb, i+1]
+    return fs
+
 
 @njit
-def polyflux_multiband(t, tref, coeffs):
-    coeffs = atleast_2d(coeffs)
-    npb = coeffs.shape[0]
-    fluxes = zeros(npb)
-
-    tt = t - tref
-    for i in range(npb):
-        c = coeffs[i]
-        fluxes[i] = c[5] + c[4] * tt + c[3] * tt ** 2 + c[2] * tt * 3 + c[1] * tt ** 4 + c[0] * tt ** 5
-    return fluxes
-
-
-@njit
-def polyflux_singleband(t, tref, ipb, coeffs):
-    c = atleast_2d(coeffs)[ipb]
-    tt = t - tref
-    return c[5] + c[4] * tt + c[3] * tt ** 2 + c[2] * tt * 3 + c[1] * tt ** 4 + c[0] * tt ** 5
+def lerpflux_singleband(t, ipb, fluxes, t0, dt):
+    x = (t-t0) / dt
+    i = int(floor(x))
+    if i < 0 or i > fluxes.shape[1]:
+        return nan
+    else:
+        a = x - i
+        return (1.-a)*fluxes[ipb, i] + a*fluxes[ipb, i+1]
 
 
 @njit
@@ -93,7 +98,7 @@ def z_v(xs, ys, r, f, sphi, cphi):
 
 
 @njit
-def luminosity_s(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, tref, ipb, fcoeffs):
+def luminosity_s(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt):
     dg = zeros(3)
     dc = zeros(3)
 
@@ -128,11 +133,11 @@ def luminosity_s(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, l
         g = sqrt((dgg**2).sum())
         t = tpole*g**beta/gpole**beta
 
-        return polyflux_singleband(t, tref, ipb, fcoeffs) * (1. - ldc[0] * (1. - mu) - ldc[1] * (1. - mu) ** 2)
+        return lerpflux_singleband(t, ipb, ftable, t0, dt) * (1. - ldc[ipb, 0] * (1. - mu) - ldc[ipb, 1] * (1. - mu) ** 2)
 
 
 @njit
-def luminosity_v(xs, ys, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, tref, ipb, fcoeffs):
+def luminosity_v(xs, ys, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt):
     npt = xs.size
     l = zeros(npt)
     dg = zeros(3)
@@ -171,12 +176,12 @@ def luminosity_v(xs, ys, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta,
             g = sqrt((dgg**2).sum())
             t = tpole*g**beta/gpole**beta
 
-            l[i] = polyflux_singleband(t, tref, ipb, fcoeffs) * (1. - ldc[0]*(1. - mu) - ldc[1]*(1. - mu)**2)
+            l[i] = lerpflux_singleband(t, ipb, ftable, t0, dt) * (1. - ldc[ipb, 0]*(1. - mu) - ldc[ipb, 1]*(1. - mu)**2)
     return l
 
 
 @njit
-def luminosity_v2(ps, normals, istar, mstar, rstar, ostar, tpole, gpole, beta, ldc, tref, ipb, fcoeffs):
+def luminosity_v2(ps, normals, istar, mstar, rstar, ostar, tpole, gpole, beta, ldc, ipb, ftable, t0, dt):
     npt = ps.shape[0]
     l = zeros(npt)
     dc = zeros(3)
@@ -204,13 +209,13 @@ def luminosity_v2(ps, normals, istar, mstar, rstar, ostar, tpole, gpole, beta, l
 
         g = sqrt((gx**2 + gy**2 + gz**2))  # Surface gravity
         t = tpole*g**beta / gpole**beta    # Temperature [K]
-        l[i] = polyflux_singleband(t, tref, ipb, fcoeffs) # Thermal radiation
-        l[i] *= (1.-ldc[0]*(1.-mu) - ldc[1]*(1.-mu)**2) # Quadratic limb darkening
+        l[i] = lerpflux_singleband(t, ipb, ftable, t0, dt) # Thermal radiation
+        l[i] *= (1.-ldc[ipb, 0]*(1.-mu) - ldc[ipb, 1]*(1.-mu)**2) # Quadratic limb darkening
     return l
 
 
 @njit
-def luminosity_s2(p, normal, istar, mstar, rstar, ostar, tpole, gpole, beta, ldc,  tref, ipb, fcoeffs):
+def luminosity_s2(p, normal, istar, mstar, rstar, ostar, tpole, gpole, beta, ldc, ipb, ftable, t0, dt):
 
     vx = 0.0
     vy = -cos(istar)
@@ -234,8 +239,8 @@ def luminosity_s2(p, normal, istar, mstar, rstar, ostar, tpole, gpole, beta, ldc
 
     g = sqrt((gx**2 + gy**2 + gz**2))  # Surface gravity
     t = tpole*g**beta / gpole**beta    # Temperature [K]
-    l = polyflux_singleband(t, tref, ipb, fcoeffs)  # Thermal radiation
-    l *= (1.-ldc[0]*(1.-mu) - ldc[1]*(1.-mu)**2) # Quadratic limb darkening
+    l = lerpflux_singleband(t, ipb, ftable, t0, dt)  # Thermal radiation
+    l *= (1.-ldc[ipb, 0]*(1.-mu) - ldc[ipb, 1]*(1.-mu)**2) # Quadratic limb darkening
     return l
 
 
@@ -254,10 +259,10 @@ def create_planet_xy(res: int = 6):
 
 
 @njit
-def create_star_luminosity(res, x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, tref, fcoeffs):
-    l = zeros((fcoeffs.shape[0], res, res))
-    for ipb in range(fcoeffs.shape[0]):
-        l[ipb] = luminosity_v(x*rstar, y*rstar, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, tref, ipb, fcoeffs).reshape((res,res))
+def create_star_luminosity(res, x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ftable, t0, dt):
+    l = zeros((ftable.shape[0], res, res))
+    for ipb in range(ftable.shape[0]):
+        l[ipb] = luminosity_v(x*rstar, y*rstar, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt).reshape((res,res))
     return l
 
 
@@ -302,28 +307,28 @@ def mean_luminosity(xc, yc, k, xs, ys, feff, lt, xt, yt):
 
 
 @njit
-def mean_luminosity_under_planet(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, tref, ipb, fcoeffs):
-    l = luminosity_v(x*rstar, y*rstar, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, tref, ipb, fcoeffs)
+def mean_luminosity_under_planet(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt):
+    l = luminosity_v(x*rstar, y*rstar, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt)
     return nanmean(l)
 
 
 @njit
 def calculate_luminosity_interpolation_table(res, k, xp, yp, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy,
                                              mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc,
-                                             tref, fcoeffs):
+                                             ftable, t0, dt):
     t1 = find_contact_point(k, 1, y0, vx, vy, ax, ay, jx, jy, sx, sy)
     t4 = find_contact_point(k, 4, y0, vx, vy, ax, ay, jx, jy, sx, sy)
     times = linspace(t1, t4, res)
 
-    npb = fcoeffs.shape[0]
+    npb = ftable.shape[0]
     lt = zeros((npb, res))
     for ipb in range(npb):
-        for i in range(lt.size):
+        for i in range(lt.shape[1]):
             x, y = xy_taylor_st(times[i], sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
             xs = x + k * xp
             ys = y + k * yp
             lt[ipb, i] = mean_luminosity_under_planet(xs, ys, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc,
-                                                 tref, ipb, fcoeffs)
+                                                 ipb, ftable, t0, dt)
 
         i = 0
         while isnan(lt[ipb, i]):
@@ -383,10 +388,11 @@ def xy_taylor_vt(ts, a, y0, vx, vy, ax, ay, jx, jy, sx, sy):
 @njit
 def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
                    mstar, rstar, ostar, tpole, gpole,
-                   f, feff, sphi, cphi, beta, tref, fcoeffs,
+                   f, feff, sphi, cphi, beta, ftable, teff0, dteff,
                    tres, ts, xs, ys, xp, yp,
                    lcids, pbids, nsamples, exptimes, npb):
     y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
+    ldc = atleast_2d(ldc)
 
     sa, ca = sin(aa), cos(aa)
     half_window_width = 0.025 + 0.5 * t14(k[0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
@@ -396,10 +402,11 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
     tp, lp = calculate_luminosity_interpolation_table(tres, k[0], xp, yp, sa, ca,
                                                       y0, vx, vy, ax, ay, jx, jy, sx, sy,
                                                       mstar, rstar, ostar, tpole, gpole, f,
-                                                      sphi, cphi, beta, ldc, tref, fcoeffs)
+                                                      sphi, cphi, beta, ldc, ftable, teff0, dteff)
     dtp = tp[1] - tp[0]
+
     ls = create_star_luminosity(ts.size, xs, ys, mstar, rstar, ostar, tpole, gpole,
-                                f, sphi, cphi, beta, ldc, tref, fcoeffs)
+                                f, sphi, cphi, beta, ldc, ftable, teff0, dteff)
 
     astar = pi * (1. - feff)      # Area of an ellipse = pi * a * b, where a = 1 and b = (1 - feff)
     istar = zeros(npb)
