@@ -19,14 +19,14 @@ from astropy.constants import R_sun, M_sun
 from matplotlib.patches import Circle
 from matplotlib.pyplot import subplots, setp
 from numpy import linspace, sin, cos, array, ndarray, asarray, squeeze, cross, newaxis, pi, where, nan, full, degrees, \
-    zeros, polyfit
+    zeros, polyfit, atleast_2d, atleast_1d, nansum, zeros_like
 from numpy.linalg import norm
 from scipy.interpolate import interp1d
 from scipy.spatial.transform.rotation import Rotation
 
 from .transitmodel import TransitModel
 from .numba.gdmodel import create_star_xy, create_planet_xy, map_osm, xy_taylor_vt, oblate_model_s, \
-    luminosity_v2, planck
+    luminosity_v2, planck, create_star_luminosity
 from ..contamination.contamination import read_phoenix_spectrum_table
 from ..contamination.filter import Filter, DeltaFilter
 from ..stars import read_bt_settl_table
@@ -173,6 +173,7 @@ class GravityDarkenedModel(TransitModel):
         else:
             fig, ax = None, ax
 
+        ldc = atleast_2d(ldc)
         a = as_from_rhop(rho, p)
         inc = i_from_baew(b, a, e, w)
         mstar, ostar, gpole, f, _ = map_osm(rstar=self.rstar, rho=rho, rperiod=rperiod, tpole=tpole, phi=0.0)
@@ -299,3 +300,32 @@ class GravityDarkenedModel(TransitModel):
                               self._xp, self._yp, self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb)
 
         return squeeze(flux)
+
+
+    def evaluate_brute(self, k: Union[float, ndarray], rho: float, rperiod: float, tpole: float, phi: float,
+                       beta: float, ldc: ndarray, t0: float, p: float, a: float, i: float, l: float = 0.0,
+                       e: float = 0.0, w: float = 0.0, copy: bool = True, plot: bool = False, res: int = 300) -> ndarray:
+        mstar, ostar, gpole, f, feff = map_osm(self.rstar, rho, rperiod, tpole, phi)
+        sphi, cphi = sin(phi), cos(phi)
+        ldc = atleast_2d(ldc)
+        k = atleast_1d(k)
+
+        st, sx, sy = create_star_xy(res)
+        fstar = create_star_luminosity(res, sx, sy, mstar, self.rstar, ostar, tpole, gpole, f,
+                                       sphi, cphi, beta, ldc, self._flux_table, self._teff0, self._dteff)
+        px, py = xy_taylor_vt(self.time - t0, l, *vajs_from_paiew(p, a, i, e, w))
+
+        if plot:
+            fig, ax = subplots()
+            ax.imshow(fstar[0], extent=(-1, 1, -1, 1))
+            ax.plot(px, py)
+            fig.tight_layout()
+
+        fnorm = [nansum(fstar[ipb]) for ipb in range(self.npb)]
+        rflux = zeros_like(px)
+        for j in range(px.size):
+            ilc = self.lcids[j]
+            ipb = self.pbids[ilc]
+            m = ~((sx - px[j]) ** 2 + (sy - py[j]) ** 2 < k[0] ** 2).reshape((res, res))
+            rflux[j] = nansum(fstar[ipb] * m) / fnorm[ipb]
+        return rflux
