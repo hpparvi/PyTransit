@@ -57,7 +57,7 @@ def planck(l, t):
 
 @njit
 def stellar_oblateness(w, rho):
-    return 3.*w*w/(8.*G*pi*rho)
+    return 0.5 * (1 - sqrt(1 - 3. * w * w / (2. * G * pi * rho)))
 
 
 @njit
