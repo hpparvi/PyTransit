@@ -104,7 +104,7 @@ class PhysContLPF(BaseLPF):
         ldc = map_ldc(pvp[:, self._sl_ld])
         flux = self.tm.evaluate_pv(pvt, ldc)
         for i, pv in enumerate(pvp):
-            if (2500 < pv[6] < 12000) and (2500 < pv[7] < 12000):
+            if (1200 < pv[6] < 7000) and (1200 < pv[7] < 7000):
                 cnref = 1. - pv[4] / pv[5]
                 cnt[i, :] = self.cm.contamination(cnref, pv[6], pv[7])
             else:

@@ -35,6 +35,7 @@ from pkg_resources import resource_filename
 from scipy.interpolate import interp1d, RegularGridInterpolator
 
 from .instrument import Instrument
+from ..stars import read_bt_settl_table
 from ..utils.phasecurves import planck
 
 
@@ -292,57 +293,46 @@ class SMContamination(_BaseContamination):
     """A class that models flux contamination based on stellar spectrum models.
     """
 
-    def __init__(self, instrument: Instrument, ref_pb: str = None) -> None:
+    def __init__(self, instrument: Instrument, ref_pb: str = None, data: str = 'BT-SETTL') -> None:
         """
 
-          Parameters
-          ----------
-          instrument
-              Instrument configuration
-          ref_pb
-              name of the reference passband
-          """
+        Parameters
+        ----------
+        instrument
+            Instrument configuration
+        ref_pb
+            name of the reference passband
+        """
         super().__init__(instrument, ref_pb)
 
-        self._spectra: DataFrame = DataFrame(pd.read_hdf(resource_filename(__name__, join("data", "spectra.h5")), 'Z0'))
-        self._tr_table = trt = xa.open_dataarray(resource_filename(__name__, join("data", "transmission.nc")))
-        self._tr_mean = trm = trt.mean(['airmass', 'pwv'])
-        self.extinction = interp1d(trm.wavelength, trm, bounds_error=False, fill_value=0.0)
-        self.wl = self._spectra.index.values
-        self.lte = lte = self._spectra.columns.values
-        self._apply_extinction = True
+        self.data = data
+
+        if data.lower() == 'bt-settl':
+            self._spectra: DataFrame = read_bt_settl_table()
+        elif data.lower() == 'husser2013':
+            self._spectra: DataFrame = read_phoenix_spectrum_table().T
+        else:
+            raise ValueError('The dataset has to be either "BT-SETTL" or "Husser2013"')
+
+        self.teff = teff = self._spectra.index.values
+        self.wl = wl = self._spectra.columns.values
 
         # 2D interpolator for the spectrum table
         # --------------------------------------
-        self._rgi = RegularGridInterpolator((self.wl, self.lte), self._spectra.values)
+        self._rgi = RegularGridInterpolator((self.teff, self.wl), self._spectra.values)
 
         # Dataframe indices
         # -----------------
         self.ipb = pd.Index(self.instrument.pb_names, name='passband')
-        self.iteff = pd.Index(lte, name='teff')
+        self.iteff = pd.Index(teff, name='teff')
 
         # Per-passband fluxes
         # -------------------
         self._compute_relative_flux_tables(0, ref_pb)
 
-    @property
-    def apply_extinction(self):
-        return self._apply_extinction
-
-    @apply_extinction.setter
-    def apply_extinction(self, value):
-        self._apply_extinction = value
-        self._compute_relative_flux_tables()
-
-    def reddening(self, a):
-        k = -a*log(self.wl) + a*log(self.wl[-1])
-        return exp(-k)
-
     def _integrate_fluxes(self, rdc=None):
-        rd = self.reddening(rdc) if rdc is not None else 1.
         i, sp, wl = self.instrument, self._spectra, self.wl
-        tr = self.extinction(wl) if self._apply_extinction else 1.
-        int_fluxes = transpose([(sp.values.T * f(wl) * qe(wl) * tr * rd).sum(1) for f, qe in zip(i.filters, i.qes)])
+        int_fluxes = transpose([(sp.values * f(wl) * qe(wl)).sum(1) for f, qe in zip(i.filters, i.qes)])
         self._af = pd.DataFrame(int_fluxes, columns=self.ipb, index=self.iteff)
 
     def _compute_relative_flux_tables(self, rdc=None, rpb=None):
@@ -368,7 +358,7 @@ class SMContamination(_BaseContamination):
         -------
         Spectral radiance.
         """
-        return self._rgi((wl, teff))
+        return self._rgi((teff, wl))
 
     def relative_flux(self, teff: float, wl: Union[float, ndarray], wlref: float) -> ndarray:
         """The stellar flux normalized to a given reference wavelength.
