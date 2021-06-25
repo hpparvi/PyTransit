@@ -31,16 +31,11 @@ from numba import njit
 from matplotlib.pyplot import subplots, setp
 from numpy import transpose, newaxis, uint32, ndarray, asarray, zeros_like, log, exp, ceil, linspace, array, nan
 from pandas import DataFrame
-from pkg_resources import resource_filename
 from scipy.interpolate import interp1d, RegularGridInterpolator
 
 from .instrument import Instrument
-from ..stars import read_bt_settl_table
+from ..stars import read_bt_settl_table, read_husser2013_table
 from ..utils.phasecurves import planck
-
-
-def read_phoenix_spectrum_table():
-    return pd.DataFrame(pd.read_hdf(resource_filename(__name__, join("data", "spectra.h5")), 'Z0'))
 
 
 @njit
@@ -310,7 +305,7 @@ class SMContamination(_BaseContamination):
         if data.lower() == 'bt-settl':
             self._spectra: DataFrame = read_bt_settl_table()
         elif data.lower() == 'husser2013':
-            self._spectra: DataFrame = read_phoenix_spectrum_table().T
+            self._spectra: DataFrame = read_husser2013_table()
         else:
             raise ValueError('The dataset has to be either "BT-SETTL" or "Husser2013"')
 

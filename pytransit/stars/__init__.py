@@ -28,5 +28,4 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from .btsettl import bt_settl_file, create_bt_settl_interpolator, read_bt_settl_table, compute_averaged_bt_settl_table
-
-#h2013_file = resource_filename(__name__, join("data", "spectra.h5"))
+from .husser2013 import husser2013_file, create_husser2013_interpolator, read_husser2013_table, compute_averaged_husser2013_table

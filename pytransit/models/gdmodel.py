@@ -27,9 +27,8 @@ from scipy.spatial.transform.rotation import Rotation
 from .transitmodel import TransitModel
 from .numba.gdmodel import create_star_xy, create_planet_xy, map_osm, xy_taylor_vt, oblate_model_s, \
     luminosity_v2, planck, create_star_luminosity
-from ..contamination.contamination import read_phoenix_spectrum_table
 from ..contamination.filter import Filter, DeltaFilter
-from ..stars import read_bt_settl_table
+from ..stars import read_bt_settl_table, read_husser2013_table
 from ..orbits import as_from_rhop, i_from_baew
 from ..orbits.taylor_z import vajs_from_paiew, find_contact_point
 from ..utils.octasphere import octasphere
@@ -74,7 +73,7 @@ def husser2013_table(filters, tmin: float = 2500, tmax: float = 12000, nt: int =
     temperatures = linspace(tmin, tmax, nt)
     npb = len(filters)
 
-    spectra = read_phoenix_spectrum_table().T
+    spectra = read_husser2013_table()
     wl_table = spectra.columns.values.astype('d')
     t_table = spectra.index.values
     spectra = interp1d(wl_table, spectra, bounds_error=False, fill_value=0.0)
