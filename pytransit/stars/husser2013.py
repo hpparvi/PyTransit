@@ -38,7 +38,7 @@ from tqdm.auto import tqdm
 
 __all__ = ['husser2013_file', 'compute_averaged_husser2013_table', 'create_husser2013_interpolator', 'read_husser2013_table']
 
-husser2013_file = resource_filename(__name__, join("data", "data/avg_husser2013.fits"))
+husser2013_file = resource_filename(__name__, join("data", "avg_husser2013.fits"))
 
 
 def get_teff(f):
