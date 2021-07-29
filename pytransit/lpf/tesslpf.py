@@ -130,7 +130,7 @@ class TESSLPF(BaseLPF):
         nrows = int(ceil(self.nlc / ncols))
 
         if axs is None:
-            fig, axs = subplots(nrows, ncols, figsize=figsize, sharey=True, constrained_layout=True)
+            fig, axs = subplots(nrows, ncols, figsize=figsize, sharey='all', sharex='all', constrained_layout=True)
         else:
             fig, axs = None, axs
 
