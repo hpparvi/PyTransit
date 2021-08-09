@@ -32,7 +32,7 @@ class EclipseModel(TransitModel):
         super().__init__()
 
     def evaluate(self, k: npfloat, t0: npfloat, p: npfloat, a: npfloat, i: npfloat, e: npfloat = None, w: npfloat = None,
-                 fr: npfloat = None, copy: bool = True) -> ndarray:
+                 fr: npfloat = None, multiplicative: bool = False, copy: bool = True) -> ndarray:
         """Evaluates a secondary eclipse model for a set of scalar or vector parameters.
 
         Parameters
@@ -53,6 +53,8 @@ class EclipseModel(TransitModel):
             Argument of periastron as a float or a 1D vector.
         fr
             Planet-star flux ratio as a float or a 1D vector.
+        multiplicative
+            If True, will return the fraction of the visible planet disk area to the total planet disk area
         copy
 
         Notes
@@ -91,6 +93,8 @@ class EclipseModel(TransitModel):
 
         if fr is not None:
             flux = 1.0 + (flux - 1.0) * fr
+        elif multiplicative:
+            flux = 1.0 + (flux - 1.0) / k**2
 
         return squeeze(flux)
 
