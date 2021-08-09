@@ -18,7 +18,7 @@ import numpy as np
 from scipy.constants import c, k, h
 from scipy.optimize import fmin
 
-def fold(time, period, origo=0.0, shift=0.0, normalize=True,  clip_range=None):
+def fold(time, period, origo=0.0, shift=0.0, normalize=True, clip_range=None):
     """Folds the given data over a given period.
 
     Parameters
