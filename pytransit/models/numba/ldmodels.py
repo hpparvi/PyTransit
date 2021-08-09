@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from numba import njit
-from numpy import ones, pi, sqrt, log, exp, zeros, power
+from numpy import ones, pi, sqrt, log, exp, zeros, power, log2
 
 
 @njit(fastmath=True)
@@ -97,7 +97,7 @@ def ld_power_2(mu, pv):
 @njit(fastmath=True)
 def ld_power_2_pm(mu, pv):
     c = 1 - pv[0] + pv[1]
-    a = log(c/pv[1])
+    a = log2(c/pv[1])
     return 1. - c * (1. - mu**a)
 
 @njit
