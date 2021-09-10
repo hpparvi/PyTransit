@@ -100,9 +100,13 @@ class PhysContLPF(BaseLPF):
     def transit_model(self, pvp):
         pvp = atleast_2d(pvp)
         cnt = zeros((pvp.shape[0], self.npb))
-        pvt = map_pv_pclpf(pvp)
+        tc = pvp[:, 0]
+        p  = pvp[:, 1]
+        k_true = sqrt(pvp[:, 5])
+        a = as_from_rhop(pvp[:, 2], p)
+        i = i_from_ba(pvp[:, 3], a)
         ldc = map_ldc(pvp[:, self._sl_ld])
-        flux = self.tm.evaluate_pv(pvt, ldc)
+        flux = self.tm.evaluate(k_true, ldc, tc, p, a, i)
         for i, pv in enumerate(pvp):
             if (1200 < pv[6] < 7000) and (1200 < pv[7] < 7000):
                 cnref = 1. - pv[4] / pv[5]

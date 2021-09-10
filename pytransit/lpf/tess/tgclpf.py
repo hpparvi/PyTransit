@@ -43,7 +43,7 @@ class BaseTGCLPF(PhysContLPF):
     **Note:** This LPF is meant to be inherited by an LPF that implements the `read_data` method.
     """
 
-    def __init__(self, name: str, use_ldtk: bool = False):
+    def __init__(self, name: str, use_ldtk: bool = False, tm = None):
         self.result_dir = Path('.')
         self._stess = None
         self._ntess = None
@@ -55,7 +55,7 @@ class BaseTGCLPF(PhysContLPF):
 
         self.wns = wns
         PhysContLPF.__init__(self, name, passbands=pbnames, times=times, fluxes=fluxes, pbids=pbids, wnids=wnids,
-                             covariates=covs, tref=tref)
+                             covariates=covs, tref=tref, tm=tm)
 
     def read_data(self):
         """Read in the TESS light curve and the ground-based data.
