@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Union
 
-from numpy import ndarray, array, squeeze, asarray, zeros
+from numpy import ndarray, array, squeeze, asarray, zeros, isscalar
 
 from .numba.ma_chromosphere_nb import chromosphere_model_pv, chromosphere_model_v, chromosphere_model_s
 from .transitmodel import TransitModel
@@ -61,7 +61,7 @@ class ChromosphereModel(TransitModel):
 
         # Scalar parameters branch
         # ------------------------
-        if isinstance(t0, float):
+        if isscalar(p):
             if e is None:
                 e, w = 0., 0.
 

@@ -34,7 +34,7 @@ This module offers the QPower2 class implementing the transit model by Maxted & 
 """
 from typing import Union, Optional
 
-from numpy import squeeze, ndarray, array, asarray, zeros
+from numpy import squeeze, ndarray, array, asarray, zeros, isscalar
 
 from .numba.qpower2_nb import qpower2_model_pv, qpower2_model_s, qpower2_model_v
 from .transitmodel import TransitModel
@@ -85,7 +85,7 @@ class QPower2Model(TransitModel):
 
         # Scalar parameters branch
         # ------------------------
-        if isinstance(t0, float):
+        if isscalar(p):
             if e is None:
                 e, w = 0., 0.
 

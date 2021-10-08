@@ -30,7 +30,7 @@ import timeit
 from typing import Tuple, Callable, Union, List, Optional
 
 from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, linspace, sqrt, pi, ones, log, exp, \
-    tile, full
+    tile, full, isscalar
 from scipy.integrate import trapz
 
 from .ldmodel import LDModel
@@ -201,7 +201,7 @@ class RoadRunnerModel(TransitModel):
 
         # Scalar parameters branch
         # ------------------------
-        if isinstance(p, float):
+        if isscalar(p):
             if e is None:
                 e, w = 0.0, 0.0
             return self.evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)

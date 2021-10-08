@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from typing import Union
-from numpy import ndarray, squeeze, zeros, asarray
+from numpy import ndarray, squeeze, zeros, asarray, isscalar
 from .numba.ma_uniform_nb import uniform_model_v, uniform_model_s, uniform_model_pv
 from .transitmodel import TransitModel
 
@@ -66,7 +66,7 @@ class UniformModel(TransitModel):
 
         # Scalar parameters branch
         # ------------------------
-        if isinstance(t0, float):
+        if isscalar(p):
             e = 0. if e is None else e
             w = 0. if w is None else w
             flux = uniform_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples,

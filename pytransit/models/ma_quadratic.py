@@ -28,7 +28,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Union, Optional, List
 
-from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, inf
+from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, inf, isscalar
 
 from .numba.ma_quadratic_nb import quadratic_model_pv, calculate_interpolation_tables, quadratic_model_v, quadratic_model_s
 from .transitmodel import TransitModel
@@ -109,7 +109,7 @@ class QuadraticModel(TransitModel):
 
         # Scalar parameters branch
         # ------------------------
-        if isinstance(p, float):
+        if isscalar(p):
             e = 0. if e is None else e
             w = 0. if w is None else w
             return self.evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
