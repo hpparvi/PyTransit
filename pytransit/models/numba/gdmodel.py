@@ -80,38 +80,36 @@ def z_s(x, y, r, f, sphi, cphi):
 def z_and_mu_s_full(x, y, r, f, sphi, cphi):
     """Calculates z and mu accurately."""
 
-    px, py = x, y
-    pz = z_s(px, py, r, f, sphi, cphi)
-    if isfinite(pz):
-        d1x, d1y = -sign(px) * 1e-5 * r, 0.0
-        d1z = z_s(px + d1x, py + d1y, r, f, sphi, cphi) - pz
-        d2x, d2y = 0.0, -sign(py) * 1e-5 * r
-        d2z = z_s(px + d2x, py + d2y, r, f, sphi, cphi) - pz
+    z = z_s(x, y, r, f, sphi, cphi)
+    if isfinite(z):
+        d1x, d1y = -sign(x) * 1e-5 * r, 0.0
+        d1z = z_s(x + d1x, y + d1y, r, f, sphi, cphi) - z
+        d2x, d2y = 0.0, -sign(y) * 1e-5 * r
+        d2z = z_s(x + d2x, y + d2y, r, f, sphi, cphi) - z
         nx = d1y * d2z - d1z * d2y
         ny = d1z * d2x - d1x * d2z
         nz = d1x * d2y - d1y * d2x
         return abs(nz) / sqrt(nx ** 2 + ny ** 2 + nz ** 2)
     else:
-        return pz, nan
+        return z, nan
 
 
 @njit
 def z_and_mu_s(x, y, r, f, sphi, cphi):
     """Calculates z and mu accurately."""
 
-    px, py = x, y
-    pz = z_s(px, py, r, f, sphi, cphi)
-    if isfinite(pz):
-        d1x = -sign(px) * 1e-5 * r
-        d1z = z_s(px + d1x, py, r, f, sphi, cphi) - pz
-        d2y = -sign(py) * 1e-5 * r
-        d2z = z_s(px, py + d2y, r, f, sphi, cphi) - pz
+    z = z_s(x, y, r, f, sphi, cphi)
+    if isfinite(z):
+        d1x = -sign(x) * 1e-5 * r
+        d1z = z_s(x + d1x, y, r, f, sphi, cphi) - z
+        d2y = -sign(y) * 1e-5 * r
+        d2z = z_s(x, y + d2y, r, f, sphi, cphi) - z
         nx = - d1z * d2y
         ny = - d1x * d2z
         nz = d1x * d2y
-        return pz, abs(nz) / sqrt(nx ** 2 + ny ** 2 + nz ** 2)
+        return z, abs(nz) / sqrt(nx ** 2 + ny ** 2 + nz ** 2)
     else:
-        return pz, nan
+        return z, nan
 
 @njit
 def z_v(xs, ys, r, f, sphi, cphi):
