@@ -17,7 +17,7 @@
 from numba import njit, prange
 from scipy.constants import G, k, h, c
 from numpy import exp, pi, sqrt, zeros, sin, cos, nan, inf, linspace, meshgrid, floor, isfinite, fmax, isnan, nanmean, \
-    arange, zeros_like, atleast_2d
+    arange, zeros_like, atleast_2d, array, cross, sign
 
 from .rrmodel import circle_circle_intersection_area
 from ...orbits.taylor_z import vajs_from_paiew, find_contact_point, t14
@@ -64,7 +64,7 @@ def stellar_oblateness(w, rho):
 def z_s(x, y, r, f, sphi, cphi):
     x2, y2, r2 = x*x, y*y, r*r
     if x2 + y2 > r2:
-        return -1.0
+        return nan
     else:
         sphi2, cphi2, f2 = sphi**2, cphi**2, f**2
 
@@ -73,8 +73,45 @@ def z_s(x, y, r, f, sphi, cphi):
         if d >= 0.0:
             return (-2.*y*cphi*sphi*(a - 1.) + sqrt(d))/(2.*(cphi2 + a*sphi2))
         else:
-            return -1.0
+            return nan
 
+
+@njit
+def z_and_mu_s_full(x, y, r, f, sphi, cphi):
+    """Calculates z and mu accurately."""
+
+    px, py = x, y
+    pz = z_s(px, py, r, f, sphi, cphi)
+    if isfinite(pz):
+        d1x, d1y = -sign(px) * 1e-5 * r, 0.0
+        d1z = z_s(px + d1x, py + d1y, r, f, sphi, cphi) - pz
+        d2x, d2y = 0.0, -sign(py) * 1e-5 * r
+        d2z = z_s(px + d2x, py + d2y, r, f, sphi, cphi) - pz
+        nx = d1y * d2z - d1z * d2y
+        ny = d1z * d2x - d1x * d2z
+        nz = d1x * d2y - d1y * d2x
+        return abs(nz) / sqrt(nx ** 2 + ny ** 2 + nz ** 2)
+    else:
+        return pz, nan
+
+
+@njit
+def z_and_mu_s(x, y, r, f, sphi, cphi):
+    """Calculates z and mu accurately."""
+
+    px, py = x, y
+    pz = z_s(px, py, r, f, sphi, cphi)
+    if isfinite(pz):
+        d1x = -sign(px) * 1e-5 * r
+        d1z = z_s(px + d1x, py, r, f, sphi, cphi) - pz
+        d2y = -sign(py) * 1e-5 * r
+        d2z = z_s(px, py + d2y, r, f, sphi, cphi) - pz
+        nx = - d1z * d2y
+        ny = - d1x * d2z
+        nz = d1x * d2y
+        return pz, abs(nz) / sqrt(nx ** 2 + ny ** 2 + nz ** 2)
+    else:
+        return pz, nan
 
 @njit
 def z_v(xs, ys, r, f, sphi, cphi):
@@ -87,14 +124,27 @@ def z_v(xs, ys, r, f, sphi, cphi):
     for i in range(npt):
         x2, y2 = xs[i]**2, ys[i]**2
         if x2 + y2 > r2:
-            z[i] = -1.0
+            z[i] = nan
         else:
             d = (4.*y2*sphi2*cphi2*(a - 1.)**2 - 4.*(cphi2 + a*sphi2)*(x2 + y2*(a*cphi2 + sphi2) - r2))
             if d >= 0.0:
                 z[i] = (-2.*ys[i]*cphi*sphi*(a - 1.) + sqrt(d))/(2.*(cphi2 + a*sphi2))
             else:
-                z[i] = -1.0
+                z[i] = nan
     return z
+
+
+@njit
+def z_and_mu_v(xs, ys, r, f, sphi, cphi):
+    npt = xs.size
+    zs = zeros(npt)
+    mus = zeros(npt)
+
+    for i in range(npt):
+        z, mu = z_and_mu_s(xs[i], ys[i], r, f, sphi, cphi)
+        zs[i] = z
+        mus[i] = mu
+    return zs, mus
 
 
 @njit
@@ -102,12 +152,10 @@ def luminosity_s(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, l
     dg = zeros(3)
     dc = zeros(3)
 
-    z = z_s(x, y, rstar, f, sphi, cphi)
-    if z < 0.0:
+    z, mu = z_and_mu_s(x, y, rstar, f, sphi, cphi)
+    if isnan(z):
         return nan
     else:
-        mu = z/sqrt((x**2 + y**2 + z**2))
-
         dg[0] = x
         dg[1] = y*cphi + z*sphi
         dg[2] = -y*sphi + z*cphi
@@ -145,8 +193,8 @@ def luminosity_v(xs, ys, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta,
 
     for i in range(npt):
         x, y = xs[i], ys[i]
-        z = z_s(x, y, rstar, f, sphi, cphi)
-        if z < 0.0:
+        z, mu = z_and_mu_s(x, y, rstar, f, sphi, cphi)
+        if isnan(z):
             l[i] = nan
         else:
             mu = z/sqrt((x**2 + y**2 + z**2))
