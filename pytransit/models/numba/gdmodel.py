@@ -77,25 +77,45 @@ def z_s(x, y, r, f, sphi, cphi):
 
 
 @njit
-def z_and_mu_s_full(x, y, r, f, sphi, cphi):
-    """Calculates z and mu accurately."""
+def mu_s(x, y, f, ci, si):
+    """Calculates mu analytically.
 
-    z = z_s(x, y, r, f, sphi, cphi)
-    if isfinite(z):
-        d1x, d1y = -sign(x) * 1e-5 * r, 0.0
-        d1z = z_s(x + d1x, y + d1y, r, f, sphi, cphi) - z
-        d2x, d2y = 0.0, -sign(y) * 1e-5 * r
-        d2z = z_s(x + d2x, y + d2y, r, f, sphi, cphi) - z
-        nx = d1y * d2z - d1z * d2y
-        ny = d1z * d2x - d1x * d2z
-        nz = d1x * d2y - d1y * d2x
-        return abs(nz) / sqrt(nx ** 2 + ny ** 2 + nz ** 2)
-    else:
-        return z, nan
+    Calculates mu = sqrt(1 - z^2) = cos(theta), where z is the normalized distance from the centre
+    of the stellar disk and theta is the foreshortening angle. Contributed by V. Bourrier.
+
+    Parameters
+    ----------
+    x
+      x position in the sky plane
+    y
+      y position in the sky plane
+    f
+      Stellar oblateness
+    ci
+      cos(i_star)
+    si
+      sin(i_star)
+
+    Returns
+    -------
+    mu
+    """
+    g = 1.0-f
+    g2  = g**2
+    h = (1. - g2)
+    qa = 1. - si**2 * h
+    qb = 2.*y*ci*si*h
+    qc = y**2 * si**2 * h + g2 * (x**2 + y**2 - 1.)
+    det = qb**2 - 4*qa*qc
+    nx2 = (g2*2*x)**2 / abs(det)
+    ny2 = ((1./qa)*(-(ci*si*h) + 2*y*g2/sqrt(det)))**2
+    nz2 = 1.
+    mu = 1.0 /  sqrt(nx2 + ny2 + nz2)
+    return mu
 
 
 @njit
-def z_and_mu_s(x, y, r, f, sphi, cphi):
+def z_and_mu_numerical_s(x, y, r, f, sphi, cphi):
     """Calculates z and mu accurately."""
 
     z = z_s(x, y, r, f, sphi, cphi)
@@ -110,6 +130,18 @@ def z_and_mu_s(x, y, r, f, sphi, cphi):
         return z, abs(nz) / sqrt(nx ** 2 + ny ** 2 + nz ** 2)
     else:
         return z, nan
+
+
+@njit
+def z_and_mu_s(x, y, r, f, sphi, cphi):
+    """Calculates z and mu accurately."""
+
+    z = z_s(x, y, r, f, sphi, cphi)
+    if isfinite(z):
+        return z, mu_s(x, y, f, -sphi, cphi)
+    else:
+        return z, nan
+
 
 @njit
 def z_v(xs, ys, r, f, sphi, cphi):
