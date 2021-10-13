@@ -23,4 +23,5 @@ It also contains methods for posterior optimisation and MCMC sampling.
 """
 
 from .lpf import BaseLPF
+from .phasecurvelpf import PhaseCurveLPF
 from .baselines.legendrebaseline import LegendreBaseline
