@@ -19,11 +19,12 @@ from typing import Union
 import pandas as pd
 import astropy.units as u
 from numba import njit
-from numpy import ndarray, pi, atleast_1d, zeros, exp, diff, log, sqrt, nan, vstack, tile, linspace, cos, sin, sum
+from numpy import ndarray, pi, atleast_1d, zeros, exp, diff, log, sqrt, nan, vstack, tile, linspace, cos, sin, sum, \
+    isfinite
 from scipy.constants import c,h,k,G
-from scipy.interpolate import RegularGridInterpolator
 from scipy.optimize import brentq
 
+from ..stars import create_husser2013_interpolator, create_bt_settl_interpolator
 #from ..contamination.filter import Filter
 
 NPType = Union[float,ndarray]
@@ -111,8 +112,8 @@ def emission(tp: NPType, tstar: NPType, k: NPType, flt) -> NPType:
 # Doppler boosting
 # ================
 
-def doppler_boosting_alpha(teff: float, flt):
-    """The photon weighted bandpass-integrated boosting factor.
+def doppler_beaming_factor(teff: float, flt, dataset: str = 'BT-Settl'):
+    """The photon weighted bandpass-integrated Doppler beaming factor.
 
     Parameters
     ----------
@@ -120,26 +121,35 @@ def doppler_boosting_alpha(teff: float, flt):
         Effective temperature of the star [K]
     flt
         Passband transmission
+    dataset
+        Either 'BT-Settl' or 'Husser2013'
 
     Returns
     -------
     float
-        The photon weighted bandpass-integrated boosting factor.
+        The photon weighted bandpass-integrated Doppler beaming factor.
+
+    Notes
+    ------
+    See Bloemen et al., MNRAS, 410 (2010) and Claret, A. et al., A&A, 641 (2020).
     """
-    spfile = Path(__file__).parent.parent / 'contamination' / 'data' / 'spectra.h5'
-    spectra: pd.DataFrame = pd.read_hdf(spfile)
-    wl_nm = spectra.index.values
-    wl = wl_nm * 1e-9
+    if dataset == 'Husser2013':
+        ip = create_husser2013_interpolator()
+    else:
+        ip = create_bt_settl_interpolator()
 
-    ip = RegularGridInterpolator((wl_nm, spectra.columns.values), spectra.values)
-    fl = ip(vstack((wl_nm, tile(teff, wl_nm.size))).T)
-
+    wl_nm = ip.grid[1][1:-1]
+    wl = 1e-9 * wl_nm
+    fl = ip(vstack((tile(teff, wl_nm.size), wl_nm)).T)
     b = 5. + diff(log(fl)) / diff(log(wl))
-    w = flt(wl_nm)[1:] * wl[1:] * fl[1:]
-    return sum(w * b) / sum(w)
+    w1 = flt(wl_nm)[1:] * wl[1:] * fl[1:]
+    w2 = flt(wl_nm)[:-1] * wl[:-1] * fl[:-1]
+    w = 0.5 * (w1 + w2)
+    m = isfinite(b)
+    return sum(w[m] * b[m]) / sum(w[m])
 
 
-def doppler_boosting_amplitude(mp: NPType, ms: NPType, period: NPType, alpha: NPType) -> NPType:
+def doppler_boosting_amplitude(mp: NPType, ms: NPType, period: NPType, b: NPType) -> NPType:
     """The amplitude of the doppler boosting signal.
 
     Calculates the amplitude of the doppler boosting (beaming, reflex doppler effect) signal following the approach
@@ -154,8 +164,8 @@ def doppler_boosting_amplitude(mp: NPType, ms: NPType, period: NPType, alpha: NP
         Stellar mass [MSun]
     period : float or ndarray
         Orbital period [d]
-    alpha : float or ndarray
-        Photon-weighted bandpass-integrated boosting factor
+    b : float or ndarray
+        Photon-weighted bandpass-integrated Doppler beaming factor
 
     Returns
     -------
@@ -170,7 +180,7 @@ def doppler_boosting_amplitude(mp: NPType, ms: NPType, period: NPType, alpha: NP
     .. [Barclay2012] Barclay, T. et al. PHOTOMETRICALLY DERIVED MASSES AND RADII OF THE PLANET AND STAR IN THE TrES-2
            SYSTEM. AspJ 761, 53 (2012).
     """
-    return alpha / c *(2*pi*G/(d2s*period))**(1/3) * ((mp*mj2kg)/(ms*ms2kg)**(2/3))
+    return b / c *(2*pi*G/(d2s*period))**(1/3) * ((mp*mj2kg)/(ms*ms2kg)**(2/3))
 
 # Ellipsoidal variations
 # ======================
