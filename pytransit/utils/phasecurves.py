@@ -149,12 +149,12 @@ def doppler_beaming_factor(teff: float, flt, dataset: str = 'BT-Settl'):
     return sum(w[m] * b[m]) / sum(w[m])
 
 
-def doppler_boosting_amplitude(mp: NPType, ms: NPType, period: NPType, b: NPType) -> NPType:
-    """The amplitude of the doppler boosting signal.
+def doppler_beaming_amplitude(mp: NPType, ms: NPType, period: NPType, b: NPType) -> NPType:
+    """The amplitude of the Doppler beaming signal.
 
-    Calculates the amplitude of the doppler boosting (beaming, reflex doppler effect) signal following the approach
+    Calculates the amplitude of the Doppler beaming signal following the approach
     described by Loeb & Gaudi in [Loeb2003]_ . Note that you need to pre-calculate the photon-weighted bandpass-integrated
-    boosting factor (alpha) [Bloemen2010]_ [Barclay2012]_ for the star and the instrument using ``doppler_boosting_alpha``.
+    doppler Beaming factor [Bloemen2010]_ [Barclay2012]_ for the star and the instrument using ``doppler_beaming_factor``.
 
     Parameters
     ----------
