@@ -138,7 +138,7 @@ def z_and_mu_s(x, y, r, f, sphi, cphi):
 
     z = z_s(x, y, r, f, sphi, cphi)
     if isfinite(z):
-        return z, mu_s(x, y, f, -sphi, cphi)
+        return z, mu_s(x/r, y/r, f, -sphi, cphi)
     else:
         return z, nan
 
@@ -215,7 +215,7 @@ def luminosity_s(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, l
 
 
 @njit
-def luminosity_v(xs, ys, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt):
+def luminosity_v(xs, ys, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt, accurate_mu):
     npt = xs.size
     l = zeros(npt)
     dg = zeros(3)
@@ -223,12 +223,15 @@ def luminosity_v(xs, ys, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta,
 
     for i in range(npt):
         x, y = xs[i], ys[i]
-        z, mu = z_and_mu_s(x, y, rstar, f, sphi, cphi)
+        if accurate_mu:
+            z, mu = z_and_mu_s(x, y, rstar, f, sphi, cphi)
+        else:
+            z = z_s(x, y, rstar, f, sphi, cphi)
+            mu = z/sqrt((x**2 + y**2 + z**2))
+
         if isnan(z):
             l[i] = nan
         else:
-            mu = z/sqrt((x**2 + y**2 + z**2))
-
             dg[0] = x
             dg[1] = y*cphi + z*sphi
             dg[2] = -y*sphi + z*cphi
@@ -337,10 +340,10 @@ def create_planet_xy(res: int = 6):
 
 
 @njit
-def create_star_luminosity(res, x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ftable, t0, dt):
+def create_star_luminosity(res, x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ftable, t0, dt, accurate_mu):
     l = zeros((ftable.shape[0], res, res))
     for ipb in range(ftable.shape[0]):
-        l[ipb] = luminosity_v(x*rstar, y*rstar, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt).reshape((res,res))
+        l[ipb] = luminosity_v(x*rstar, y*rstar, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt, accurate_mu).reshape((res,res))
     return l
 
 
@@ -385,15 +388,15 @@ def mean_luminosity(xc, yc, k, xs, ys, feff, lt, xt, yt):
 
 
 @njit
-def mean_luminosity_under_planet(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt):
-    l = luminosity_v(x*rstar, y*rstar, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt)
+def mean_luminosity_under_planet(x, y, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt, accurate_mu):
+    l = luminosity_v(x*rstar, y*rstar, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc, ipb, ftable, t0, dt, accurate_mu)
     return nanmean(l)
 
 
 @njit
 def calculate_luminosity_interpolation_table(res, k, xp, yp, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy,
                                              mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc,
-                                             ftable, t0, dt):
+                                             ftable, t0, dt, accurate_mu):
     t1 = find_contact_point(k, 1, y0, vx, vy, ax, ay, jx, jy, sx, sy)
     t4 = find_contact_point(k, 4, y0, vx, vy, ax, ay, jx, jy, sx, sy)
     times = linspace(t1, t4, res)
@@ -406,7 +409,7 @@ def calculate_luminosity_interpolation_table(res, k, xp, yp, sa, ca, y0, vx, vy,
             xs = x + k * xp
             ys = y + k * yp
             lt[ipb, i] = mean_luminosity_under_planet(xs, ys, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc,
-                                                 ipb, ftable, t0, dt)
+                                                 ipb, ftable, t0, dt, accurate_mu)
 
         i = 0
         while isnan(lt[ipb, i]):
@@ -468,7 +471,7 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
                    mstar, rstar, ostar, tpole, gpole,
                    f, feff, sphi, cphi, beta, ftable, teff0, dteff,
                    tres, ts, xs, ys, xp, yp,
-                   lcids, pbids, nsamples, exptimes, npb):
+                   lcids, pbids, nsamples, exptimes, npb, accurate_mu):
     y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
     ldc = atleast_2d(ldc)
 
@@ -480,11 +483,11 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
     tp, lp = calculate_luminosity_interpolation_table(tres, k[0], xp, yp, sa, ca,
                                                       y0, vx, vy, ax, ay, jx, jy, sx, sy,
                                                       mstar, rstar, ostar, tpole, gpole, f,
-                                                      sphi, cphi, beta, ldc, ftable, teff0, dteff)
+                                                      sphi, cphi, beta, ldc, ftable, teff0, dteff, accurate_mu)
     dtp = tp[1] - tp[0]
 
     ls = create_star_luminosity(ts.size, xs, ys, mstar, rstar, ostar, tpole, gpole,
-                                f, sphi, cphi, beta, ldc, ftable, teff0, dteff)
+                                f, sphi, cphi, beta, ldc, ftable, teff0, dteff, accurate_mu)
 
     astar = pi * (1. - feff)      # Area of an ellipse = pi * a * b, where a = 1 and b = (1 - feff)
     istar = zeros(npb)

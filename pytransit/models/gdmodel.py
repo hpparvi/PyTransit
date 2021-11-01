@@ -113,7 +113,7 @@ class GravityDarkenedModel(TransitModel):
 
     def __init__(self, filters: Union[float, Filter, Iterable[Filter]], rstar: float = 1.0,
                  sres: int = 80, pres: int = 5, tres: int = 60, model: str = 'blackbody',
-                 tmin: float = 5000, tmax: float = 7000):
+                 tmin: float = 5000, tmax: float = 7000, accurate_mu: bool = True):
         """
 
         Parameters
@@ -139,6 +139,7 @@ class GravityDarkenedModel(TransitModel):
 
         assert model in ('blackbody', 'husser2013', 'bt-settl')
         self.model = model
+        self.accurate_mu = accurate_mu
 
         if isinstance(filters, (float, int)):
             self.filters = (DeltaFilter('default', float(filters)),)
@@ -296,7 +297,7 @@ class GravityDarkenedModel(TransitModel):
         flux = oblate_model_s(self.time, k, t0, p, a, l, i, e, w, ldc, mstar, self.rstar, ostar, tpole, gpole, f, feff,
                               sphi, cphi, beta, self._flux_table, self._teff0, self._dteff,
                               self.tres, self._ts, self._xs, self._ys,
-                              self._xp, self._yp, self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb)
+                              self._xp, self._yp, self.lcids, self.pbids, self.nsamples, self.exptimes, self.npb, self.accurate_mu)
 
         return squeeze(flux)
 
@@ -311,7 +312,7 @@ class GravityDarkenedModel(TransitModel):
 
         st, sx, sy = create_star_xy(res)
         fstar = create_star_luminosity(res, sx, sy, mstar, self.rstar, ostar, tpole, gpole, f,
-                                       sphi, cphi, beta, ldc, self._flux_table, self._teff0, self._dteff)
+                                       sphi, cphi, beta, ldc, self._flux_table, self._teff0, self._dteff, self.accurate_mu)
         px, py = xy_taylor_vt(self.time - t0, l, *vajs_from_paiew(p, a, i, e, w))
 
         if plot:
