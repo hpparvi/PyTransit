@@ -16,4 +16,4 @@
 
 from semantic_version import Version
 
-__version__ = Version('2.5.15')
+__version__ = Version('2.5.16')
