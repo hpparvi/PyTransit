@@ -45,7 +45,7 @@ from numpy import atleast_1d, asarray, zeros, pi, cos, sin, fabs
 
 
 @njit(parallel=True)
-def ellipsoidal_variation(a, t0, p, x_is_time, x):
+def ellipsoidal_variation(a, t0, p, l, x_is_time, x):
     a = atleast_1d(asarray(a))
     t0 = atleast_1d(asarray(t0))
     p = atleast_1d(asarray(p))
@@ -56,10 +56,10 @@ def ellipsoidal_variation(a, t0, p, x_is_time, x):
         if x_is_time:
             for j in range(npt):
                 f = 2.0 * pi * (x[j] - t0[i]) / p[i]
-                flux[i, j] = -a[i] * cos(2.0 * f)
+                flux[i, j] = -a[i] * cos(2.0 * (f-l[i]))
         else:
             for j in range(npt):
-                flux[i, j] = -a[i] * cos(2.0 * x[j])
+                flux[i, j] = -a[i] * cos(2.0 * (x[j]-l[i]))
     return flux
 
 
@@ -83,7 +83,7 @@ def doppler_boosting(a, t0, p, x_is_time, x):
 
 
 @njit(parallel=True)
-def ev_and_db(aev, adb, t0, p, x_is_time, x):
+def ev_and_db(aev, adb, t0, p, l, x_is_time, x):
     aev = atleast_1d(asarray(aev))
     adb = atleast_1d(asarray(adb))
     t0 = atleast_1d(asarray(t0))
@@ -95,10 +95,10 @@ def ev_and_db(aev, adb, t0, p, x_is_time, x):
         if x_is_time:
             for j in range(npt):
                 f = 2.0 * pi * (x[j] - t0[i]) / p[i]
-                flux[i, j] = -aev[i] * cos(2.0 * f) + adb[i] * sin(f)
+                flux[i, j] = -aev[i] * cos(2.0 * (f-l[i])) + adb[i] * sin(f)
         else:
             for j in range(npt):
-                flux[i, j] = -aev[i] * cos(2.0 * x[j]) + adb[i] * sin(x[j])
+                flux[i, j] = -aev[i] * cos(2.0 * (x[j]-l[i])) + adb[i] * sin(x[j])
     return flux
 
 

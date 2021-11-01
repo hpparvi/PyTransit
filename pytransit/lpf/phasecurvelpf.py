@@ -91,7 +91,7 @@ class PhaseCurveLPF(BaseLPF):
         self._sl_k2 = self.ps.blocks[-1].slice
         self._ix_k2 = self._start_k2
 
-        pph = []
+        pph = [GParameter(f'oev', f'Ellipsoidal variation offset', '', NP(0, 1e-6), (-inf, inf))]
         for pb in self.passbands:
             pph.extend([GParameter(f'aev_{pb}', f'Ellipsoidal variation amplitude in {pb}', '', UP(0, 1), (0, inf)),
                         GParameter(f'adb_{pb}', f'Doppler boosting amplitude in {pb}', '', UP(0, 1), (0, inf)),
@@ -116,16 +116,17 @@ class PhaseCurveLPF(BaseLPF):
         k = sqrt(pv[:, 6:7])
         ldc = map_ldc(pv[:, self._sl_ld])
         sle = self._sl_fr
-        aev = pv[:, sle][:, 0::6]
-        adb = pv[:, sle][:, 1::6]
-        dte = pv[:, sle][:, 2::6]
-        nte = pv[:, sle][:, 3::6]
-        ote = pv[:, sle][:, 4::6]
-        ag  = pv[:, sle][:, 5::6]
-        return t0, p, a, inc, ecc, omega, area_ratio, k, ldc, aev, adb, dte, nte, ote, ag
+        oev = pv[:, sle][:, 0]
+        aev = pv[:, sle][:, 1::6]
+        adb = pv[:, sle][:, 2::6]
+        dte = pv[:, sle][:, 3::6]
+        nte = pv[:, sle][:, 4::6]
+        ote = pv[:, sle][:, 5::6]
+        ag  = pv[:, sle][:, 6::6]
+        return t0, p, a, inc, ecc, omega, area_ratio, k, ldc, oev, aev, adb, dte, nte, ote, ag
 
     def doppler_boosting(self, pv):
-        t0, p, a, inc, ecc, omega, area_ratio, k, ldc, aev, adb, dte, nte, ote, ab = self.map_pv(pv)
+        t0, p, a, inc, ecc, omega, area_ratio, k, ldc, oev, aev, adb, dte, nte, ote, ab = self.map_pv(pv)
         npv, npt = inc.size, self.ofluxa.size
         fdb = zeros((npv, npt))
         for ipb, pbm in enumerate(self.pbmasks):
@@ -133,15 +134,15 @@ class PhaseCurveLPF(BaseLPF):
         return squeeze(fdb)
 
     def ellipsoidal_variations(self, pv):
-        t0, p, a, inc, ecc, omega, area_ratio, k, ldc, aev, adb, dte, nte, ote, ab = self.map_pv(pv)
+        t0, p, a, inc, ecc, omega, area_ratio, k, ldc, oev, aev, adb, dte, nte, ote, ab = self.map_pv(pv)
         npv, npt = inc.size, self.ofluxa.size
         fev = zeros((npv, npt))
         for ipb, pbm in enumerate(self.pbmasks):
-            fev[:, pbm] = ellipsoidal_variation(aev[:, ipb], t0, p, True, self.timea[pbm])
+            fev[:, pbm] = ellipsoidal_variation(aev[:, ipb], t0, p, oev, True, self.timea[pbm])
         return squeeze(fev)
 
     def thermal_flux(self, pv):
-        t0, p, a, inc, ecc, omega, area_ratio, k, ldc, aev, adb, dte, nte, ote, ab = self.map_pv(pv)
+        t0, p, a, inc, ecc, omega, area_ratio, k, ldc, oev, aev, adb, dte, nte, ote, ab = self.map_pv(pv)
         npv, npt = inc.size, self.ofluxa.size
         fec = self.em.evaluate(k, t0, p, a, inc, ecc, omega, multiplicative=True)
         ft = zeros((npv, npt))
@@ -150,7 +151,7 @@ class PhaseCurveLPF(BaseLPF):
         return fec * squeeze(ft)
 
     def reflected_flux(self, pv):
-        t0, p, a, inc, ecc, omega, area_ratio, k, ldc, aev, adb, dte, nte, ote, ab = self.map_pv(pv)
+        t0, p, a, inc, ecc, omega, area_ratio, k, ldc, oev, aev, adb, dte, nte, ote, ab = self.map_pv(pv)
         npv, npt = inc.size, self.ofluxa.size
         fec = self.em.evaluate(k, t0, p, a, inc, ecc, omega, multiplicative=True)
         fr = zeros((npv, npt))
@@ -159,7 +160,7 @@ class PhaseCurveLPF(BaseLPF):
         return fec * squeeze(fr)
 
     def transit_model(self, pv, copy=True):
-        t0, p, a, inc, ecc, omega, area_ratio, k, ldc, aev, adb, dte, nte, ote, ab = self.map_pv(pv)
+        t0, p, a, inc, ecc, omega, area_ratio, k, ldc, oev, aev, adb, dte, nte, ote, ab = self.map_pv(pv)
         npv, npt = inc.size, self.ofluxa.size
 
         fec = self.em.evaluate(k, t0 - self._tref, p, a, inc, ecc, omega, multiplicative=True)
@@ -174,7 +175,7 @@ class PhaseCurveLPF(BaseLPF):
         fev = zeros((npv, npt))
         fdb = zeros((npv, npt))
         for ipb, pbm in enumerate(self.pbmasks):
-            fev[:, pbm] = ellipsoidal_variation(aev[:, ipb], t0, p, True, self.timea[pbm])
+            fev[:, pbm] = ellipsoidal_variation(aev[:, ipb], t0, p, oev, True, self.timea[pbm])
             fdb[:, pbm] = doppler_boosting(adb[:, ipb], t0, p, True, self.timea[pbm])
         fstar = squeeze(ftr + fev + fdb)
         return fplanet + fstar
