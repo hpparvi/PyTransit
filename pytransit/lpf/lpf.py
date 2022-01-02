@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from pathlib import Path
-from typing import List, Union, Iterable
+from typing import List, Union, Iterable, Sequence, Optional
 
 from astropy.stats import sigma_clip
 from matplotlib.pyplot import subplots, setp
@@ -90,11 +90,18 @@ def map_ldc(ldc):
 class BaseLPF(LogPosteriorFunction):
     _lpf_name = 'BaseLPF'
 
-    def __init__(self, name: str, passbands: list, times: list = None, fluxes: Iterable = None, errors: list = None,
-                 pbids: list = None, covariates: list = None, wnids: list = None, tm: TransitModel = None,
-                 nsamples: Union[List[int], int] = 1,
-                 exptimes: Union[List[float], float] = 0.,
-                 init_data=True, result_dir: Path = None, tref: float = 0.0,
+    def __init__(self, name: str,
+                 passbands: Union[Sequence[str], str],
+                 times: Optional[Sequence[ndarray]] = None,
+                 fluxes: Optional[Sequence[ndarray]] = None,
+                 errors: Optional[Sequence[ndarray]]  = None,
+                 pbids: Optional[Sequence[int]]  = None,
+                 covariates: Optional[Sequence[ndarray]]  = None,
+                 wnids: Optional[Sequence[int]]  = None,
+                 tm: Optional[TransitModel] = None,
+                 nsamples: Union[Sequence[int], int] = 1,
+                 exptimes: Union[Sequence[float], float] = 0.0,
+                 init_data: bool = True, result_dir: Optional[Path] = None, tref: float = 0.0,
                  lnlikelihood: str = 'wn'):
         """The base Log Posterior Function class.
 
@@ -103,63 +110,66 @@ class BaseLPF(LogPosteriorFunction):
 
         Parameters
         ----------
-        name: str
+        name
             Name of the log posterior function instance.
 
-        passbands: Iterable
-            List of unique passband names (filters) that the light curves have been observed in.
+        passbands
+            A passband name or a sequence of unique passband names (filters) that the light curves have been observed in.
 
-        times: Iterable
-            List of 1d ndarrays each containing the mid-observation times for a single light curve.
+        times
+            A sequence of 1d ndarrays each containing the mid-observation times for a single light curve.
 
-        fluxes: Iterable
-            List of 1d ndarrays each containing the normalized fluxes for a single light curve.
+        fluxes
+            A sequence of 1d ndarrays each containing the normalized fluxes for a single light curve.
 
-        errors: Iterable
-            List of 1d ndarrays each containing the flux measurement uncertainties for a single light curvel.
+        errors
+            A sequence of 1d ndarrays each containing the flux measurement uncertainties for a single light curvel.
 
-        pbids: Iterable of ints
-            List of passband indices mapping each light curve to a single passband.
+        pbids
+            A sequence of passband indices mapping each light curve to a single passband.
 
-        covariates: Iterable
-            List of covariates one 2d narray per light curve.
+        covariates
+            A sequence of covariates, one 2d ndarray per light curve.
 
-        wnids: Iterable of ints
-            List of noise set indices mapping each light curve to a single noise set.
+        wnids
+            A sequence of noise set indices mapping each light curve to a single noise set.
 
-        tm: TransitModel
-            Transitmodel to use instead of the default model.
+        tm
+            The transit model to use instead of the default QuadraticModel.
 
-        nsamples: list[int]
-            List of supersampling factors.  The values should be integers and given one per light curve.
+        nsamples: Sequence[int]
+            A sequence of supersampling factors. The values should be integers and given per light curve.
 
-        exptimes: list[float]
-            List of exposure times. The values should be floats with the time given in days.
+        exptimes
+            A sequence of exposure times. The values should be floats with the time given in days.
 
-        init_data: bool
+        init_data
             Set to `False` to allow the LPF to be initialized without data. This is mainly for debugging.
 
-        result_dir: Path, optional
+        result_dir
             Default saving directory
 
-        tref: float, optional
-            Reference time
+        tref
+            Reference time.
+
+        lnlikelihood
+            The log-likelihood model to use. Can be either 'wn' or 'celerite'.
         """
 
         self._pre_initialisation()
 
         super().__init__(name=name, result_dir=result_dir)
 
-        self.tm = tm or QuadraticModel(klims=(0.01, 0.75), nk=512, nz=512)
-        self._tref = tref
+        self.tm: TransitModel = tm or QuadraticModel(klims=(0.01, 0.75), nk=512, nz=512)
+        self._tref: float = tref
 
         # Passbands
         # ---------
         # Passbands should be arranged from blue to red
         if isinstance(passbands, (list, tuple, ndarray)):
-            self.passbands = passbands
+            self.passbands: list = list(passbands)
         else:
-            self.passbands = [passbands]
+            self.passbands: list = [passbands]
         self.npb = npb = len(self.passbands)
 
         self.nsamples = None
@@ -168,8 +178,8 @@ class BaseLPF(LogPosteriorFunction):
 
         # Declare high-level objects
         # --------------------------
-        self._lnlikelihood_models = []
-        self._baseline_models = []
+        self._lnlikelihood_models: list = []
+        self._baseline_models: list = []
         self.ps = None          # Parametrisation
         self.de = None          # Differential evolution optimiser
         self.sampler = None     # MCMC sampler
@@ -183,19 +193,19 @@ class BaseLPF(LogPosteriorFunction):
         self.nlc: int = 0                # Number of light curves
         self.n_noise_blocks: int = 0     # Number of noise blocks
         self.noise_ids = None
-        self.times: list = None          # List of time arrays
-        self.fluxes: list = None         # List of flux arrays
-        self.errors: list = None         # List of flux uncertainties
-        self.covariates: list = None     # List of covariates
-        self.wn: ndarray = None          # Array of white noise estimates for each light curve
-        self.timea: ndarray = None       # Array of concatenated times
-        self.mfluxa: ndarray = None      # Array of concatenated model fluxes
-        self.ofluxa: ndarray = None      # Array of concatenated observed fluxes
-        self.errora: ndarray = None      # Array of concatenated model fluxes
+        self.times: Optional[list] = None          # List of time arrays
+        self.fluxes: Optional[list] = None         # List of flux arrays
+        self.errors: Optional[list] = None         # List of flux uncertainties
+        self.covariates: Optional[list] = None     # List of covariates
+        self.wn: Optional[ndarray] = None          # Array of white noise estimates for each light curve
+        self.timea: Optional[ndarray] = None       # Array of concatenated times
+        self.mfluxa: Optional[ndarray] = None      # Array of concatenated model fluxes
+        self.ofluxa: Optional[ndarray] = None      # Array of concatenated observed fluxes
+        self.errora: Optional[ndarray] = None      # Array of concatenated model fluxes
 
-        self.lcids: ndarray = None       # Array of light curve indices for each datapoint
-        self.pbids: ndarray = None       # Array of passband indices for each light curve
-        self.lcslices: list = None       # List of light curve slices
+        self.lcids: Optional[ndarray] = None       # Array of light curve indices for each datapoint
+        self.pbids: Optional[ndarray] = None       # Array of passband indices for each light curve
+        self.lcslices: Optional[list] = None       # List of light curve slices
 
         if init_data:
             # Set up the observation data
@@ -216,9 +226,9 @@ class BaseLPF(LogPosteriorFunction):
         self._post_initialisation()
 
 
-    def _init_data(self, times: Union[List, ndarray], fluxes: Union[List, ndarray], pbids: Union[List, ndarray] = None,
-                   covariates: Union[List, ndarray] = None, errors: Union[List, ndarray] = None, wnids: Union[List, ndarray] = None,
-                   nsamples: Union[int, ndarray, Iterable] = 1, exptimes: Union[float, ndarray, Iterable] = 0.):
+    def _init_data(self, times: Union[Sequence, ndarray], fluxes: Union[Sequence, ndarray], pbids: Union[Sequence, ndarray] = None,
+                   covariates: Union[Sequence, ndarray] = None, errors: Union[Sequence, ndarray] = None, wnids: Union[Sequence, ndarray] = None,
+                   nsamples: Union[int, ndarray, Sequence] = 1, exptimes: Union[float, ndarray, Sequence] = 0.):
 
         if isinstance(times, ndarray) and times.ndim == 1 and times.dtype == float:
             times = [times]
