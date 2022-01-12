@@ -390,56 +390,6 @@ def eval_quad_z_s(z: float, k: float, u: ndarray):
 
 
 @njit(cache=False, parallel=False, fastmath=True)
-def eval_quad_ip(zs, k, u, c, edt, ldt, let, kt, zt):
-    npb = u.shape[0]
-    flux = zeros((len(zs), npb))
-    omega = zeros(npb)
-    dk = kt[1] - kt[0]
-    dz = zt[1] - zt[0]
-
-    for i in range(npb):
-        omega[i] = 1.0 - u[i, 0] / 3.0 - u[i, 1] / 6.0
-
-    ik = int(floor((k - kt[0]) / dk))
-    ak1 = (k - kt[ik]) / dk
-    ak2 = 1.0 - ak1
-
-    ed2 = edt[ik:ik + 2, :]
-    ld2 = ldt[ik:ik + 2, :]
-    le2 = let[ik:ik + 2, :]
-
-    for i in prange(len(zs)):
-        z = zs[i]
-        if (z >= 1.0 + k) or (copysign(1, z) < 0.0):
-            flux[i, :] = 1.0
-        else:
-            iz = int(floor((z - zt[0]) / dz))
-            az1 = (z - zt[iz]) / dz
-            az2 = 1.0 - az1
-
-            ed = (ed2[0, iz] * ak2 * az2
-                  + ed2[1, iz] * ak1 * az2
-                  + ed2[0, iz + 1] * ak2 * az1
-                  + ed2[1, iz + 1] * ak1 * az1)
-
-            ld = (ld2[0, iz] * ak2 * az2
-                  + ld2[1, iz] * ak1 * az2
-                  + ld2[0, iz + 1] * ak2 * az1
-                  + ld2[1, iz + 1] * ak1 * az1)
-
-            le = (le2[0, iz] * ak2 * az2
-                  + le2[1, iz] * ak1 * az2
-                  + le2[0, iz + 1] * ak2 * az1
-                  + le2[1, iz + 1] * ak1 * az1)
-
-            for j in range(npb):
-                flux[i, j] = 1.0 - ((1.0 - u[j, 0] - 2.0 * u[j, 1]) * le + (u[j, 0] + 2.0 * u[j, 1]) * ld + u[j, 1] * ed) / omega[j]
-                flux[i, j] = c[j] + (1.0 - c[j]) * flux[i, j]
-
-    return flux
-
-
-@njit(cache=False, parallel=False, fastmath=True)
 def eval_quad_ip(zs, k, u, edt, ldt, let, kt, zt):
     npb = u.shape[0]
     flux = zeros((len(zs), npb))
