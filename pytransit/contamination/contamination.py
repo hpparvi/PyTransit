@@ -338,6 +338,7 @@ class SMContamination(_BaseContamination):
             self._ri = self.instrument.pb_names.index(rpb)
         self._rf = pd.DataFrame(af / af[:, self._ri][:, newaxis], columns=self.ipb, index=self.iteff)
         self._ip = interp1d(self.iteff.values, self._rf.values.T, bounds_error=False, fill_value=nan)
+        self._ip_abs = interp1d(self.iteff.values, self._af.values.T, bounds_error=False, fill_value=nan)
 
     def absolute_flux(self, teff: float, wl: Union[float, Iterable]) -> ndarray:
         """The absolute flux given an effective temperature and a set of wavelength.
@@ -390,7 +391,7 @@ class SMContamination(_BaseContamination):
         x[0] = 1. - x[1:].sum()
         return (self.relative_fluxes(teffs, rdc) * x).sum(1)
 
-    def contamination(self, cref: Union[float, ndarray], teff1: Union[float, ndarray], teff2: Union[float, ndarray]):
+    def contamination(self, cref: Union[float, ndarray], teff1: Union[float, ndarray], teff2: Union[float, ndarray], absolute: bool = False):
         """Contamination given reference contamination, host TEff, and contaminant TEff(s)
 
         Per-passband contamination given the contamination in the reference passband and TEffs of the two stars.
@@ -408,7 +409,11 @@ class SMContamination(_BaseContamination):
         -------
         Per-passband contamination
         """
-        cref, teff1, teff2 = asarray(cref), asarray(teff1), asarray(teff2)
-        a = (1.0 - cref) * self._ip(teff1)
-        b = cref * self._ip(teff2)
+        if absolute:
+            teff1, teff2 = asarray(teff1), asarray(teff2)
+            a, b = self._ip_abs(teff1), self._ip_abs(teff2)
+        else:
+            cref, teff1, teff2 = asarray(cref), asarray(teff1), asarray(teff2)
+            a = (1.0 - cref) * self._ip(teff1)
+            b = cref * self._ip(teff2)
         return (b / (a + b)).T
