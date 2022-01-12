@@ -49,6 +49,7 @@ def ellipsoidal_variation(a, t0, p, l, x_is_time, x):
     a = atleast_1d(asarray(a))
     t0 = atleast_1d(asarray(t0))
     p = atleast_1d(asarray(p))
+    l = atleast_1d(asarray(l))
     npv = a.size
     npt = x.size
     flux = zeros((npv, npt))
@@ -88,6 +89,7 @@ def ev_and_db(aev, adb, t0, p, l, x_is_time, x):
     adb = atleast_1d(asarray(adb))
     t0 = atleast_1d(asarray(t0))
     p = atleast_1d(asarray(p))
+    l = atleast_1d(asarray(l))
     npv = aev.size
     npt = x.size
     flux = zeros((npv, npt))
