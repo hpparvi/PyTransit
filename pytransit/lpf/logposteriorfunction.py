@@ -132,11 +132,13 @@ class LogPosteriorFunction:
         res = minimize(lambda pv: -self.lnposterior(pv), pv0, method=method)
         self._local_minimization = res
 
-    def optimize_global(self, niter=200, npop=50, population=None, label='Global optimisation', leave=False,
-                        plot_convergence: bool = True, use_tqdm: bool = True, plot_parameters: tuple = (0, 2, 3, 4)):
+    def optimize_global(self, niter=200, npop=50, population=None, pool=None, lnpost=None, vectorize=True,
+                        label='Global optimisation', leave=False, plot_convergence: bool = True, use_tqdm: bool = True,
+                        plot_parameters: tuple = (0, 2, 3, 4)):
 
+        lnpost = lnpost or self.lnposterior
         if self.de is None:
-            self.de = DiffEvol(self.lnposterior, clip(self.ps.bounds, -1, 1), npop, maximize=True, vectorize=True)
+            self.de = DiffEvol(lnpost, clip(self.ps.bounds, -1, 1), npop, maximize=True, vectorize=vectorize, pool=pool)
             if population is None:
                 self.de._population[:, :] = self.create_pv_population(npop)
             else:
@@ -168,11 +170,13 @@ class LogPosteriorFunction:
         self._old_de_fitness = self.de._fitness.copy()
 
     def sample_mcmc(self, niter: int = 500, thin: int = 5, repeats: int = 1, npop: int = None, population=None,
-                    label='MCMC sampling', reset=True, leave=True, save=False, use_tqdm: bool = True):
+                    label='MCMC sampling', reset=True, leave=True, save=False, use_tqdm: bool = True, pool=None,
+                    lnpost=None, vectorize=False):
 
         if save and self.result_dir is None:
             raise ValueError('The MCMC sampler is set to save the results, but the result directory is not set.')
 
+        lnpost = lnpost or self.lnposterior
         if self.sampler is None:
             if population is not None:
                 pop0 = population
@@ -182,7 +186,7 @@ class LogPosteriorFunction:
                 pop0 = self.de.population.copy()
             else:
                 raise ValueError('Sample MCMC needs an initial population.')
-            self.sampler = EnsembleSampler(pop0.shape[0], pop0.shape[1], self.lnposterior, vectorize=True)
+            self.sampler = EnsembleSampler(pop0.shape[0], pop0.shape[1], lnpost, vectorize=vectorize, pool=pool)
         else:
             pop0 = self.sampler.chain[:, -1, :].copy()
 
