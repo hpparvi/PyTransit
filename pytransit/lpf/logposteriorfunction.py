@@ -171,7 +171,7 @@ class LogPosteriorFunction:
 
     def sample_mcmc(self, niter: int = 500, thin: int = 5, repeats: int = 1, npop: int = None, population=None,
                     label='MCMC sampling', reset=True, leave=True, save=False, use_tqdm: bool = True, pool=None,
-                    lnpost=None, vectorize=False):
+                    lnpost=None, vectorize: bool = True):
 
         if save and self.result_dir is None:
             raise ValueError('The MCMC sampler is set to save the results, but the result directory is not set.')
