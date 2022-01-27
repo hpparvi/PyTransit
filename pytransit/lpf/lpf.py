@@ -160,7 +160,7 @@ class BaseLPF(LogPosteriorFunction):
 
         super().__init__(name=name, result_dir=result_dir)
 
-        self.tm: TransitModel = tm or QuadraticModel(klims=(0.01, 0.75), nk=512, nz=512)
+        self.tm: TransitModel = tm or QuadraticModel(interpolate=False)
         self._tref: float = tref
 
         # Passbands
@@ -232,9 +232,17 @@ class BaseLPF(LogPosteriorFunction):
 
         if isinstance(times, ndarray) and times.ndim == 1 and times.dtype == float:
             times = [times]
+        elif isinstance(times, (list, tuple)):
+            pass
+        else:
+            raise ValueError('The times must be given either as an ndarray or a list of ndarrays.')
 
         if isinstance(fluxes, ndarray) and fluxes.ndim == 1 and fluxes.dtype == float:
             fluxes = [fluxes]
+        elif isinstance(fluxes, (list, tuple)):
+            pass
+        else:
+            raise ValueError('The fluxes must be given either as an ndarray or a list of ndarrays.')
 
         if pbids is None:
             if self.pbids is None:
@@ -325,7 +333,7 @@ class BaseLPF(LogPosteriorFunction):
     def _init_p_planet(self):
         """Planet parameter initialisation.
         """
-        pk2 = [PParameter('k2', 'area_ratio', 'A_s', U(0.05**2, 0.2**2), (0, inf))]
+        pk2 = [PParameter('k2', 'area_ratio', 'A_s', U(0.0025, 0.04), (0, inf))]
         self.ps.add_passband_block('k2', 1, 1, pk2)
         self._pid_k2 = repeat(self.ps.blocks[-1].start, self.npb)
         self._start_k2 = self.ps.blocks[-1].start
@@ -567,15 +575,27 @@ class BaseLPF(LogPosteriorFunction):
             df['t23'] = d_from_pkaiews(df.p.values, average_ks, df.a.values, df.inc.values, 0., 0., 1, kind=23)
         return df
 
-    def plot_light_curves(self, method='de', ncol: int = 3, width: float = 2., max_samples: int = 1000, figsize=None,
+    def plot_light_curves(self, method='de', ncol: int = 3, width: Optional[float] = None, max_samples: int = 1000, figsize=None,
                           data_alpha=0.5, ylim=None):
+
+        solutions = 'best fit de posterior mc mcmc'.split()
+        if method not in solutions:
+            raise ValueError(f'The "method" needs to be one of {solutions}')
+
+        if width is None:
+            if self.nlc == 1:
+                width = 24*self.timea.ptp()
+            else:
+                width = 2.0
+
+        ncol = min(ncol, self.nlc)
         nrow = int(ceil(self.nlc / ncol))
-        if method == 'mcmc':
+        if method in ('mcmc', 'mc', 'posterior'):
             df = self.posterior_samples(derived_parameters=False)
             t0, p = df.tc.median(), df.p.median()
             fmodel = self.flux_model(permutation(df.values)[:max_samples])
             fmperc = percentile(fmodel, [50, 16, 84, 2.5, 97.5], 0)
-        else:
+        elif method in ('de', 'fit', 'best'):
             fmodel = squeeze(self.flux_model(self.de.minimum_location))
             t0, p = self.de.minimum_location[0], self.de.minimum_location[1]
             fmperc = None
@@ -590,7 +610,7 @@ class BaseLPF(LogPosteriorFunction):
 
             ax.plot(time, self.fluxes[i], '.', alpha=data_alpha)
 
-            if method == 'de':
+            if method in ('de', 'fit', 'best'):
                 ax.plot(time, fmodel[self.lcslices[i]], 'w', lw=4)
                 ax.plot(time, fmodel[self.lcslices[i]], 'k', lw=1)
             else:
