@@ -102,6 +102,10 @@ from .lpf.baselines.legendrebaseline import LegendreBaseline
 from .lpf.baselines.linearbaseline import LinearModelBaseline
 
 
+class TransitAnalysis(BaseLPF):
+    pass
+
+
 # Utilities
 # ---------
 from .param.parameter import UniformPrior, NormalPrior
