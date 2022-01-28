@@ -17,13 +17,15 @@
 import seaborn as sb
 import pandas as pd
 import xarray as xa
+import astropy.io.fits as pf
 
 from pathlib import Path
 from time import strftime
 from typing import Union, Iterable
 
+from astropy.table import Table
 from scipy.optimize import minimize
-from numpy import ndarray, atleast_2d, inf, isfinite, where, clip, diag, full
+from numpy import ndarray, atleast_2d, inf, isfinite, where, clip, diag, full, arange, repeat, tile
 from numpy.random import multivariate_normal
 from emcee import EnsembleSampler
 from matplotlib.pyplot import subplots, setp
@@ -229,6 +231,23 @@ class LogPosteriorFunction:
         ds = xa.Dataset(data_vars={'de_population': de, 'mcmc_samples': mc},
                         attrs={'created': strftime('%Y-%m-%d %H:%M:%S'), 'name': self.name})
         ds.to_netcdf(save_path.joinpath(f'{self.name}.nc'))
+
+        if self.sampler is not None:
+            fname = save_path / f'{self.name}.fits'
+            chains = self.sampler.chain
+            nchains = chains.shape[0]
+            nsteps = chains.shape[1]
+            idch = repeat(arange(nchains), nsteps)
+            idst = tile(arange(nsteps), nchains)
+            flc = chains.reshape([-1, chains.shape[2]])
+            tb1 = Table([idch, idst], names=['chain', 'step'])
+            tb1.add_columns(flc.T, names=self.ps.names)
+            tb2 = Table([idch, idst], names=['chain', 'step'])
+            tb2.add_column(self.sampler.lnprobability.ravel(), name='lnp')
+            tbhdu1 = pf.BinTableHDU(tb1, name='posterior')
+            tbhdu2 = pf.BinTableHDU(tb2, name='sample_stats')
+            hdul = pf.HDUList([pf.PrimaryHDU(), tbhdu1, tbhdu2])
+            hdul.writeto(fname, overwrite=True)
 
     def __repr__(self):
         return f"Target: {self.name}\nLPF: {self._lpf_name}"
