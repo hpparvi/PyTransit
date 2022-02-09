@@ -31,7 +31,7 @@ def lerpflux_multiband(t, fluxes, t0, dt):
     i = int(floor(x))
     fs = zeros(npb)
     if i < 0 or i > fluxes.shape[1]:
-        fs[:] = nan
+        fs[:] = inf
     else:
         a = x - i
         for ipb in range(npb):
@@ -44,7 +44,7 @@ def lerpflux_singleband(t, ipb, fluxes, t0, dt):
     x = (t-t0) / dt
     i = int(floor(x))
     if i < 0 or i > fluxes.shape[1]:
-        return nan
+        return inf
     else:
         a = x - i
         return (1.-a)*fluxes[ipb, i] + a*fluxes[ipb, i+1]
@@ -107,10 +107,13 @@ def mu_s(x, y, f, ci, si):
     qb = 2.*y*ci*si*h
     qc = y**2 * si**2 * h + g2 * (x**2 + y**2 - 1.)
     det = qb**2 - 4*qa*qc
-    nx2 = (g2*2*x)**2 / abs(det)
-    ny2 = ((1./qa)*(-(ci*si*h) + 2*y*g2/sqrt(det)))**2
-    nz2 = 1.
-    mu = 1.0 /  sqrt(nx2 + ny2 + nz2)
+    if det != 0.0:
+        nx2 = (g2*2*x)**2 / abs(det)
+        ny2 = ((1./qa)*(-(ci*si*h) + 2*y*g2/sqrt(det)))**2
+        nz2 = 1.
+        mu = 1.0 / sqrt(nx2 + ny2 + nz2)
+    else:
+        mu = nan
     return mu
 
 
@@ -255,7 +258,7 @@ def luminosity_v(xs, ys, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta,
 
             dgg = gg*dg + gc*dc
             g = sqrt((dgg**2).sum())
-            t = tpole*g**beta/gpole**beta
+            t = tpole*g**beta / gpole**beta
 
             l[i] = lerpflux_singleband(t, ipb, ftable, t0, dt) * (1. - ldc[ipb, 0]*(1. - mu) - ldc[ipb, 1]*(1. - mu)**2)
     return l
