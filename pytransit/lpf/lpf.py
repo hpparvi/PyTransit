@@ -14,6 +14,9 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import xarray as xa
+import arviz as az
+
 from pathlib import Path
 from typing import List, Union, Iterable, Sequence, Optional
 
@@ -23,7 +26,7 @@ from numba import njit, prange
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like, all,
                    clip, argsort, any, s_, zeros, arccos, nan, full, pi, sum, repeat, asarray, ndarray, log10,
                    array, atleast_2d, isscalar, atleast_1d, where, isfinite, arange, unique, squeeze, ceil, percentile,
-                   floor, diag, nanstd)
+                   floor, diag, nanstd, seterr)
 from numpy.random import uniform, normal, permutation, multivariate_normal
 from scipy.stats import norm
 
@@ -42,6 +45,7 @@ from ..param.parameter import UniformPrior as U, NormalPrior as N, GammaPrior as
 from .. import QuadraticModel
 from .logposteriorfunction import LogPosteriorFunction
 
+seterr(invalid='ignore')
 
 @njit(cache=False)
 def lnlike_normal(o, m, e):
@@ -562,18 +566,32 @@ class BaseLPF(LogPosteriorFunction):
                         self.errors[m], self.noise_ids[m], self.nsamples[m], self.exptimes[m])
         self._init_parameters()
 
-    def posterior_samples(self, burn: int = 0, thin: int = 1, derived_parameters: bool = True):
-        df = super().posterior_samples(burn=burn, thin=thin)
-        if derived_parameters:
-            for k2c in df.columns[self._sl_k2]:
-                df[k2c.replace('k2', 'k')] = sqrt(df[k2c])
-            df['a'] = as_from_rhop(df.rho.values, df.p.values)
-            df['inc'] = i_from_baew(df.b.values, df.a.values, 0., 0.)
+    def posterior_samples(self, burn: int = 0, thin: int = 1, derived_parameters: bool = True, arviz: bool = False):
+        if not arviz:
+            df = super().posterior_samples(burn=burn, thin=thin)
+            if derived_parameters:
+                for k2c in df.columns[self._sl_k2]:
+                    df[k2c.replace('k2', 'k')] = sqrt(df[k2c])
+                df['a'] = as_from_rhop(df.rho.values, df.p.values)
+                df['inc'] = i_from_baew(df.b.values, df.a.values, 0., 0.)
 
-            average_ks = sqrt(df.iloc[:, self._sl_k2]).mean(1).values
-            df['t14'] = d_from_pkaiews(df.p.values, average_ks, df.a.values, df.inc.values, 0., 0., 1, kind=14)
-            df['t23'] = d_from_pkaiews(df.p.values, average_ks, df.a.values, df.inc.values, 0., 0., 1, kind=23)
-        return df
+                average_ks = sqrt(df.iloc[:, self._sl_k2]).mean(1).values
+                df['t14'] = d_from_pkaiews(df.p.values, average_ks, df.a.values, df.inc.values, 0., 0., 1, kind=14)
+                df['t23'] = d_from_pkaiews(df.p.values, average_ks, df.a.values, df.inc.values, 0., 0., 1, kind=23)
+            return df
+        else:
+            dd = az.from_emcee(self.sampler, var_names=self.ps.names)
+            ds = xa.Dataset()
+            pst = dd.posterior
+            ds['k'] = sqrt(pst.k2)
+            ds['a'] = xa.DataArray(as_from_rhop(pst.rho.values, pst.p.values), coords=pst.k2.coords)
+            ds['inc'] = xa.DataArray(i_from_baew(pst.b.values, ds.a.values, 0., 0.), coords=pst.k2.coords)
+            ds['t14'] = xa.DataArray(d_from_pkaiews(pst.p.values, ds.k.values, ds.a.values, ds.inc.values, 0., 0., 1, kind=14),
+                                     coords=pst.k2.coords)
+            ds['t23'] = xa.DataArray(d_from_pkaiews(pst.p.values, ds.k.values, ds.a.values, ds.inc.values, 0., 0., 1, kind=23),
+                                     coords=pst.k2.coords)
+            dd.add_groups({'derived_parameters': ds})
+            return dd
 
     def plot_light_curves(self, method='de', ncol: int = 3, width: Optional[float] = None, max_samples: int = 1000, figsize=None,
                           data_alpha=0.5, ylim=None):
