@@ -100,13 +100,14 @@ from .lpf.transitlpf import TransitLPF
 from .lpf.cntlpf import PhysContLPF
 from .lpf.baselines.legendrebaseline import LegendreBaseline
 from .lpf.baselines.linearbaseline import LinearModelBaseline
+from .lpf.transitanalysis import TransitAnalysis
 
-
-class TransitAnalysis(BaseLPF):
-    pass
+#class TransitAnalysis(BaseLPF):
+#    pass
 
 
 # Utilities
 # ---------
 from .param.parameter import UniformPrior, NormalPrior
 from .utils import md_rs_from_rho
+from .utils.mocklc import create_mock_light_curve
