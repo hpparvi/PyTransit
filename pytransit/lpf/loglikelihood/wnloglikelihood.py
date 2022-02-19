@@ -77,5 +77,5 @@ class WNLogLikelihood:
         setattr(self.lpf, f"_start_{name}", self.pv_start)
 
     def __call__(self, pvp, model):
-        e = 10 ** atleast_2d(pvp)[:, self.pv_slice]
+        e = 10**atleast_2d(pvp)[:, self.pv_slice]
         return lnlike_normal(self.fluxes, model, e, self.lcslices, self.local_pv_noise_ids)
