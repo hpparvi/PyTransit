@@ -26,7 +26,7 @@ from numba import njit, prange
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like, all,
                    clip, argsort, any, s_, zeros, arccos, nan, full, pi, sum, repeat, asarray, ndarray, log10,
                    array, atleast_2d, isscalar, atleast_1d, where, isfinite, arange, unique, squeeze, ceil, percentile,
-                   floor, diag, nanstd, seterr)
+                   floor, diag, nanstd, seterr, median)
 from numpy.random import uniform, normal, permutation, multivariate_normal
 from scipy.stats import norm
 
@@ -593,8 +593,8 @@ class BaseLPF(LogPosteriorFunction):
             dd.add_groups({'derived_parameters': ds})
             return dd
 
-    def plot_light_curves(self, method='de', ncol: int = 3, width: Optional[float] = None, max_samples: int = 1000, figsize=None,
-                          data_alpha=0.5, ylim=None):
+    def plot_light_curves(self, method='de', ncol: int = 3, width: Optional[float] = None, planet: int = 1,
+                          max_samples: int = 1000, figsize=None, data_alpha=0.5, ylim=None):
 
         solutions = 'best fit de posterior mc mcmc'.split()
         if method not in solutions:
@@ -602,21 +602,25 @@ class BaseLPF(LogPosteriorFunction):
 
         if width is None:
             if self.nlc == 1:
-                width = 24*self.timea.ptp()
+                width = 24 * self.timea.ptp()
             else:
                 width = 2.0
 
         ncol = min(ncol, self.nlc)
         nrow = int(ceil(self.nlc / ncol))
+        tid, pid = self.ps.find_pid(f"tc_{planet}"), self.ps.find_pid(f"p_{planet}")
         if method in ('mcmc', 'mc', 'posterior'):
-            df = self.posterior_samples(derived_parameters=False)
-            t0, p = df.tc.median(), df.p.median()
-            fmodel = self.flux_model(permutation(df.values)[:max_samples])
+            pvp = self.posterior_samples().posterior.to_array().values.copy().T.reshape([-1, len(self.ps)])
+            t0, p = median(pvp[:, tid]), median(pvp[:, pid])
+            fmodel = self.flux_model(permutation(pvp)[:max_samples])
             fmperc = percentile(fmodel, [50, 16, 84, 2.5, 97.5], 0)
         elif method in ('de', 'fit', 'best'):
-            fmodel = squeeze(self.flux_model(self.de.minimum_location))
-            t0, p = self.de.minimum_location[0], self.de.minimum_location[1]
+            pv = self.de.minimum_location
+            fmodel = squeeze(self.flux_model(pv))
+            t0, p = pv[tid], pv[pid]
             fmperc = None
+        else:
+            raise ValueError
 
         fig, axs = subplots(nrow, ncol, figsize=figsize, constrained_layout=True, sharey='all', sharex='all',
                             squeeze=False)
