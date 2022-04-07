@@ -232,22 +232,25 @@ class LogPosteriorFunction:
                         attrs={'created': strftime('%Y-%m-%d %H:%M:%S'), 'name': self.name})
         ds.to_netcdf(save_path.joinpath(f'{self.name}.nc'))
 
-        # if self.sampler is not None:
-        #     fname = save_path / f'{self.name}.fits'
-        #     chains = self.sampler.chain
-        #     nchains = chains.shape[0]
-        #     nsteps = chains.shape[1]
-        #     idch = repeat(arange(nchains), nsteps)
-        #     idst = tile(arange(nsteps), nchains)
-        #     flc = chains.reshape([-1, chains.shape[2]])
-        #     tb1 = Table([idch, idst], names=['chain', 'step'])
-        #     tb1.add_columns(flc.T, names=self.ps.names)
-        #     tb2 = Table([idch, idst], names=['chain', 'step'])
-        #     tb2.add_column(self.sampler.lnprobability.ravel(), name='lnp')
-        #     tbhdu1 = pf.BinTableHDU(tb1, name='posterior')
-        #     tbhdu2 = pf.BinTableHDU(tb2, name='sample_stats')
-        #     hdul = pf.HDUList([pf.PrimaryHDU(), tbhdu1, tbhdu2])
-        #     hdul.writeto(fname, overwrite=True)
+        try:
+            if self.sampler is not None:
+                fname = save_path / f'{self.name}.fits'
+                chains = self.sampler.chain
+                nchains = chains.shape[0]
+                nsteps = chains.shape[1]
+                idch = repeat(arange(nchains), nsteps)
+                idst = tile(arange(nsteps), nchains)
+                flc = chains.reshape([-1, chains.shape[2]])
+                tb1 = Table([idch, idst], names=['chain', 'step'])
+                tb1.add_columns(flc.T, names=self.ps.names)
+                tb2 = Table([idch, idst], names=['chain', 'step'])
+                tb2.add_column(self.sampler.lnprobability.ravel(), name='lnp')
+                tbhdu1 = pf.BinTableHDU(tb1, name='posterior')
+                tbhdu2 = pf.BinTableHDU(tb2, name='sample_stats')
+                hdul = pf.HDUList([pf.PrimaryHDU(), tbhdu1, tbhdu2])
+                hdul.writeto(fname, overwrite=True)
+        except ValueError:
+            print('Could not save the samples in fits format.')
 
     def __repr__(self):
         return f"Target: {self.name}\nLPF: {self._lpf_name}"
