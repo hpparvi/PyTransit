@@ -39,6 +39,27 @@ tm.evaluate(k=[[0.10, 0.12], [0.11, 0.13]], ldc=[[0.2, 0.1, 0.5, 0.1],[0.4, 0.2,
 
 The package has been used in research since 2010, and is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433), which also details the model-specific optimisations and model performance.
 
+  
+## Examples and tutorials
+
+### New tutorials
+
+- [Tutorial 1: fitting a single transit](https://github.com/hpparvi/PyTransit/blob/master/notebooks/001_simple_broadband_parameter_estimation.ipynb). 
+  A tutorial Jupyter notebook that teaches how to use PyTransit's `TransitAnalysis` class to fit a single transit light curve
+  (well, actually we're estimating the posterior densities for the parameters in a transit model, but this sounds slightly
+  more intimidating ;) )
+
+### Old examples (may need to be )
+
+- [TESS transit modelling example](https://github.com/hpparvi/PyTransit/blob/master/notebooks/tess_examples/WASP-4b.ipynb) 
+  that reproduces the WASP-4b analysis by [Bouma et al. (2019)](http://adsabs.harvard.edu/abs/2019AJ....157..217B).
+
+- [Third light contamination analysis examples](https://github.com/hpparvi/PyTransit/tree/master/notebooks/contamination)
+  illustrate the use of the contamination module in transiting planet candidate validation with multicolour photometry, 
+  as detailed in [Parviainen et al. (A&A, 2019)](https://www.aanda.org/articles/aa/pdf/2019/10/aa35709-19.pdf), and used 
+  in [Parviainen et al. (A&A, 2020)](https://www.aanda.org/articles/aa/pdf/2020/01/aa35958-19.pdf).
+
+
 ## Documentation
 
 Read the docs at [pytransit.readthedocs.io](https://pytransit.readthedocs.io).
@@ -70,16 +91,6 @@ Read the docs at [pytransit.readthedocs.io](https://pytransit.readthedocs.io).
     - See the [basic example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_1.ipynb),
    the [custom limb darkening notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_2.ipynb),
    and the [LDTk limb darkening model example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_3.ipynb).
-  
-## Examples and tutorials
-
-- [TESS transit modelling example](https://github.com/hpparvi/PyTransit/blob/master/notebooks/tess_examples/WASP-4b.ipynb) 
-  that reproduces the WASP-4b analysis by [Bouma et al. (2019)](http://adsabs.harvard.edu/abs/2019AJ....157..217B).
-
-- [Third light contamination analysis examples](https://github.com/hpparvi/PyTransit/tree/master/notebooks/contamination)
-  illustrate the use of the contamination module in transiting planet candidate validation with multicolour photometry, 
-  as detailed in [Parviainen et al. (A&A, 2019)](https://www.aanda.org/articles/aa/pdf/2019/10/aa35709-19.pdf), and used 
-  in [Parviainen et al. (A&A, 2020)](https://www.aanda.org/articles/aa/pdf/2020/01/aa35958-19.pdf).
 
 
 ## What's new in PyTransit v2.0
