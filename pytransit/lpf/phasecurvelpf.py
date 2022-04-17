@@ -95,8 +95,8 @@ class PhaseCurveLPF(BaseLPF):
         for pb in self.passbands:
             pph.extend([GParameter(f'aev_{pb}', f'Ellipsoidal variation amplitude in {pb}', '', UP(0, 1), (0, inf)),
                         GParameter(f'adb_{pb}', f'Doppler boosting amplitude in {pb}', '', UP(0, 1), (0, inf)),
-                        GParameter(f'ted_{pb}', f'Day-side flux ratio in {pb}', '', UP(0.0, 0.2), (-inf, inf)),
-                        GParameter(f'ten_{pb}', f'Night-side flux ratio in {pb}', '', UP(0.0, 0.1), (-inf, inf)),
+                        GParameter(f'log10_ted_{pb}', f'Log10 dayside flux ratio in {pb}', '', UP(-3.0, 0.0), (-inf, inf)),
+                        GParameter(f'log10_ten_{pb}', f'Log10 nightside flux ratio in {pb}', '', UP(-3.0, 0.0), (-inf, inf)),
                         GParameter(f'teo_{pb}', 'Thermal emission offset', 'rad', UP(-pi, pi), (-inf, inf)),
                         GParameter(f'ag_{pb}', f'Geometric albedo in {pb}', '', UP(0, 1), (0, 1))])
         self.ps.add_global_block('phase', pph)
@@ -119,8 +119,8 @@ class PhaseCurveLPF(BaseLPF):
         oev = pv[:, sle][:, 0]
         aev = pv[:, sle][:, 1::6]
         adb = pv[:, sle][:, 2::6]
-        dte = pv[:, sle][:, 3::6]
-        nte = pv[:, sle][:, 4::6]
+        dte = 10**pv[:, sle][:, 3::6]
+        nte = 10**pv[:, sle][:, 4::6]
         ote = pv[:, sle][:, 5::6]
         ag  = pv[:, sle][:, 6::6]
         return t0, p, a, inc, ecc, omega, area_ratio, k, ldc, oev, aev, adb, dte, nte, ote, ag
