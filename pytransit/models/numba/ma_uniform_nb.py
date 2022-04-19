@@ -116,7 +116,7 @@ def uniform_z_s(z, k, zsign):
     return flux
 
 
-@njit(parallel=True, fastmath=True)
+@njit(parallel=True, fastmath=False)
 def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, zsign):
     t0, p, a, i, e, w = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w)
     k = atleast_2d(k)
@@ -125,6 +125,10 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
     npt = t.size
     flux = zeros((npv, npt))
     for ipv in prange(npv):
+        if a[ipv] <= 1.0 or e[ipv] >= 0.96:
+            flux[ipv, :] = nan
+            continue
+
         if zsign >= 0:
             y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
             et = 0.0
@@ -142,10 +146,6 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
                 ilc = lcids[j]
                 ipb = pbids[ilc]
 
-                if a[ipv] < 1.0 or e[ipv] > 0.94:
-                    flux[ipv, j] = nan
-                    continue
-
                 if k.shape[1] == 1:
                     _k = k[ipv, 0]
                 else:
@@ -162,13 +162,13 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
     return flux
 
 
-@njit(parallel=False, fastmath=True)
+@njit(parallel=False, fastmath=False)
 def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, zsign):
     k = atleast_1d(k)
     npt = t.size
     flux = zeros(npt)
 
-    if a < 1.0:
+    if a <= 1.0:
         flux[:] = nan
         return flux
 
@@ -211,6 +211,9 @@ def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, zsign):
     flux = zeros((npv, npt))
     for ipv in range(npv):
         t0, p, a, i, e, w = pvp[ipv, nk:]
+        if a <= 1.0:
+            flux[ipv, :] = nan
+            continue
 
         if zsign >= 0:
             y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
@@ -228,10 +231,6 @@ def uniform_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, zsign):
             else:
                 ilc = lcids[j]
                 ipb = pbids[ilc]
-
-                if a < 1.0 or e > 0.94:
-                    flux[ipv, j] = nan
-                    continue
 
                 if nk == 1:
                     k = pvp[ipv, 0]
