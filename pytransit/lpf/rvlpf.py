@@ -233,10 +233,11 @@ class RVModel:
             errors = sqrt(self._rvea**2 + pvp[self._sl_rv_err][self._rv_ids]**2)
             return lnlike_normal_s(self._rva, self.rv_model(pvp), errors)
 
-    def plot_rv_vs_time(self, method='de', pv=None, nsamples: int = 200, ntimes: int = 500, axs=None):
+    def plot_rv_vs_time(self, method='de', pv=None, nsamples: int = 200, ntimes: int = 500, axs=None,
+                        figsize=None, colors=None, markers=None, slope=False):
 
         if axs is None:
-            fig, axs = subplots(2, 1, gridspec_kw={'height_ratios': (3, 1)}, sharex='all')
+            fig, axs = subplots(2, 1, figsize=figsize, gridspec_kw={'height_ratios': (3, 1)}, sharex='all')
         else:
             fig, axs = None, axs
 
@@ -274,17 +275,28 @@ class RVModel:
             axs[0].fill_between(rv_time, rv_model_limits[2], rv_model_limits[3], facecolor='blue', alpha=0.25)
             axs[0].fill_between(rv_time, rv_model_limits[0], rv_model_limits[1], facecolor='darkblue', alpha=0.5)
 
-        axs[0].plot(rv_time, rv_model, 'k', lw=1)
-        axs[0].errorbar(self._timea + self._tref, self._rva + self.rv_shifts(pv), self._rvea, fmt='ok')
-        axs[1].errorbar(self._timea + self._tref, self._rva - self.rv_model(pv), self._rvea, fmt='ok')
-
+        if colors is None:
+            colors = len(self.rvis) * ['k']
+        if markers is None:
+            markers = len(self.rvis) * ['.']
+        rvs = self._rva - self.rv_shifts(pv) - squeeze(self.rv_slope(pv, self._timea))
+        for iid, instrument in enumerate(self.rvis):
+            m = self._rv_ids == iid
+            axs[0].errorbar(self._timea[m] + self._tref, rvs[m], self._rvea[m], fmt='o', marker=markers[iid],
+                            c=colors[iid], ms=4, label=instrument)
+            axs[1].errorbar(self._timea[m] + self._tref, self._rva[m] - squeeze(self.rv_model(pv))[m], self._rvea[m],
+                            fmt='ok', ms=4)
+        axs[0].plot(rv_time, rv_model, 'k', lw=1, alpha=0.5)
+        if slope:
+            axs[0].plot(rv_time, squeeze(self.rv_slope(pv, rv_time - self._tref)), 'k')
         if fig is not None:
             fig.tight_layout()
         return fig
 
-    def plot_rv_vs_phase(self, planet: int, method='de', pv=None, nsamples: int = 200, ntimes: int = 500, axs=None):
+    def plot_rv_vs_phase(self, planet: int, method='de', pv=None, nsamples: int = 200, ntimes: int = 500,
+                         axs=None, figsize=None, legend=False, colors=None, markers=None):
         if axs is None:
-            fig, axs = subplots(2, 1, gridspec_kw={'height_ratios': (3, 1)}, sharex='all')
+            fig, axs = subplots(2, 1, figsize=figsize, gridspec_kw={'height_ratios': (3, 1)}, sharex='all')
         else:
             fig, axs = None, axs
 
@@ -314,15 +326,16 @@ class RVModel:
         other_planets = all_planets.difference([planet])
 
         if pvp is None:
-            rv_model = self.rv_model(pv, rv_time + self._tref, [planet], add_sv=False)
-            rv_others = self.rv_model(pv, planets=other_planets, add_sv=False)
+            rv_model = self.rv_model(pv, rv_time + self._tref, [planet], add_sv=False, add_slope=False)
+            rv_others = self.rv_model(pv, planets=other_planets, add_sv=False, add_slope=False)
             rv_model_limits = None
         else:
-            rv_percentiles = percentile(self.rv_model(pvp, rv_time + self._tref, [planet], add_sv=False),
-                                        [50, 16, 84, 2.5, 97.5], 0)
+            rv_percentiles = percentile(
+                self.rv_model(pvp, rv_time + self._tref, [planet], add_sv=False, add_slope=False),
+                [50, 16, 84, 2.5, 97.5], 0)
             rv_model = rv_percentiles[0]
             rv_model_limits = rv_percentiles[1:]
-            rv_others = median(self.rv_model(pvp, planets=other_planets, add_sv=False), 0)
+            rv_others = median(self.rv_model(pvp, planets=other_planets, add_sv=False, add_slope=False), 0)
 
         period = pv[self.ps.names.index(f'p_{planet + 1}')]
         tc = pv[self.ps.names.index(f'tc_{planet + 1}')] - self._tref
@@ -339,9 +352,20 @@ class RVModel:
                                 facecolor='darkblue',
                                 alpha=0.25)
 
-        axs[0].errorbar(phase, self._rva - rv_others - self.rv_shifts(pv), self._rvea, fmt='ok')
+        if colors is None:
+            colors = len(self.rvis) * ['k']
+        if markers is None:
+            markers = len(self.rvis) * ['.']
+
+        rvs = self._rva - rv_others - self.rv_shifts(pv) - squeeze(self.rv_slope(pv, self._timea))
+        for iid, instrument in enumerate(self.rvis):
+            m = self._rv_ids == iid
+            axs[0].errorbar(phase[m], rvs[m], self._rvea[m], fmt='o', marker=markers[iid],
+                            c=colors[iid], ms=4, label=instrument)
         axs[0].plot(phase_model[msids], rv_model[msids], 'k')
-        axs[1].errorbar(phase, self._rva - self.rv_model(pv), self._rvea, fmt='ok')
+        axs[1].errorbar(phase, self._rva - self.rv_model(pv), self._rvea, fmt='ok', ms=4)
+        if legend:
+            axs[0].legend()
 
         setp(axs[0], ylabel='RV [m/s]')
         setp(axs[1], xlabel='Phase [d]', ylabel='O-M [m/s]')
