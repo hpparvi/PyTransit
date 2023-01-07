@@ -168,6 +168,34 @@ def circle_circle_intersection_area_v(r1, r2, bs):
 
 
 @njit
+def cciad_s(z, dz, r1, r2):
+    """Circle-circle intersection area derivative given scalar z and dz."""
+    if r1 < z - r2:
+        return 0.0
+    elif r1 >= z + r2:
+        return 0.0
+    elif z - r2 <= -r1:
+        return 0.0
+    else:
+        a = z**2 + r2**2 - r1**2
+        b = z**2 + r1**2 - r2**2
+        t1 = - r2**2*(1/r2 - a/(2*r2*z**2))/sqrt(1 - a**2/(4*r2**2*z**2))
+        t2 = - r1**2*(1/r1 - b/(2*r1*z**2))/sqrt(1 - b**2/(4*r1**2*z**2))
+        t3 = z*(r1**2 + r2**2 - z**2)/sqrt((-z + r2 + r1)*(z + r2 - r1)*(z - r2 + r1)*(z + r2 + r1))
+        return dz*(t1 + t2 - t3)
+
+
+@njit
+def cciad_v(zs, dzs, r1, r2):
+    """Circle-circle intersection area derivative given vector z and dz."""
+    npt = zs.size
+    df = zeros(npt)
+    for i in range(npt):
+        df[i] = cciad_s(zs[i], dzs[i], r1, r2)
+    return df
+
+
+@njit
 def create_z_grid(zcut: float, nin: int, nedge: int):
     mucut = sqrt(1.0 - zcut ** 2)
     dz = zcut / nin
