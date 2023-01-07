@@ -42,7 +42,7 @@
 
 from typing import Union, List, Iterable
 
-from numpy import inf, repeat, pi, atleast_2d, arctan2, sqrt, squeeze, ndarray, zeros
+from numpy import inf, repeat, pi, atleast_2d, arctan2, sqrt, squeeze, ndarray, zeros, linspace, ones, average, array
 from ..models.numba.phasecurves import doppler_boosting, ellipsoidal_variation, emission, lambert_phase_function
 
 from .. import QuadraticModel, EclipseModel
@@ -184,3 +184,22 @@ class PhaseCurveLPF(BaseLPF):
         baseline = self.baseline(pv)
         model_flux = self.transit_model(pv)
         return squeeze(model_flux * atleast_2d(baseline))
+
+    def calculate_flux_ratios(self, pvp):
+        t0, p, a, inc, ecc, omega, area_ratio, k, ldc, oev, aev, adb, dte, nte, ote, ab = self.map_pv(pvp)
+        npv = pvp.shape[0]
+        tc, p = zeros(npv), ones(npv)
+        time = array([0.0, 0.5])
+
+        ed_day, ed_night = [], []
+        for ipb, pb in enumerate(self.passbands):
+            femi = emission(area_ratio, nte[:, ipb], dte[:, ipb], ote[:, ipb], tc, p, True, time)
+            fref = lambert_phase_function(a, area_ratio, ab[:, ipb], t0, p, True, time)
+            ed_night.append((femi[:, 0] + fref[:, 0]))
+            ed_day.append((femi[:, 1] + fref[:, 1]))
+        return array(ed_night) / area_ratio, array(ed_day) / area_ratio
+
+    def calculate_eclipse_depths(self, pvp):
+        t0, p, a, inc, ecc, omega, area_ratio, k, ldc, oev, aev, adb, dte, nte, ote, ab = self.map_pv(pvp)
+        fr_night, fr_day = self.calculate_flux_ratios(pvp)
+        return area_ratio * fr_day
