@@ -470,6 +470,47 @@ def xy_taylor_vt(ts, a, y0, vx, vy, ax, ay, jx, jy, sx, sy):
 
 
 @njit
+def find_contact_point_2d(k: float, point: int, az, feff, y0, vx, vy, ax, ay, jx, jy, sx, sy):
+    if point == 1 or point == 2 or point == 12:
+        s = -1.0
+    else:
+        s = 1.0
+
+    if point == 1 or point == 4:
+        zt = 1.0 + k
+    elif point == 2 or point == 3:
+        zt = 1.0 - k
+    else:
+        zt = 1.0
+
+    t0 = 0.0
+    t2 = s * 2.0 / vx
+    t1 = 0.5 * t2
+
+    sa, ca = sin(az), cos(az)
+
+    x0, y0 = xy_taylor_st(t0, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+    x1, y1 = xy_taylor_st(t1, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+    z0 = sqrt(x0 ** 2 + (y0 / (1 - feff)) ** 2) - zt
+    z1 = sqrt(x1 ** 2 + (y1 / (1 - feff)) ** 2) - zt
+
+    i = 0
+    while abs(t2 - t0) > 1e-6 and i < 100:
+        if z0 * z1 < 0.0:
+            t1, t2 = 0.5 * (t0 + t1), t1
+            z2 = z1
+            x1, y1 = xy_taylor_st(t1, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+            z1 = sqrt(x1 ** 2 + (y1 / (1 - feff)) ** 2) - zt
+        else:
+            t0, t1 = t1, 0.5 * (t1 + t2)
+            z0 = z1
+            x1, y1 = xy_taylor_st(t1, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+            z1 = sqrt(x1 ** 2 + (y1 / (1 - feff)) ** 2) - zt
+        i += 1
+    return t1
+
+
+@njit
 def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
                    mstar, rstar, ostar, tpole, gpole,
                    f, feff, sphi, cphi, beta, ftable, teff0, dteff,
