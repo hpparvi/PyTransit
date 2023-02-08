@@ -121,7 +121,7 @@ class QuadraticModel(TransitModel):
             k, t0, p, a, i = asarray(k), asarray(t0), asarray(p), asarray(a), asarray(i)
 
             if k.ndim == 1:
-                k = k.reshape((k.size,1))
+                k = k.reshape((k.size, 1))
 
             if t0.ndim == 1:
                 t0 = t0.reshape((t0.size, 1))
@@ -129,6 +129,9 @@ class QuadraticModel(TransitModel):
             npv = p.size
             e = zeros(npv) if e is None else e
             w = zeros(npv) if w is None else w
+
+            if ldc.ndim == 3:
+                ldc = ldc.reshape([npv, -1])
 
             flux = quadratic_model_v(self.time, k, t0, p, a, i, e, w, ldc,
                                      self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes, self.npb,
@@ -177,6 +180,9 @@ class QuadraticModel(TransitModel):
 
         if self.time is None:
             raise ValueError("Need to set the data before calling the transit model.")
+
+        if ldc.ndim == 2 and ldc.shape[0] == self.npb:
+            ldc = ldc.ravel()
         if ldc.size != 2 * self.npb:
             raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
