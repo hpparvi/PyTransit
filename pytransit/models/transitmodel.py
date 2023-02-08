@@ -133,17 +133,3 @@ class TransitModel(object):
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = None, w: Union[float, ndarray] = None,
                  copy: bool = True) -> ndarray:
         raise NotImplementedError
-
-    def evaluate_ps(self, k: float, ldc: ndarray, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0., copy: bool = True) -> ndarray:
-        raise NotImplementedError
-
-    def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
-        raise NotImplementedError
-
-    # Evaluation given an array of normalised distances
-    # -------------------------------------------------
-    def evaluate_z_ps(self, z: ndarray, k: float, ldc: ndarray) -> ndarray:
-        raise NotImplementedError
-
-    def evaluate_z_pv(self, z: ndarray, pvp: ndarray) -> ndarray:
-        raise NotImplementedError
