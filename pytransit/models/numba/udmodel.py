@@ -1,11 +1,10 @@
+from math import isnan, isfinite
+
 from numba import njit
-from numpy import zeros, floor, nan, fabs, pi, sqrt
+from numpy import zeros, floor, nan, fabs, pi, sqrt, atleast_1d, asarray
 
 from meepmeep.xy.position import pd_t15sc, solve_xy_p5s, xyd_t15s
 from meepmeep.xy.derivatives import pd_with_derivatives_s, xy_derivative_coeffs, pd_derivatives_s
-from meepmeep.xy.par_fitting import coeffs as fit_coeffs
-from meepmeep.xy.par_direct import coeffs as nat_coeffs, diffs
-from meepmeep.utils import as_from_rhop, i_from_baew
 
 from ...orbits import d_from_pkaiews
 from .rrmodel import circle_circle_intersection_area_kite as ccia
@@ -36,7 +35,7 @@ def folded_time(t, t0, p):
 
 
 @njit
-def uniform_model_v(times, k, t0, p, a, i, e, w, with_derivatives):
+def uniform_model_simple(times, k, t0, p, a, i, e, w, with_derivatives):
     npt = times.size
     flux = zeros(npt)
     dflux = zeros((7, npt)) if with_derivatives else None
@@ -76,4 +75,56 @@ def uniform_model_v(times, k, t0, p, a, i, e, w, with_derivatives):
                     dflux[1:, j] += -dfdz(d, k, 1.0) * ds
             else:
                 flux[j] += 1.
+    return flux, dflux
+
+
+@njit
+def uniform_model_v(times, k, t0, p, dkdp, cfs, dcfs, with_derivatives,
+                    lcids, pbids, epids, nsamples, exptimes):
+    k = atleast_1d(asarray(k))
+    dkdp = atleast_1d(asarray(dkdp))
+    t0 = atleast_1d(asarray(t0))
+    p = atleast_1d(asarray(p))
+
+    npt = times.size  # Number of points
+    nbp = k.size  # Number of passbands
+    nt0 = t0.size  # Number of transit centres
+    nor = cfs.shape[0]  # Number of orbits, should be either 1 or nt0
+
+    flux = zeros(npt)
+    dflux = zeros((7, npt)) if with_derivatives else None
+    ds = zeros(6)
+
+    # -----------------------------------------------
+    # Calculate the transit model and its derivatives
+    # -----------------------------------------------
+    for j in range(npt):
+        ilc = lcids[j]
+        ipb = pbids[ilc]
+        iep = epids[ilc]
+        ior = 0 if nor == 1 else iep
+        if isnan(cfs[ior, 0, 0]):
+            flux[j] = nan
+            continue
+
+        _k = k[ipb]
+        t = folded_time(times[j], t0[iep], p[ior])
+        exptime = exptimes[ilc]
+        ns = nsamples[ilc]
+
+        for isample in range(1, ns + 1):
+            time_offset = exptime * ((isample - 0.5) / ns - 0.5)
+            x, y, d = xyd_t15s(t + time_offset, cfs[ior])
+            if d <= 1.0 + _k:
+                is_area, k0 = ccia(1.0, _k, d)
+                flux[j] += 1.0 - is_area / pi
+                if with_derivatives:
+                    dflux[0, j] += -2.0 * _k * k0 / pi * dkdp[ipb]
+                    dflux[1:, j] += -dfdz(d, _k, 1.0) * pd_derivatives_s(t, x, y, dcfs[ior], ds)
+            else:
+                flux[j] += 1.
+        flux[j] /= ns
+        if with_derivatives:
+            dflux[:, j] /= ns
+
     return flux, dflux
