@@ -39,7 +39,7 @@ class QuadraticModel(TransitModel):
     """Transit model with quadratic limb darkening (Mandel & Agol, ApJ 580, L171-L175 2002).
     """
 
-    def __init__(self, interpolate: bool = True, klims: tuple = (0.01, 0.5), nk: int = 256, nz: int = 256):
+    def __init__(self, interpolate: bool = False, klims: tuple = (0.01, 0.5), nk: int = 256, nz: int = 256):
         """Transit model with quadratic limb darkening (Mandel & Agol, ApJ 580, L171-L175 2002).
 
         Parameters
