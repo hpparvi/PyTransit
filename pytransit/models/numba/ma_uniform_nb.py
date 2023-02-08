@@ -39,10 +39,12 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+from math import fabs
 
 from numba import njit, prange
 from numpy import pi, sqrt, arccos, abs, zeros_like, sign, sin, cos, abs, atleast_2d, zeros, atleast_1d, isnan, inf, \
     nan, copysign, fmax, floor
+
 from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st, vajs_from_paiew_eclipse, t14
 
 TWO_PI = 2.0 * pi
@@ -114,6 +116,72 @@ def uniform_z_s(z, k, zsign):
         flux = 1.0 - lambdae
 
     return flux
+
+
+@njit(fastmath=True)
+def folded_time(t, t0, p):
+    epoch = floor((t - t0 + 0.5 * p) / p)
+    return t - (t0 + epoch * p)
+
+
+@njit
+def dfdz(z, r1, r2):
+    """Circle-circle intersection derivative givena scalar z."""
+    if r1 < z - r2:
+        return 0.0
+    elif r1 >= z + r2:
+        return 0.0
+    elif z - r2 <= -r1:
+        return 0.0
+    else:
+        a = z**2 + r2**2 - r1**2
+        b = z**2 + r1**2 - r2**2
+        t1 = - r2**2 * (1/r2 - a / (2*r2*z**2))  /  sqrt(1 - a**2 / (4*r2**2*z**2))
+        t2 = - r1**2 * (1/r1 - b / (2*r1*z**2))  /  sqrt(1 - b**2 / (4*r1**2*z**2))
+        t3 = z*(r1**2 + r2**2 - z**2) / sqrt((-z + r2 + r1) * (z + r2 - r1) * (z - r2 + r1) * (z + r2 + r1))
+        return (t1 + t2 - t3) / pi
+
+
+@njit
+def xuniform_model_v(times, k, t0, p, a, i, e, w, with_derivatives):
+    npt = times.size
+    flux = zeros(npt)
+    dflux = zeros((6, npt)) if with_derivatives else None
+    ds = zeros(6)
+
+    if a <= 1.0 or e >= 0.99:
+        flux[:] = nan
+        return flux, dflux
+
+    half_window_width = 0.025 + 0.5 * d_from_pkaiews(p, k, a, i, e, w, 1.)
+
+    # ---------------------------------------------------------------------
+    # Solve the Taylor series coefficients for the planet's (x, y) location
+    # and its derivatives if they're requested.
+    # ---------------------------------------------------------------------
+    cf = solve_xy_p5s(0.0, p, a, i, e, w)
+    if with_derivatives:
+        dcf = xy_derivative_coeffs(diffs(p, a, i, e, w, 1e-4), 1e-4, cf)
+    else:
+        dcf = None
+
+    # -----------------------------------------------
+    # Calculate the transit model and its derivatives
+    # -----------------------------------------------
+    for j in range(npt):
+        t = folded_time(times[j], t0, p)
+        if fabs(t) > half_window_width:
+            flux[j] = 1.0
+        else:
+            x, y, d = xyd_t15s(t, cf)
+            if d <= 1.0 + k:
+                flux[j] += uniform_z_s(d, k, 1.0)
+                if with_derivatives:
+                    ds = pd_derivatives_s(t, x, y, dcf, ds)
+                    dflux[:, j] += -dfdz(d, k, 1.0) * ds
+            else:
+                flux[j] += 1.
+    return flux, dflux
 
 
 @njit(parallel=True, fastmath=False)
