@@ -69,7 +69,7 @@ def circle_circle_intersection_area_kite(r1, r2, b):
         a_lens = r1 * r1 * k1 + r2 * r2 * k0 - a_kite
         return a_lens, k0
     elif b <= r1 - r2:
-        return pi * r2 ** 2, 2 * pi
+        return pi * r2 ** 2, pi
     elif b <= r2 - r1:
         return pi * r1 ** 2, 0.0
     else:
