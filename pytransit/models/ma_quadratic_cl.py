@@ -193,15 +193,17 @@ class QuadraticModelCL(TransitModel):
         ndarray
             Modelled flux either as a 1D or 2D ndarray.
         """
-        npv = 1 if isinstance(t0, float) else len(t0)
+        npv = 1 if isinstance(p, float) else len(p)
         k = asarray(k)
 
-        if k.size == 1:
-            nk = 1
-        elif npv == 1:
+        if npv == 1:
             nk = k.size
         else:
-            nk = k.shape[1]
+            if k.ndim == 1:
+                k = k.reshape([npv, 1])
+                nk = 1
+            else:
+                nk = k.shape[1]
 
         if e is None:
             e, w = 0.0, 0.0
@@ -218,6 +220,9 @@ class QuadraticModelCL(TransitModel):
         ldc = atleast_2d(ldc).astype(float32)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])
+
+        if ldc.ndim == 3:
+            ldc = ldc.reshape([npv, -1])
 
         # Release and reinitialise the GPU buffers if the sizes of the time or
         # limb darkening coefficient arrays change.
