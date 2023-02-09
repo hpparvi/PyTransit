@@ -42,6 +42,8 @@ The package has been used in research since 2010, and is described in [Parviaine
   
 ## Examples and tutorials
 
+The notebooks in the [notebooks directory](https://github.com/hpparvi/PyTransit/tree/master/notebooks) cover most of the PyTransit basics, although some are already a bit outdated.
+
 ### New tutorials
 
 - [Tutorial 1: fitting a single transit](https://github.com/hpparvi/PyTransit/blob/master/notebooks/001_simple_broadband_parameter_estimation.ipynb). 
@@ -49,7 +51,7 @@ The package has been used in research since 2010, and is described in [Parviaine
   (well, actually we're estimating the posterior densities for the parameters in a transit model, but this sounds slightly
   more intimidating ;) )
 
-### Old examples (may need to be )
+### Old examples (may need to be updated)
 
 - [TESS transit modelling example](https://github.com/hpparvi/PyTransit/blob/master/notebooks/tess_examples/WASP-4b.ipynb) 
   that reproduces the WASP-4b analysis by [Bouma et al. (2019)](http://adsabs.harvard.edu/abs/2019AJ....157..217B).
