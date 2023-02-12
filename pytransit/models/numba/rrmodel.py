@@ -388,7 +388,7 @@ def im_p_s_3d(k: float, g: float, dk, dg, weights, ldp, k0):
     if g >= 1.0:
         return 0.0
     else:
-        nk = (k - k0) / dg
+        nk = (k - k0) / dk
         ik = int(floor(nk))
         ak1 = nk - ik
         ak2 = 1.0 - ak1
