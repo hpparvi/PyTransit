@@ -7,7 +7,7 @@ from meepmeep.xy.position import pd_t15sc, solve_xy_p5s, xyd_t15s
 from meepmeep.xy.derivatives import pd_with_derivatives_s, xy_derivative_coeffs, pd_derivatives_s
 
 from ...orbits import d_from_pkaiews
-from .rrmodel import circle_circle_intersection_area_kite as ccia
+from ..roadrunner.common import circle_circle_intersection_area_kite as ccia
 
 
 @njit

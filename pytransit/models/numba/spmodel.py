@@ -1,7 +1,7 @@
 from numpy import sqrt, abs, zeros, ones
 from numba import njit, prange
 
-from .rrmodel import circle_circle_intersection_area
+from ..roadrunner.common import circle_circle_intersection_area
 from .ldmodels import ld_quadratic, ldi_quadratic
 
 @njit(parallel=True)
