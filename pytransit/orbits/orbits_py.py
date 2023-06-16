@@ -30,7 +30,7 @@ from typing import Optional
 
 from numba import njit, prange
 from numpy import (pi, arccos, arctan2, sin, cos, sqrt, sign, copysign, mod, zeros_like, zeros, linspace, floor, arcsin,
-                   int, around, nan, full, ndarray)
+                   int64, around, nan, full, ndarray)
 from scipy.constants import G
 
 HALF_PI = 0.5 * pi
@@ -51,7 +51,7 @@ rsun, rsun_e           = 0.5*1.392684e9, 0.0
 cache = False
 
 def epoch(time, zero_epoch, period):
-    return around((time - zero_epoch) / period).astype(int)
+    return around((time - zero_epoch) / period).astype(int64)
 
 
 def fold(time: ndarray, period: float, t0: Optional[float] = 0.0, shift: Optional[float] = 0.0):

@@ -16,7 +16,7 @@
 
 import numpy as np
 
-from numpy import inf, isfinite, abs, sum, unique, ones, compress, array, mean, round, int, where, float64, full_like, \
+from numpy import inf, isfinite, abs, sum, unique, ones, compress, array, mean, round, int64, where, float64, full_like, \
     nan
 
 from pytransit.orbits import epoch
@@ -24,7 +24,7 @@ from pytransit.orbits import epoch
 
 def fold_orbit_and_phase(time, period, origo, shift):
     phase  = ((time - origo) / period + shift)
-    orbit  = (phase // 1).astype(np.int)
+    orbit  = (phase // 1).astype(int64)
     phase  = (phase % 1. - 0.5) * period
     return  orbit, phase
 
