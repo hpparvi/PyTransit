@@ -155,6 +155,8 @@ class DiffEvol(object):
 
         self._trial_pop = zeros_like(self._population)
         self._trial_fit = zeros_like(self._fitness)
+        self._prev_pop = zeros_like(self._population)
+        self._prev_fit = zeros_like(self._fitness)
 
         if vectorize:
             self._eval = self._eval_vfun
@@ -198,11 +200,14 @@ class DiffEvol(object):
         for ipop in range(self.n_pop):
             fitc[ipop] = self.m * self.minfun(popc[ipop, :])
 
+        self._prev_pop[:, :] = popc
+        self._prev_fit[:] = fitc
+
         for igen in range(ngen):
             f = self.f or uniform(*self.fbounds)
             c = self.c or uniform(*self.cbounds)
 
-            popt = evolve_population(popc, popt, f, c)
+            popt[:, :] = evolve_population(popc, popt, f, c)
             fitt[:] = self.m * array(list(self.map(self.minfun, popt)))
 
             msk = fitt < fitc
@@ -221,12 +226,14 @@ class DiffEvol(object):
         popt, fitt = self._trial_pop, self._trial_fit
 
         fitc[:] = self.m * self.minfun(self._population)
+        self._prev_pop[:, :] = popc
+        self._prev_fit[:] = fitc
 
         for igen in range(ngen):
             f = self.f or uniform(*self.fbounds)
             c = self.c or uniform(*self.cbounds)
 
-            popt = evolve_population(popc, popt, f, c)
+            popt[:, :] = evolve_population(popc, popt, f, c)
             fitt[:] = self.m * self.minfun(popt)
 
             msk = fitt < fitc
