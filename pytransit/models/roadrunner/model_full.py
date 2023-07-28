@@ -1,6 +1,6 @@
 from math import fabs, floor
 from numba import njit, prange
-from numpy import zeros, dot, ndarray
+from numpy import zeros, dot, ndarray, isnan, nan, ones
 
 from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
 from meepmeep.utils import d_from_pkaiews
@@ -52,11 +52,16 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
         else:
             ks[:, :] = k
 
+    pv_is_good = ones(npv, bool)
     ldm = zeros((npv, npb, ng))  # Limb darkening means
     xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
     hwws = zeros((npv, npb))     # Half-window widths [d]
 
     for ipv in range(npv):
+        if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
+            pv_is_good[ipv] = False
+            continue
+
         # -----------------------------------#
         # Calculate the limb darkening means #
         # -----------------------------------#
@@ -89,6 +94,11 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
     for j in prange(npv * npt):
         ipv = j // npt
         ipt = j % npt
+
+        if not pv_is_good[ipv]:
+            flux[ipv, ipt] = nan
+            continue
+
         ilc = lcids[ipt]
         ipb = pbids[ilc]
         iep = epids[ilc]
@@ -134,11 +144,16 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
         else:
             ks[:, :] = k
 
+    pv_is_good = ones(npv, bool)
     ldm = zeros((npv, npb, ng))  # Limb darkening means
     xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
     hwws = zeros((npv, npb))     # Half-window widths [d]
 
     for ipv in range(npv):
+        if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
+            pv_is_good[ipv] = False
+            continue
+
         # -----------------------------------#
         # Calculate the limb darkening means #
         # -----------------------------------#
@@ -171,6 +186,11 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
     for j in prange(npv * npt):
         ipv = j // npt
         ipt = j % npt
+
+        if not pv_is_good[ipv]:
+            flux[ipv, ipt] = nan
+            continue
+
         ilc = lcids[ipt]
         ipb = pbids[ilc]
         iep = epids[ilc]
