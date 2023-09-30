@@ -64,7 +64,7 @@ class NormalPrior(Prior):
 class UniformPrior(Prior):
     def __init__(self, a: float, b: float):
         self.a, self.b = a, b
-        self.lnc = m.log(b-a)
+        self.lnc = -m.log(b-a)
 
     def logpdf(self, v):
         return where((self.a < v) & (v < self.b), self.lnc, -inf)
