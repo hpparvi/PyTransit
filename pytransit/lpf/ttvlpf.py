@@ -54,7 +54,7 @@ class TTVLPF(BaseLPF):
 
     def _post_data_init_hook(self):
         super()._post_data_init_hook()
-        epochs = epoch(array([t.mean() for t in self.times]), self.zero_epoch, self.period)[::-1]
+        epochs = epoch(array([t.mean() for t in self.times]), self.zero_epoch, self.period)
         ueps = []
         for ep in epochs:
             if ep not in ueps:
