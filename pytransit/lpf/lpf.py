@@ -216,6 +216,7 @@ class BaseLPF(LogPosteriorFunction):
             # ---------------------------
             self._init_data(times = times, fluxes = fluxes, pbids = pbids, covariates = covariates,
                             errors = errors, wnids = wnids, nsamples = nsamples, exptimes = exptimes)
+            self._post_data_init_hook()
 
             # Set up the parametrisation
             # --------------------------
@@ -361,6 +362,9 @@ class BaseLPF(LogPosteriorFunction):
         pass
 
     def _init_instrument(self):
+        pass
+
+    def _post_data_init_hook(self):
         pass
 
     def _pre_initialisation(self):
