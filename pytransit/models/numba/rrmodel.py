@@ -394,6 +394,10 @@ def _eval_rrm_direct_v_serial(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lcids
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
+        if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
+            flux[ipv, :] = nan
+            continue
+
         y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
         half_window_width = 0.025 + 0.5 * t14(k[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
@@ -442,6 +446,10 @@ def _eval_rrm_direct_v_parallel(t, k, t0, p, a, i, e, w, ldp, istar, ze, ng, lci
 
     flux = zeros((npv, npt))
     for ipv in prange(npv):
+        if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
+            flux[ipv, :] = nan
+            continue
+
         y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
         half_window_width = 0.025 + 0.5 * t14(k[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
 
