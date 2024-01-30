@@ -10,19 +10,18 @@ from .common import circle_circle_intersection_area_kite as ccia
 
 
 @njit(parallel=False, fastmath=False)
-def rr_simple_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray,
-                     w: ndarray,
+def rr_simple_serial(times: ndarray,
+                     k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
                      nsamples: ndarray, exptimes: ndarray, ldp: ndarray, istar: ndarray,
-                     weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray):
+                     weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray) -> ndarray:
     if k.ndim != 2:
         raise ValueError(" The radius ratios must be given as a 2D array with shape (npv, npb)")
 
     if ldp.ndim != 3:
         raise ValueError("The limb darkening profiles must be given as a 3D array with shape (npv, npb, nmu)")
 
-    if k.size != ldp.shape[1]:
-        raise ValueError(
-            "The transmission spectrum transit model requires that the number or radius ratios and the number of passbands match.")
+    if k.shape[1] != ldp.shape[1]:
+        raise ValueError("The transmission spectrum transit model requires that the number or radius ratios and the number of passbands match.")
 
     npt = times.size
     npv = k.shape[0]
