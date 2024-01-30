@@ -1,6 +1,6 @@
 from math import fabs, floor
 from numba import njit, prange
-from numpy import zeros, dot, ndarray
+from numpy import zeros, dot, ndarray, isnan, full, nan
 
 from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
 from meepmeep.utils import d_from_pkaiews
@@ -41,6 +41,9 @@ def rr_simple_serial(times: ndarray, k: float, t0: float, p: float, a: float, i:
 
     ldm = zeros(ng)  # Limb darkening means
     xyc = zeros((2, 5))  # Taylor series coefficients for the (x, y) position
+
+    if isnan(a) or (a <= 1.0) or (e < 0.0) or (isnan(ldp[0, 0])):
+        return full(npt, nan)
 
     # ----------------------------------#
     # Calculate the limb darkening mean #
@@ -98,6 +101,9 @@ def rr_simple_parallel(times: ndarray, k: float, t0: float, p: float, a: float, 
 
     ldm = zeros(ng)  # Limb darkening means
     xyc = zeros((2, 5))  # Taylor series coefficients for the (x, y) position
+
+    if isnan(a) or (a <= 1.0) or (e < 0.0) or (isnan(ldp[0, 0])):
+        return full(npt, nan)
 
     # ----------------------------------#
     # Calculate the limb darkening mean #
