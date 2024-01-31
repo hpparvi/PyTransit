@@ -24,18 +24,18 @@ from pyopencl import CompilerWarning
 
 from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, \
     concatenate, empty, linspace, diff, trapz
-from .ldmodel import LDModel
+from ..ldmodel import LDModel
 
-from .roadrunner.common import create_z_grid
+from .common import create_z_grid
 
-from .transitmodel import TransitModel
-from .numba.ldmodels import *
+from ..transitmodel import TransitModel
+from ..numba.ldmodels import *
 
 warnings.filterwarnings('ignore', category=CompilerWarning)
 
-__all__ = ['SwiftModelCL']
+__all__ = ['RoadRunnerModelCL']
 
-class SwiftModelCL(TransitModel):
+class RoadRunnerModelCL(TransitModel):
     ldmodels = {'uniform': (ld_uniform, ldi_uniform),
                 'linear': (ld_linear, ldi_linear),
                 'quadratic': (ld_quadratic, ldi_quadratic),
@@ -132,7 +132,7 @@ class SwiftModelCL(TransitModel):
 
         self._time_id = None   # Time array ID
 
-        self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'opencl','swiftmodel.cl'),'r').read()).build()
+        self.prg = cl.Program(self.ctx, open(join(dirname(__file__), 'rrmodel.cl'), 'r').read()).build()
 
         self.init_siwft_arrays(self.zcut, self.ng, self.nzin, self.nzlimb)
 
