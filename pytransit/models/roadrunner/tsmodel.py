@@ -38,10 +38,10 @@ from .rrmodel import RoadRunnerModel
 
 from .model_trspec import tsmodel_serial
 
-__all__ = ['TransmissionSpectrumModel']
+__all__ = ['TransmissionSpectroscopyModel']
 
 
-class TransmissionSpectrumModel(RoadRunnerModel):
+class TransmissionSpectroscopyModel(RoadRunnerModel):
 
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],

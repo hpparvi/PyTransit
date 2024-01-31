@@ -37,7 +37,7 @@ Author
   Hannu Parviainen  <hannu@iac.es>
 
 Date
-  9.08.2020
+  31.01.2024
 
 """
 
@@ -57,9 +57,12 @@ from .models.eclipse_model import EclipseModel
 from .models.ma_chromosphere import ChromosphereModel
 from .models.general import GeneralModel
 from .models.roadrunner.rrmodel import RoadRunnerModel
-from .models.roadrunner.tsmodel import TransmissionSpectrumModel
+from .models.roadrunner.tsmodel import TransmissionSpectroscopyModel
 from .models.osmodel import OblateStarModel
 from .models.gdmodel import GravityDarkenedModel
+
+TSModel = TransmissionSpectroscopyModel
+RRModel = RoadRunnerModel
 
 # OpenCL models
 # -------------
