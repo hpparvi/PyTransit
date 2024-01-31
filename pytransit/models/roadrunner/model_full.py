@@ -1,6 +1,6 @@
 from math import fabs, floor
 from numba import njit, prange
-from numpy import zeros, dot, ndarray, isnan, nan, ones
+from numpy import zeros, dot, ndarray, isnan, nan, ones, full
 
 from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
 from meepmeep.utils import d_from_pkaiews
@@ -35,6 +35,9 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
     npt = times.size
     ng = weights.shape[1]
 
+    if k.shape[1] > 1 and k.shape[1] != npb:
+        raise ValueError('Radius ratios should be given either as an [npv, 1] or [npv, npb] array.')
+
     _exptimes = zeros(nlc)
     _exptimes[:] = exptimes
     _nsamples = zeros(nlc)
@@ -42,17 +45,13 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
 
     # Copy the radius ratios
     # ----------------------
-    ks = zeros((npv, npb))
-    if npv == 1:
-        ks[:] = k
+    if k.shape[0] == npv and k.shape[1] == npb:
+        ks = k
     else:
-        if k.shape[1] == 1:
-            for ipv in range(npv):
-                ks[ipv, :] = k[ipv]
-        else:
-            ks[:, :] = k
+        ks = zeros((npv, npb))
+        ks[:, :] = k[:, 0:npb]
 
-    pv_is_good = ones(npv, bool)
+    pv_is_good = full(npv, True)
     ldm = zeros((npv, npb, ng))  # Limb darkening means
     xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
     hwws = zeros((npv, npb))     # Half-window widths [d]
@@ -127,6 +126,9 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
     npt = times.size
     ng = weights.shape[1]
 
+    if k.shape[1] > 1 and k.shape[1] != npb:
+        raise ValueError('Radius ratios should be given either as an [npv, 1] or [npv, npb] array.')
+
     _exptimes = zeros(nlc)
     _exptimes[:] = exptimes
     _nsamples = zeros(nlc)
@@ -134,20 +136,16 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
 
     # Copy the radius ratios
     # ----------------------
-    ks = zeros((npv, npb))
-    if npv == 1:
-        ks[:] = k
+    if k.shape[0] == npv and k.shape[1] == npb:
+        ks = k
     else:
-        if k.shape[1] == 1:
-            for ipv in range(npv):
-                ks[ipv, :] = k[ipv]
-        else:
-            ks[:, :] = k
+        ks = zeros((npv, npb))
+        ks[:, :] = k[:, 0:npb]
 
-    pv_is_good = ones(npv, bool)
+    pv_is_good = full(npv, True)
     ldm = zeros((npv, npb, ng))  # Limb darkening means
-    xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
-    hwws = zeros((npv, npb))     # Half-window widths [d]
+    xyc = zeros((npv, 2, 5))  # Taylor series coefficients for the (x, y) position
+    hwws = zeros((npv, npb))  # Half-window widths [d]
 
     for ipv in range(npv):
         if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
@@ -161,7 +159,8 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
             ik = int(floor((ks[ipv, 0] - kmin) / dk))
             ak = (ks[ipv, 0] - kmin - ik * dk) / dk
             for ipb in range(npb):
-                ldm[ipv, ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb]) + ak * dot(weights[ik + 1], ldp[ipv, ipb])
+                ldm[ipv, ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb]) + ak * dot(weights[ik + 1],
+                                                                                           ldp[ipv, ipb])
         else:
             _, _, wg = calculate_weights_2d(ks[ipv, 0], z_edges, ng)
             for ipb in range(npb):
