@@ -1,6 +1,6 @@
 from math import fabs, floor
 from numba import njit, prange
-from numpy import zeros, dot, ndarray, isnan, full, nan, mean
+from numpy import zeros, dot, ndarray, isnan, full, nan, mean, floor, fabs
 
 from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
 from meepmeep.utils import d_from_pkaiews

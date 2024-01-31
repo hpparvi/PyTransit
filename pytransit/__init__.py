@@ -56,7 +56,8 @@ from .models.ma_uniform import UniformModel
 from .models.eclipse_model import EclipseModel
 from .models.ma_chromosphere import ChromosphereModel
 from .models.general import GeneralModel
-#from .models.rrmodel import RoadRunnerModel
+from .models.roadrunner.rrmodel import RoadRunnerModel
+from .models.roadrunner.tsmodel import TransmissionSpectrumModel
 from .models.osmodel import OblateStarModel
 from .models.gdmodel import GravityDarkenedModel
 

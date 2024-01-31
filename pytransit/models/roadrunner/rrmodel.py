@@ -26,19 +26,17 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import timeit
 from typing import Tuple, Callable, Union, List, Optional
 
-from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, linspace, sqrt, pi, ones, log, exp, \
-    tile, full, isscalar, unique
+from numpy import ndarray, linspace, isscalar, unique
 from scipy.integrate import trapz
 
-from .ldmodel import LDModel
-from .numba.ldmodels import *
-from .roadrunner import rrmodel
+from ..ldmodel import LDModel
+from ..numba.ldmodels import *
+from ..transitmodel import TransitModel
 
-from .roadrunner.common import create_z_grid, calculate_weights_3d
-from .transitmodel import TransitModel
+from .common import create_z_grid, calculate_weights_3d
+from .model import rrmodel
 
 __all__ = ['RoadRunnerModel']
 
