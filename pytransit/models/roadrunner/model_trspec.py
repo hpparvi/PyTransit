@@ -10,10 +10,10 @@ from .common import circle_circle_intersection_area_kite as ccia
 
 
 @njit(parallel=False, fastmath=False)
-def rr_simple_serial(times: ndarray,
-                     k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
-                     nsamples: ndarray, exptimes: ndarray, ldp: ndarray, istar: ndarray,
-                     weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray) -> ndarray:
+def tsmodel_serial(times: ndarray,
+                   k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
+                   nsamples: ndarray, exptimes: ndarray, ldp: ndarray, istar: ndarray,
+                   weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray) -> ndarray:
     if k.ndim != 2:
         raise ValueError(" The radius ratios must be given as a 2D array with shape (npv, npb)")
 
@@ -63,7 +63,7 @@ def rr_simple_serial(times: ndarray,
         # Calculate the half-window width #
         # --------------------------------#
         hww = 0.5 * d_from_pkaiews(p[ipv], kmean, a[ipv], i[ipv], e[ipv], w[ipv], 1, 14)
-        hww = 0.0015 + exptimes + hww
+        hww = 0.0015 + exptimes[0] + hww
 
         # --------------------------#
         # Calculate the light curve #
@@ -74,12 +74,12 @@ def rr_simple_serial(times: ndarray,
             if fabs(tc) > hww:
                 flux[ipv, :, ipt] = 1.0
             else:
-                for isample in range(1, nsamples + 1):
-                    time_offset = exptimes * ((isample - 0.5) / nsamples - 0.5)
+                for isample in range(1, nsamples[0] + 1):
+                    time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
                     z = pd_t15sc(tc[ipv] + time_offset, xyc)
                     aplanet = ccia(1.0, kmean, z)[0]
                     for ipb in range(npb):
                         iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
                         flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * aplanet * afac[ipb]) / istar[ipv, ipb]
-                flux[ipv, :, ipt] /= nsamples
+                flux[ipv, :, ipt] /= nsamples[0]
     return flux

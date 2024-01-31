@@ -26,9 +26,9 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Union, List
+from typing import Union, List, Optional
 
-from numpy import ndarray, isscalar
+from numpy import ndarray, isscalar, atleast_2d, atleast_1d
 from pytransit.models.roadrunner.common import calculate_weights_3d
 from scipy.integrate import trapz
 
@@ -36,7 +36,7 @@ from ..ldmodel import LDModel
 from ..numba.ldmodels import *
 from .rrmodel import RoadRunnerModel
 
-from .model_trspec import rr_simple_serial
+from .model_trspec import tsmodel_serial
 
 __all__ = ['TransmissionSpectrumModel']
 
@@ -45,7 +45,7 @@ class TransmissionSpectrumModel(RoadRunnerModel):
 
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
-                 i: Union[float, ndarray], e: Union[float, ndarray], w: Union[float, ndarray],
+                 i: Union[float, ndarray], e: Union[float, ndarray] = 0.0, w: Union[float, ndarray] = 0.0,
                  copy: bool = True) -> ndarray:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
@@ -81,6 +81,8 @@ class TransmissionSpectrumModel(RoadRunnerModel):
         """
 
         npv = 1 if isscalar(p) else p.size
+        k = atleast_2d(k)
+        t0, p, a, i, e, w = map(atleast_1d, (t0, p, a, i, e, w))
 
         if isinstance(self.ldmodel, LDModel):
             ldp, istar = self.ldmodel(self.mu, ldc)
@@ -97,7 +99,13 @@ class TransmissionSpectrumModel(RoadRunnerModel):
                         istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv, ipb], self._ldz)
 
         dk, dg, weights = calculate_weights_3d(self.nk, self.klims[0], self.klims[1], self.ze, self.ng)
-        flux = rr_simple_serial(self.time, k, t0, p, a, i, e, w, self.nsamples, self.exptimes,
-                 ldp, istar, weights, dk, self.klims[0], self.klims[1], dg, self.ze)
+        flux = tsmodel_serial(self.time, k, t0, p, a, i, e, w, self.nsamples, self.exptimes,
+                              ldp, istar, weights, dk, self.klims[0], self.klims[1], dg, self.ze)
 
         return flux.squeeze()
+
+    def __call__(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
+                 t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
+                 i: Union[float, ndarray], e: Union[float, ndarray] = 0.0, w: Union[float, ndarray] = 0.0,
+                 copy: bool = True) -> ndarray:
+        return self.evaluate(k, ldc, t0, p, a, i, e, w, copy)
