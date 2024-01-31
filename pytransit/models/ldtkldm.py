@@ -18,8 +18,8 @@ from typing import Tuple, Optional, Union
 from pathlib import Path
 
 from numba import njit
-from numpy import zeros, interp, pi, ndarray
-from numpy.random import randint
+from numpy import zeros, interp, pi, ndarray, linspace, meshgrid, transpose
+from scipy.interpolate import interpn, interpnd, RegularGridInterpolator as RGI
 
 from .ldmodel import LDModel
 
@@ -39,69 +39,50 @@ def ntrapz(x, y):
     return ii
 
 
-@njit
-def eval_ldm(emu, mu, z, ldps, npv, nsamples):
-    npb = ldps.shape[0]
-    ldp = zeros((npv, npb, emu.size))
-    ldi = zeros((npv, npb))
-    iis = randint(0, nsamples, size=npv)
-
-    for ipv in range(npv):
-        for ipb in range(npb):
-            ldp[ipv, ipb] = interp(emu, mu, ldps[ipb, iis[ipv]])
-            ldi[ipv, ipb] = -2 * pi * ntrapz(z, z * ldps[ipb, iis[ipv]])
-    return ldp, ldi
-
-
-@njit
-def eval_ldm_frozen(emu, mu, z, mldps, npv):
-    npb = mldps.shape[0]
-    ldp = zeros((npv, npb, emu.size))
-    ldi = zeros((npv, npb))
-
-    for ipb in range(npb):
-        ldp[0, ipb] = interp(emu, mu, mldps[ipb])
-        ldi[0, ipb] = -2 * pi * ntrapz(z, z * mldps[ipb])
-
-    for i in range(1, npv):
-        ldp[i] = ldp[0]
-        ldi[i] = ldi[0]
-
-    return ldp, ldi
-
-
 class LDTkLDModel(LDModel):
-    def __init__(self, pbs: Tuple, teff: Tuple[float, float], logg: Tuple[float, float], z: Tuple[float, float],
-                 samples: int = 500, frozen: bool = False, cache: Optional[Union[str, Path]] = None,
-                 dataset: str = 'vis-lowres'):
+    def __init__(self, pbs: Tuple, teff: Tuple[float, float], logg: Tuple[float, float], metal: Tuple[float, float],
+                 cache: Optional[Union[str, Path]] = None, dataset: str = 'vis-lowres'):
+
         super().__init__()
-        self._sc = LDPSetCreator(teff, logg, z, pbs, cache=cache, dataset=dataset)
-        self._ps = self._sc.create_profiles(samples)
-        self._i = 0
-
+        self.sc = LDPSetCreator(teff, logg, metal, pbs, cache=cache, dataset=dataset)
+        self.pbs = pbs
         self.npb = len(pbs)
-        self.nsamples = samples
-        self.frozen = frozen
-        self.z = self._ps._z
-        self.mu = self._ps._mu
-        self.profiles = self._ps._ldps
-        self.mean_profiles = self._ps.profile_averages
+        self.mu = None
+        self.nmu = 0
+        self.ps = None
+        self.profiles = None
+        self.rgi = None
 
-    def thaw(self):
-        self.frozen = False
+    def _init_interpolation(self, mu, nteff, nlogg, nz):
+        self.mu = mu
+        self.nmu = mu.size
+        c = self.sc.client
 
-    def freeze(self):
-        self.frozen = True
+        teffs = linspace(*c.teffl, nteff)
+        loggs = linspace(*c.loggl, nlogg)
+        zs = linspace(*c.zl, nz)
+        teffg, loggg, zg = meshgrid(teffs, loggs, zs)
 
-    def __call__(self, mu: ndarray, x: Optional[ndarray] = None) -> Tuple[ndarray, ndarray]:
-        npv = 1 if x is None else x.shape[0]
-        self._i = i = randint(0, self.nsamples)
-        if self.frozen:
-            return eval_ldm_frozen(mu, self.mu, self.z, self.mean_profiles, npv)
-        else:
-            return eval_ldm(mu, self.mu, self.z, self.profiles, npv, self.nsamples)
+        self.ps = self.sc.create_profiles(teff=teffg.ravel(), logg=loggg.ravel(), metal=zg.ravel())
+        self.ps.resample(mu=self.mu)
+        self.profiles = transpose(self.ps._ldps.copy(), axes=(1, 0, 2)).reshape((nteff, nlogg, nz, self.npb, self.nmu))
+        self.rgi = RGI((teffs, loggs, zs), self.profiles)
 
-    def _evaluate(self, mu: ndarray, x:ndarray) -> ndarray:
+    def __call__(self, mu: ndarray, x: ndarray) -> Tuple[ndarray, ndarray]:
+        if self.mu is None or id(mu) != id(self.mu):
+            self._init_interpolation(mu, 5, 3, 3)
+
+        npv = x.shape[0]
+        z = self.ps._z
+        ldp = zeros((npv, self.npb, self.nmu))
+        ldi = zeros((npv, self.npb))
+        for ipv in range(npv):
+            ldp[ipv] = self.rgi(x[ipv])
+            for ipb in range(self.npb):
+                ldi[ipv, ipb] = 2 * pi * ntrapz(z, z * ldp[ipv, ipb, :])
+        return ldp, ldi
+
+    def _evaluate(self, mu: ndarray, x: ndarray) -> ndarray:
         raise NotImplementedError
 
     def _integrate(self, x: ndarray) -> float:
