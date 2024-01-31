@@ -1,0 +1,39 @@
+[project]
+name = "PyTransit"
+version = "2.6.0"
+description = 'Fast and painless exoplanet transit light curve modelling.'
+authors=[{name='Hannu Parviainen', email='hpparvi@gmail.com'}]
+classifiers=[
+  "Topic :: Scientific/Engineering",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "Development Status :: 5 - Production/Stable",
+  "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+]
+keywords = ['astronomy',  'astrophysics',  'exoplanets']
+dependencies = ["numpy", "numba", "scipy", "pandas", "xarray", "tables", "meepmeep",
+                "semantic_version", "deprecated", "uncertainties", "pyrr", "seaborn"]
+requires-python = ">= 3.8"
+readme = "README.md"
+license = {text = "GPLv2"}
+
+[project.urls]
+homepage = 'https://github.com/hpparvi/PyTransit'
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+namespaces = true
+include = ["pytransit"]
+
+
+#[tool.setuptools.package-data]
+#"pytransit.contamination.data" = ["*.nc"]
+#"pytransit" = ["*.fits", "*.txt", "*.csv", "*.h5", "*.nc", "*.cl"]
