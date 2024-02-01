@@ -13,6 +13,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+from math import gamma
 
 from numba import njit
 from numpy import ones, pi, sqrt, log, exp, zeros, power, log2
@@ -39,6 +40,14 @@ def ldi_linear(pv):
 
 
 @njit(fastmath=True)
+def ldd_linear(mu, pv):
+    ldd = zeros((2, mu.size))
+    ldd[0] = pv[0]
+    ldd[1] = mu - 1.0
+    return ldd
+
+
+@njit(fastmath=True)
 def ld_quadratic(mu, pv):
     return 1. - pv[0] * (1. - mu) - pv[1] * (1. - mu) ** 2
 
@@ -46,6 +55,20 @@ def ld_quadratic(mu, pv):
 @njit(fastmath=True)
 def ldi_quadratic(pv):
     return 2 * pi * 1 / 12 * (-2 * pv[0] - pv[1] + 6)
+
+@njit(fastmath=True)
+def ldd_quadratic(mu, pv):
+    """Quadratic limb darkening model derivatives.
+
+    Quadratic limb darkening model derivatives as an array
+    [di/dmu, di/da, di/db].
+
+    Multiply di/dmu by -z/sqrt(1-z**2) to get di/dz"""
+    ldd = zeros((3, mu.size))
+    ldd[0] = pv[0] + 2*pv[1] - 2*pv[1]*mu
+    ldd[1] = mu - 1.0
+    ldd[2] = -(1.0 - mu)**2
+    return ldd
 
 
 @njit(fastmath=True)
@@ -94,11 +117,27 @@ def ld_exponential(mu, pv):
 def ld_power_2(mu, pv):
     return 1. - pv[0] * (1. - mu ** pv[1])
 
+
+@njit
+def ldi_power_2(mu, pv):
+    return 2 * pi * sqrt(pi) * pv[0] * gamma(0.5*pv[1] + 1.0) / (2*gamma(0.5*(pv[1]+3.0))) - pv[0] + 1
+
+
+@njit(fastmath=True)
+def ldd_power_2(mu, pv):
+    ldd = zeros((3, mu.size))
+    ldd[0] = pv[0]*pv[1]*mu**(pv[1]-1.0)
+    ldd[1] = mu**pv[1] - 1.0
+    ldd[2] = pv[0]*mu**pv[1] * log(mu)
+    return ldd
+
+
 @njit(fastmath=True)
 def ld_power_2_pm(mu, pv):
     c = 1 - pv[0] + pv[1]
     a = log2(c/pv[1])
     return 1. - c * (1. - mu**a)
+
 
 @njit
 def evaluate_ld(ldm, mu, pvo):

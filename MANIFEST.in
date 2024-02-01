@@ -1,0 +1,4 @@
+include pytransit/contamination/data/*
+include pytransit/models/opencl/*.cl
+include pytransit/models/roadrunner/*.cl
+include pytransit/stars/data/*.fits

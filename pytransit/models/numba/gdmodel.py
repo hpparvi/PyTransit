@@ -19,7 +19,7 @@ from scipy.constants import G, k, h, c
 from numpy import exp, pi, sqrt, zeros, sin, cos, nan, inf, linspace, meshgrid, floor, isfinite, fmax, isnan, nanmean, \
     arange, zeros_like, atleast_2d, array, cross, sign
 
-from .rrmodel import circle_circle_intersection_area
+from ..roadrunner.common import circle_circle_intersection_area
 from ...orbits.taylor_z import vajs_from_paiew, find_contact_point, t14
 
 d2sec = 24.*60.*60.

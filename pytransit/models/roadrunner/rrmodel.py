@@ -26,21 +26,17 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import timeit
 from typing import Tuple, Callable, Union, List, Optional
 
-from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, linspace, sqrt, pi, ones, log, exp, \
-    tile, full, isscalar
+from numpy import ndarray, linspace, isscalar, unique
 from scipy.integrate import trapz
 
-from .ldmodel import LDModel
-from .numba.ldmodels import *
-from .numba.rrmodel import rrmodel_direct_s, rrmodel_interpolated_s, \
-    rrmodel_direct_s_simple, rrmodel_direct_v, \
-    rrmodel_interpolated_v
+from ..ldmodel import LDModel
+from ..numba.ldmodels import *
+from ..transitmodel import TransitModel
 
-from .numba.rrmodel import create_z_grid, calculate_weights_3d
-from .transitmodel import TransitModel
+from .common import create_z_grid, calculate_weights_3d
+from .model import rrmodel
 
 __all__ = ['RoadRunnerModel']
 
@@ -60,8 +56,8 @@ class RoadRunnerModel(TransitModel):
 
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  interpolate: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
-                 nzin: int = 20, nzlimb: int = 20, zcut=0.7, ng: int = 50, parallel: bool = False,
-                 small_planet_limit: float = 0.05):
+                 nzin: int = 20, nzlimb: int = 20, zcut=0.7, ng: int = 100, parallel: bool = False,
+                 small_planet_limit: float = 0.05, parallel_limit: int = 5000):
         """The RoadRunner transit model by Parviainen (2020).
 
         Parameters
@@ -78,8 +74,9 @@ class RoadRunnerModel(TransitModel):
         super().__init__()
         self.interpolate = interpolate
         self.parallel = parallel
-        self.is_simple = False
         self.splimit = small_planet_limit
+        self.parallel_limit = parallel_limit
+        self.parallelize: bool = False
 
         # Set up the limb darkening model
         # --------------------------------
@@ -125,11 +122,6 @@ class RoadRunnerModel(TransitModel):
         self.dg = None
         self.weights = None
 
-        self._m_direct_s = None
-        self._m_direct_v = None
-        self._m_interp_s = None
-        self._m_interp_v = None
-
         self._ldmu = linspace(1, 0, 200)
         self._ldz = sqrt(1 - self._ldmu ** 2)
 
@@ -142,15 +134,10 @@ class RoadRunnerModel(TransitModel):
                  exptimes: Optional[Union[ndarray, List]] = None,
                  epids: Optional[Union[ndarray, List]] = None) -> None:
         super().set_data(time, lcids, pbids, nsamples, exptimes, epids)
-        self.set_methods()
+        self.parallelize = self.nsamples[self.lcids].sum() > self.parallel_limit
+        self.nep = unique(self.epids).size
 
-    def set_methods(self):
-        if self.npb == 1 and all(self.nsamples == 1) and all(self.epids == 0):
-            self.is_simple = True
-        else:
-            self.is_simple = False
-
-    def init_integration(self, nzin, nzlimb, zcut, ng, nk=None):
+    def init_integration(self, nzin, nzlimb, zcut, ng, nk):
         self.nk = nk
         self.ng = ng
         self.nzin = nzin
@@ -158,14 +145,13 @@ class RoadRunnerModel(TransitModel):
         self.zcut = zcut
         self.ze, self.zm = create_z_grid(zcut, nzin, nzlimb)
         self.mu = sqrt(1 - self.zm ** 2)
-        if self.interpolate:
-            self.dk, self.dg, self.weights = calculate_weights_3d(nk, self.klims[0], self.klims[1], self.ze, ng)
+        self.dk, self.dg, self.weights = calculate_weights_3d(nk, self.klims[0], self.klims[1], self.ze, ng)
 
 
-    def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List], t0: Union[float, ndarray],
-                 p: Union[float, ndarray],
-                 a: Union[float, ndarray], i: Union[float, ndarray], e: Optional[Union[float, ndarray]] = None,
-                 w: Optional[Union[float, ndarray]] = None, copy: bool = True) -> ndarray:
+    def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
+                 t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
+                 i: Union[float, ndarray], e: Union[float, ndarray], w: Union[float, ndarray],
+                 copy: bool = True) -> ndarray:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
         Parameters
@@ -199,113 +185,24 @@ class RoadRunnerModel(TransitModel):
             Modelled flux either as a 1D or 2D ndarray.
         """
 
-        # Scalar parameters branch
-        # ------------------------
-        if isscalar(p):
-            if e is None:
-                e, w = 0.0, 0.0
-            return self.evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
-
-        # Parameter population branch
-        # ---------------------------
-        else:
-            k, t0, p, a, i = asarray(k), asarray(t0), asarray(p), asarray(a), asarray(i)
-
-            if k.ndim == 1:
-                k = k.reshape((k.size, 1))
-
-            if t0.ndim == 1:
-                t0 = t0.reshape((t0.size, 1))
-
-            npv = p.size
-            if e is None:
-                e, w = zeros(npv), zeros(npv)
-
-            if isinstance(self.ldmodel, LDModel):
-                ldp, istar = self.ldmodel(self.mu, ldc)
-            else:
-                ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
-
-                if self.ldmmean is not None:
-                    istar = evaluate_ldi(self.ldmmean, ldc)
-                else:
-                    istar = zeros((npv, self.npb))
-                    ldpi = evaluate_ld(self.ldmodel, self._ldmu, ldc)
-                    for ipv in range(npv):
-                        for ipb in range(self.npb):
-                            istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv, ipb], self._ldz)
-
-            if self.interpolate:
-                flux = rrmodel_interpolated_v(self.time, k, t0, p, a, i, e, w, ldp, istar, self.weights, self.dk,
-                                       self.klims[0], self.dg, self.lcids, self.pbids, self.epids, self.nsamples,
-                                       self.exptimes, self.npb, self.parallel)
-            else:
-                flux = rrmodel_direct_v(self.time, k, t0, p, a, i, e, w, ldp, istar, self.ze, self.ng,
-                                       self.lcids, self.pbids, self.epids, self.nsamples,
-                                       self.exptimes, self.npb, self.parallel)
-        return squeeze(flux)
-
-    def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: float, a: float, i: float,
-                    e: float = 0.0, w: float = 0.0, copy: bool = True) -> ndarray:
-        """Evaluate the transit model for a set of scalar parameters.
-
-        Parameters
-        ----------
-        k : array-like
-            Radius ratio(s) either as a single float or an 1D array.
-        ldc : array-like
-            Limb darkening coefficients as a 1D array.
-        t0 : float
-            Transit center as a float.
-        p : float
-            Orbital period as a float.
-        a : float
-            Orbital semi-major axis divided by the stellar radius as a float.
-        i : float
-            Orbital inclination(s) as a float.
-        e : float, optional
-            Orbital eccentricity as a float.
-        w : float, optional
-            Argument of periastron as a float.
-
-        Notes
-        -----
-        This version of the `evaluate` method is optimized for calculating a single transit model (such as when using a
-        local optimizer). If you want to evaluate the model for a large number of parameters simultaneously, use either
-        `evaluate` or `evaluate_pv`.
-
-        Returns
-        -------
-        ndarray
-            Modelled flux as a 1D ndarray.
-        """
-
-        k = asarray(k)
-        ldc = asarray(ldc)
-        t0 = asarray(t0)
+        npv = 1 if isscalar(p) else p.size
 
         if isinstance(self.ldmodel, LDModel):
             ldp, istar = self.ldmodel(self.mu, ldc)
         else:
             ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
+
             if self.ldmmean is not None:
                 istar = evaluate_ldi(self.ldmmean, ldc)
             else:
-                istar = zeros((1,self.npb))
-                if ldc.ndim == 1:
-                    ldc = ldc.reshape((1, 1, -1))
-                elif ldc.ndim == 2:
-                    ldc = ldc.reshape((1, ldc.shape[1], -1))
+                istar = zeros((npv, self.npb))
+                ldpi = evaluate_ld(self.ldmodel, self._ldmu, ldc)
+                for ipv in range(npv):
+                    for ipb in range(self.npb):
+                        istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv, ipb], self._ldz)
 
-                for ipb in range(self.npb):
-                    istar[0,ipb] = 2 * pi * trapz(self._ldz * self.ldmodel(self._ldmu, ldc[0,ipb]), self._ldz)
+        flux = rrmodel(self.time, k, t0, p, a, i, e, w, self.parallelize,
+                       self.nlc, self.npb, self.nep, self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
+                       ldp, istar, self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
 
-        if self.interpolate:
-            flux = rrmodel_interpolated_s(self.time, k, t0, p, a, i, e, w, ldp, istar, self.weights, self.zm,
-                                    self.dk, self.klims[0], self.dg, self.splimit,
-                                    self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes, self.parallel)
-        else:
-            flux = rrmodel_direct_s(self.time, k, t0, p, a, i, e, w, ldp, istar, self.ze, self.zm, self.ng, self.splimit,
-                                    self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes, self.parallel)
-
-        return squeeze(flux)
+        return flux
