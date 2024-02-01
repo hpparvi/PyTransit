@@ -1,4 +1,13 @@
 # Changelog
+## [2.6.0] - 2024-02-01
+
+### Added
+
+- *TSModel:* An extremely fast transit model for transmission spectroscopy. The model is based on the RoadRunnerModel and can use any 
+  rotationally symmetric function to model stellar limb darkening.
+- *LDTkLDM:* A RoadRunnerModel limb darkening model that uses directly stellar intensity profiles created by the LDTk. The model is
+  parameterised by the effective stellar temperature, surface gravity, and metallicity. This should be quite valuable for transmission
+  spectroscopy since the number of limb darkening parameters is independent of the number of passbands.
 
 ## [2.4.0] - 2020-10-14
 
