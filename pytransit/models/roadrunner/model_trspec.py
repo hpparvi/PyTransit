@@ -9,7 +9,7 @@ from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
 from .common import circle_circle_intersection_area_kite as ccia
 
 
-#@njit(parallel=False, fastmath=False)
+@njit(parallel=False, fastmath=False)
 def tsmodel_serial(times: ndarray,
                    k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
                    nsamples: ndarray, exptimes: ndarray, ldp: ndarray, istar: ndarray,
