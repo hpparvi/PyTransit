@@ -87,7 +87,7 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
         # Limb darkening
         # --------------
         ldc = array(ldc)
-        if npv > 1 and ldc.shape != 3:
+        if npv > 1 and ldc.ndim != 3:
             raise ValueError("""The limb darkening parameters (ldp) should be given as a 3D array with shape [npv, npb, nldp] 
                     when evaluating the model for a set of parameters (npv > 1).""")
         if ldc.ndim == 1:
@@ -98,7 +98,7 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
             pass
         else:
             raise ValueError()
-        npb = ldc.shape[1]
+        self.npb = npb = ldc.shape[1]
 
         if isinstance(self.ldmodel, LDModel):
             ldp, istar = self.ldmodel(self.mu, ldc)

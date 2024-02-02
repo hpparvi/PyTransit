@@ -9,7 +9,7 @@ from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
 from .common import circle_circle_intersection_area_kite as ccia
 
 
-@njit(parallel=False, fastmath=False)
+#@njit(parallel=False, fastmath=False)
 def tsmodel_serial(times: ndarray,
                    k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
                    nsamples: ndarray, exptimes: ndarray, ldp: ndarray, istar: ndarray,
@@ -69,14 +69,14 @@ def tsmodel_serial(times: ndarray,
         # Calculate the light curve #
         # --------------------------#
         for ipt in range(npt):
-            epoch = floor((times[ipt] - t0 + 0.5 * p[ipv]) / p[ipv])
-            tc = times[ipt] - (t0 + epoch * p[ipv])
+            epoch = floor((times[ipt] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
+            tc = times[ipt] - (t0[ipv] + epoch * p[ipv])
             if fabs(tc) > hww:
                 flux[ipv, :, ipt] = 1.0
             else:
                 for isample in range(1, nsamples[0] + 1):
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
-                    z = pd_t15sc(tc[ipv] + time_offset, xyc)
+                    z = pd_t15sc(tc + time_offset, xyc)
                     aplanet = ccia(1.0, kmean, z)[0]
                     for ipb in range(npb):
                         iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
