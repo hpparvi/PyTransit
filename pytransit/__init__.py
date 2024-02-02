@@ -41,72 +41,80 @@ Date
 
 """
 
-from .version import __version__
+import warnings
+from numba import NumbaDeprecationWarning
 
-# Generic
-# -------
-from .models.transitmodel import TransitModel
-from .contamination.filter import DeltaFilter, BoxcarFilter, TabulatedFilter, sdss_g, sdss_r, sdss_i, sdss_z
+#TODO: Find where we're using generated_jit and fix it...
 
-# Numba models
-# ------------
-from .models.qpower2 import QPower2Model
-from .models.ma_quadratic import QuadraticModel
-from .models.ma_uniform import UniformModel
-from .models.eclipse_model import EclipseModel
-from .models.ma_chromosphere import ChromosphereModel
-from .models.general import GeneralModel
-from .models.roadrunner.rrmodel import RoadRunnerModel
-from .models.roadrunner.tsmodel import TransmissionSpectroscopyModel
-from .models.osmodel import OblateStarModel
-from .models.gdmodel import GravityDarkenedModel
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore', NumbaDeprecationWarning)
 
-TSModel = TransmissionSpectroscopyModel
-RRModel = RoadRunnerModel
+    from .version import __version__
 
-# OpenCL models
-# -------------
-class DummyModelCL:
-    def __init__(self, *args, **kwargs):
-        raise ImportError('Cannot use the OpenCL models because pyopencl is not installed. Please install pyopencl.')
+    # Generic
+    # -------
+    from .models.transitmodel import TransitModel
+    from .contamination.filter import DeltaFilter, BoxcarFilter, TabulatedFilter, sdss_g, sdss_r, sdss_i, sdss_z
 
+    # Numba models
+    # ------------
+    from .models.qpower2 import QPower2Model
+    from .models.ma_quadratic import QuadraticModel
+    from .models.ma_uniform import UniformModel
+    from .models.eclipse_model import EclipseModel
+    from .models.ma_chromosphere import ChromosphereModel
+    from .models.general import GeneralModel
+    from .models.roadrunner.rrmodel import RoadRunnerModel
+    from .models.roadrunner.tsmodel import TransmissionSpectroscopyModel
+    from .models.osmodel import OblateStarModel
+    from .models.gdmodel import GravityDarkenedModel
 
-try:
-    from .models.qpower2_cl import QPower2ModelCL
-    from .models.ma_quadratic_cl import QuadraticModelCL
-    from .models.ma_uniform_cl import UniformModelCL
-    from .models.swiftmodel_cl import SwiftModelCL, SwiftModelCL as SWIFTModelCL
-except ModuleNotFoundError:
-    QPower2ModelCL = DummyModelCL
-    QuadraticModelCL = DummyModelCL
-    UniformModelCL = DummyModelCL
-    SwiftModelCL = SWIFTModelCL = DummyModelCL
+    TSModel = TransmissionSpectroscopyModel
+    RRModel = RoadRunnerModel
+
+    # OpenCL models
+    # -------------
+    class DummyModelCL:
+        def __init__(self, *args, **kwargs):
+            raise ImportError('Cannot use the OpenCL models because pyopencl is not installed. Please install pyopencl.')
 
 
-# LDTk limb darkening for the Swift model
-# ---------------------------------------
-class DummyLDTkLDModel:
-    def __init__(self, *args, **kwargs):
-        raise ImportError('Cannot use the LDTk limb darkening model because ldtk is not installed. Please install ldtk.')
+    try:
+        from .models.qpower2_cl import QPower2ModelCL
+        from .models.ma_quadratic_cl import QuadraticModelCL
+        from .models.ma_uniform_cl import UniformModelCL
+        from .models.swiftmodel_cl import SwiftModelCL, SwiftModelCL as SWIFTModelCL
+    except ModuleNotFoundError:
+        QPower2ModelCL = DummyModelCL
+        QuadraticModelCL = DummyModelCL
+        UniformModelCL = DummyModelCL
+        SwiftModelCL = SWIFTModelCL = DummyModelCL
 
 
-try:
-    from .models.ldtkldm import LDTkLDModel, LDTkLD
-except ModuleNotFoundError:
-    LDTkLD = LDTkLDModel = DummyLDTkLDModel
+    # LDTk limb darkening for the Swift model
+    # ---------------------------------------
+    class DummyLDTkLDModel:
+        def __init__(self, *args, **kwargs):
+            raise ImportError('Cannot use the LDTk limb darkening model because ldtk is not installed. Please install ldtk.')
 
 
-# Log posterior functions
-# -----------------------
-from .lpf.lpf import BaseLPF
-from .lpf.transitlpf import TransitLPF
-from .lpf.cntlpf import PhysContLPF
-from .lpf.baselines.legendrebaseline import LegendreBaseline
-from .lpf.baselines.linearbaseline import LinearModelBaseline
-from .lpf.transitanalysis import TransitAnalysis
+    try:
+        from .models.ldtkldm import LDTkLDModel, LDTkLD
+    except ModuleNotFoundError:
+        LDTkLD = LDTkLDModel = DummyLDTkLDModel
 
-# Utilities
-# ---------
-from .param.parameter import UniformPrior, NormalPrior
-from .utils import md_rs_from_rho
-from .utils.mocklc import create_mock_light_curve
+
+    # Log posterior functions
+    # -----------------------
+    from .lpf.lpf import BaseLPF
+    from .lpf.transitlpf import TransitLPF
+    from .lpf.cntlpf import PhysContLPF
+    from .lpf.baselines.legendrebaseline import LegendreBaseline
+    from .lpf.baselines.linearbaseline import LinearModelBaseline
+    from .lpf.transitanalysis import TransitAnalysis
+
+    # Utilities
+    # ---------
+    from .param.parameter import UniformPrior, NormalPrior
+    from .utils import md_rs_from_rho
+    from .utils.mocklc import create_mock_light_curve
