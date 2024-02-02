@@ -28,7 +28,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Union, List, Optional
 
-from numpy import ndarray, isscalar, atleast_2d, atleast_1d
+from numpy import ndarray, isscalar, atleast_2d, atleast_1d, array
 from pytransit.models.roadrunner.common import calculate_weights_3d
 from scipy.integrate import trapz
 
@@ -79,10 +79,26 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
         ndarray
             Modelled flux either as a 1D or 2D ndarray.
         """
-
-        npv = 1 if isscalar(p) else p.size
         k = atleast_2d(k)
+        ldc = atleast_2d(ldc)
         t0, p, a, i, e, w = map(atleast_1d, (t0, p, a, i, e, w))
+        npv = k.shape[0]
+
+        # Limb darkening
+        # --------------
+        ldc = array(ldc)
+        if npv > 1 and ldc.shape != 3:
+            raise ValueError("""The limb darkening parameters (ldp) should be given as a 3D array with shape [npv, npb, nldp] 
+                    when evaluating the model for a set of parameters (npv > 1).""")
+        if ldc.ndim == 1:
+            ldc = ldc.reshape((1, 1, ldc.shape[1]))
+        elif ldc.ndim == 2:
+            ldc = ldc.reshape((1, ldc.shape[0], ldc.shape[1]))
+        elif ldc.ndim == 3:
+            pass
+        else:
+            raise ValueError()
+        npb = ldc.shape[1]
 
         if isinstance(self.ldmodel, LDModel):
             ldp, istar = self.ldmodel(self.mu, ldc)
@@ -92,10 +108,10 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
             if self.ldmmean is not None:
                 istar = evaluate_ldi(self.ldmmean, ldc)
             else:
-                istar = zeros((npv, self.npb))
+                istar = zeros((npv, npb))
                 ldpi = evaluate_ld(self.ldmodel, self._ldmu, ldc)
                 for ipv in range(npv):
-                    for ipb in range(self.npb):
+                    for ipb in range(npb):
                         istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv, ipb], self._ldz)
 
         dk, dg, weights = calculate_weights_3d(self.nk, self.klims[0], self.klims[1], self.ze, self.ng)

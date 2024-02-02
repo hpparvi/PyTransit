@@ -28,7 +28,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Tuple, Callable, Union, List, Optional
 
-from numpy import ndarray, linspace, isscalar, unique
+from numpy import ndarray, linspace, isscalar, unique, atleast_1d
 from scipy.integrate import trapz
 
 from ..ldmodel import LDModel
@@ -51,7 +51,7 @@ class RoadRunnerModel(TransitModel):
                 'square_root': ld_square_root,
                 'logarithmic': ld_logarithmic,
                 'exponential': ld_exponential,
-                'power-2': ld_power_2,
+                'power-2': (ld_power_2, ldi_power_2),
                 'power-2-pm': ld_power_2_pm}
 
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
@@ -186,6 +186,7 @@ class RoadRunnerModel(TransitModel):
         """
 
         npv = 1 if isscalar(p) else p.size
+        ldc = atleast_1d(ldc)
 
         if isinstance(self.ldmodel, LDModel):
             ldp, istar = self.ldmodel(self.mu, ldc)

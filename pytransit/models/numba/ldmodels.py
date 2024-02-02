@@ -119,8 +119,8 @@ def ld_power_2(mu, pv):
 
 
 @njit
-def ldi_power_2(mu, pv):
-    return 2 * pi * sqrt(pi) * pv[0] * gamma(0.5*pv[1] + 1.0) / (2*gamma(0.5*(pv[1]+3.0))) - pv[0] + 1
+def ldi_power_2(pv):
+    return 2 * pi * (-pv[0]*pv[1] + pv[1] + 2) / (2*pv[1] + 4)
 
 
 @njit(fastmath=True)
