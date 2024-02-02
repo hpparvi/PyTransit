@@ -12,7 +12,7 @@ def rrmodel(times, k, t0, p, a, i, e, w,
     k, t0, p, a, i, e, w = (atleast_2d(k), atleast_2d(t0), atleast_1d(p), atleast_1d(a),
                             atleast_1d(i), atleast_1d(e), atleast_1d(w))
 
-    if nlc > 1:
+    if nlc > 1 or k.shape[0] > 1:
         return squeeze(rr_full(times, k, t0, p, a, i, e, w, parallelize, nlc, npb, nep,
                        lcids, pbids, epids, nsamples, exptimes,
                        ldp, istar, weights, dk, kmin, kmax, dg, z_edges))

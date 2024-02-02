@@ -150,7 +150,7 @@ class RoadRunnerModel(TransitModel):
 
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
-                 i: Union[float, ndarray], e: Union[float, ndarray], w: Union[float, ndarray],
+                 i: Union[float, ndarray], e: Union[float, ndarray] = 0.0, w: Union[float, ndarray] = 0.0,
                  copy: bool = True) -> ndarray:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
