@@ -53,7 +53,8 @@ def uniform_model_simple(times, k, t0, p, a, i, e, w, with_derivatives):
     # ---------------------------------------------------------------------
     cf = solve_xy_p5s(0.0, p, a, i, e, w)
     if with_derivatives:
-        dcf = xy_derivative_coeffs(diffs(p, a, i, e, w, 1e-4), 1e-4, cf)
+        raise NotImplementedError
+        #dcf = xy_derivative_coeffs(diffs(p, a, i, e, w, 1e-4), 1e-4, cf)
     else:
         dcf = None
 
