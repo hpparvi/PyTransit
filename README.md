@@ -65,36 +65,6 @@ transmission spectrum light curves.
 
 Read the docs at [pytransit.readthedocs.io](https://pytransit.readthedocs.io).
 
-## News
-- **21.10.2020, version 2.5**
-    - Version 2.5 makes modelling of TTVs trivial with ``pytransit.RoadRunnerModel`` and ``pytransit.QuadraticModel``.
-    - See the [TTV modelling example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/ttv_model_example.ipynb) for an example of how to evaluate the models for a TTV analysis.
-
-- **14.10.2020, version 2.4**
-    - Version 2.4 adds ``pytransit.EclipseModel`` to model secondary eclipses with as little hassle as possible.
-    - See the [secondary eclipse model example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/example_eclipse_model.ipynb)
-    for an example of how to use it.
-
-- **16.9.2020, Version 2.3** 
-    - Version 2.3 adds ``OblateStarModel`` to model transits over gravity-darkened rapidly rotating star as presented by Barnes (2009).
-    - See the [oblate star model example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/osmodel_example_1.ipynb)
-    for an example of usage.
-
-- **13.9.2020, Version 2.2**
-    - Version 2.2 brings a significant speedup to the evaluation speed of all models. The normalised planet-star distances are
-    now calculated using a Taylor-series expansion of the planet's (x,y) sky-plane position. The method gives a 2-6 x speedup to the transit
-    model evaluation and is detailed in Parviainen & Korth (2020, submitted to MNRAS)
-
-- **7.7.2020, Version 2.1** 
-    - Version 2.1 introduces the *RoadRunner* transit model (Parviainen, submitted to MNRAS, 2020), a fast exoplanet transit model 
-    that can use any radially symmetric function to model stellar limb darkening while still being faster to evaluate than 
-    the analytical transit model for quadratic limb darkening.
-    - See the [basic example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_1.ipynb),
-   the [custom limb darkening notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_2.ipynb),
-   and the [LDTk limb darkening model example notebook](https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_3.ipynb).
-
-
-
 Installation
 ------------
 ### PyPI
