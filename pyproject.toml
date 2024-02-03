@@ -1,6 +1,6 @@
 [project]
 name = "PyTransit"
-version = "2.6.0"
+version = "2.6.1"
 description = 'Fast and painless exoplanet transit light curve modelling.'
 authors=[{name='Hannu Parviainen', email='hpparvi@gmail.com'}]
 classifiers=[
@@ -30,10 +30,5 @@ build-backend = "setuptools.build_meta"
 include-package-data = true
 
 [tool.setuptools.packages.find]
-namespaces = true
 include = ["pytransit"]
-
-
-#[tool.setuptools.package-data]
-#"pytransit.contamination.data" = ["*.nc"]
-#"pytransit" = ["*.fits", "*.txt", "*.csv", "*.h5", "*.nc", "*.cl"]
+namespaces = true
