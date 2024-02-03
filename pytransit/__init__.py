@@ -74,35 +74,13 @@ with warnings.catch_warnings():
 
     # OpenCL models
     # -------------
-    class DummyModelCL:
-        def __init__(self, *args, **kwargs):
-            raise ImportError('Cannot use the OpenCL models because pyopencl is not installed. Please install pyopencl.')
-
-
-    try:
-        from .models.qpower2_cl import QPower2ModelCL
-        from .models.ma_quadratic_cl import QuadraticModelCL
-        from .models.ma_uniform_cl import UniformModelCL
-        from .models.swiftmodel_cl import SwiftModelCL, SwiftModelCL as SWIFTModelCL
-    except ModuleNotFoundError:
-        QPower2ModelCL = DummyModelCL
-        QuadraticModelCL = DummyModelCL
-        UniformModelCL = DummyModelCL
-        SwiftModelCL = SWIFTModelCL = DummyModelCL
-
+    from .models.qpower2_cl import QPower2ModelCL
+    from .models.ma_quadratic_cl import QuadraticModelCL
+    from .models.ma_uniform_cl import UniformModelCL
 
     # LDTk limb darkening for the Swift model
     # ---------------------------------------
-    class DummyLDTkLDModel:
-        def __init__(self, *args, **kwargs):
-            raise ImportError('Cannot use the LDTk limb darkening model because ldtk is not installed. Please install ldtk.')
-
-
-    try:
-        from .models.ldtkldm import LDTkLDModel, LDTkLD
-    except ModuleNotFoundError:
-        LDTkLD = LDTkLDModel = DummyLDTkLDModel
-
+    from .models.ldtkldm import LDTkLDModel, LDTkLD
 
     # Log posterior functions
     # -----------------------
