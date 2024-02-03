@@ -34,7 +34,7 @@ ms2kg = u.M_sun.to(u.kg)
 d2s = u.day.to(u.s)
 
 def equilibrium_temperature(tstar: NPType, a: NPType, f: NPType, ab: NPType) -> NPType:
-    """Planetary equilibrium temperature [K].
+    """Planetary equilibrium temperature [K]. (López-Morales and Seager, 2007)
 
     Parameters
     ----------
