@@ -24,7 +24,6 @@ from numpy import ndarray, pi, atleast_1d, zeros, exp, diff, log, sqrt, nan, vst
 from scipy.constants import c,h,k,G
 from scipy.optimize import brentq
 
-from .eclipses import thermal_fr
 from ..stars import create_husser2013_interpolator, create_bt_settl_interpolator
 #from ..contamination.filter import Filter
 
@@ -262,6 +261,27 @@ def reflected_fr(a: NPType, ab: NPType, r: NPType = 1.5) -> NPType:
         Reflected flux ratio
     """
     return r * ab / a ** 2
+
+
+def thermal_fr(Ts, a, f, A, l, Ti=0):
+    """Thermal flux ratio per projected area element.
+
+    Parameters
+    ----------
+
+      Ts  : Effective stellar temperature [K]
+      a   : Scaled semi-major axis        [Rs]
+      f   : Redistribution factor         [-]
+      A   : Bond albedo                   [-]
+      l   : Wavelength                    [m]
+      Ti  : temperature                   [K]
+
+    Returns
+    -------
+
+      fr: Thermal flux ratio              [-]
+    """
+    return planck(equilibrium_temperature(Ts, a, f, A) + Ti, l) / planck(Ts, l)
 
 def flux_ratio(tstar: NPType, a: NPType, f: NPType, ab: NPType, l: NPType, r: NPType = 1.5, ti: NPType = 0) -> NPType:
     """Total flux ratio per projected area element.
