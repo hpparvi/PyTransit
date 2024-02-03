@@ -79,7 +79,7 @@ Clone the repository from github and do the normal python package installation
 
     git clone https://github.com/hpparvi/PyTransit.git
     cd PyTransit
-    python setup.py install
+    pip install .
 
 
 Citing
