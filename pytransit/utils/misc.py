@@ -84,14 +84,3 @@ def contamination_bb(c1, T, wl1, wl2):
     B2   = planck(T, wl2)
 
     return  c1*(B2/B1)
-
-
-def nonlinear_ld_to_general_ld(ldc):
-    def nl(mu,ld):
-        return 1. - np.sum([ld[i-1]*(1.-mu**(0.5*i)) for i in range(1,5)], axis=0)
-    def gn(mu,ld):
-        return 1. - np.sum([ld[i-1]*(1.-mu**i) for i in range(1,5)], axis=0)
-
-    mu = np.linspace(0,1,200)
-
-    pvg = fmin(lambda pv:sum((Inl-gn(mu,pv))**2), ld[::2])

@@ -24,6 +24,7 @@ from numpy import ndarray, pi, atleast_1d, zeros, exp, diff, log, sqrt, nan, vst
 from scipy.constants import c,h,k,G
 from scipy.optimize import brentq
 
+from .eclipses import thermal_fr
 from ..stars import create_husser2013_interpolator, create_bt_settl_interpolator
 #from ..contamination.filter import Filter
 
