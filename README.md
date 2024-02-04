@@ -41,6 +41,10 @@ and [Parviainen (2020b)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.3356P/a
   
 ## Examples and tutorials
 
+### EMAC Workshop introduction video
+
+[![EMAC Workshop PyTransit introduction video](video1.png)](https://youtu.be/bLnxkFNrMDQ?si=OTjr4kUGK1kkhkLC)
+
 ### RoadRunner transit model
 
 RoadRunner [(Parviainen, 2020a)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.1633P/abstract) is a fast exoplanet transit model that can use any radially symmetric function to model stellar limb darkening 
