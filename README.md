@@ -7,14 +7,13 @@ PyTransit
 [![ASCL](https://img.shields.io/badge/ASCL-A1505.024-blue.svg?style=flat)](http://ascl.net/1505.024)
 [![DOI](https://zenodo.org/badge/5871/hpparvi/PyTransit.svg)](https://zenodo.org/badge/latestdoi/5871/hpparvi/PyTransit)
 
-Fast and easy-to-use tools for exoplanet transit light curve modelling with Python. PyTransit offers optimised CPU and 
-GPU implementations of popular exoplanet transit models with a unified interface, and thrives to be *the fastest and the 
-most versatile* tool for transit modelling in Python. 
+*PyTransit: fast and versatile exoplanet transit light curve modelling in Python.* PyTransit provides a set of optimised
+transit models with a unified API that makes modelling complex sets of heterogeneous light curve (nearly) as easy as 
+modelling individual transit light curves. 
 
-PyTransit makes transit model evaluation trivial whether modelling straightforward single-passband transit light curves or
-more complex science-cases, such as transmission spectroscopy. Further, the model can be evaluated for a large set of
-parameter sets simultaneously in parallel to optimize the evaluation speed with population-based MCMC samplers and 
-optimization methods, such as emcee and  DE-MCMC.
+The package has been under continuous development since 2009, and is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433), 
+[Parviainen (2020a)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.1633P/abstract), and [Parviainen (2020b)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.3356P/abstract). 
+
 
 ```Python
 from pytransit import RoadRunnerModel
@@ -24,9 +23,9 @@ tm.set_data(times)
 
 tm.evaluate(k=0.1, ldc=[0.2, 0.1], t0=0.0, p=1.0, a=3.0, i=0.5*pi)
 
-tm.evaluate(k=[0.10, 0.12], ldc=[[0.2, 0.1, 0.5, 0.1]], t0=0.0, p=1.0, a=3.0, i=0.5*pi)
+tm.evaluate(k=[0.10, 0.12], ldc=[[0.2, 0.1], [0.5, 0.1]], t0=0.0, p=1.0, a=3.0, i=0.5*pi)
 
-tm.evaluate(k=[[0.10, 0.12], [0.11, 0.13]], ldc=[[0.2, 0.1, 0.5, 0.1],[0.4, 0.2, 0.75, 0.1]],
+tm.evaluate(k=[[0.10, 0.12], [0.11, 0.13]], ldc=[[0.2, 0.1], [0.5, 0.1],[0.4, 0.2, 0.75, 0.1]],
             t0=[0.0, 0.01], p=[1, 1], a=[3.0, 2.9], i=[.5*pi, .5*pi])
 ```
 
@@ -34,9 +33,7 @@ tm.evaluate(k=[[0.10, 0.12], [0.11, 0.13]], ldc=[[0.2, 0.1, 0.5, 0.1],[0.4, 0.2,
 ![](doc/source/basic_example_2.svg)
 ![](doc/source/basic_example_3.svg)
 
-The package has been used in research since 2010, and is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433), 
-[Parviainen (2020a)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.1633P/abstract),
-and [Parviainen (2020b)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.3356P/abstract).
+
 
   
 ## Examples and tutorials
