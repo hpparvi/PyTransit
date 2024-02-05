@@ -22,6 +22,7 @@ from numpy import zeros, interp, pi, ndarray, linspace, meshgrid, transpose
 from scipy.interpolate import interpn, interpnd, RegularGridInterpolator as RGI
 
 from .ldmodel import LDModel
+from .numba.ldtkldm import trilinear_interpolation_set, integrate_profiles_set
 
 try:
     from ldtk import LDPSetCreator
@@ -53,33 +54,32 @@ class LDTkLDModel(LDModel):
         self.profiles = None
         self.rgi = None
 
-    def _init_interpolation(self, mu, nteff, nlogg, nz):
+    def _init_interpolation(self, mu, nteff, nlogg, nmetal):
         self.mu = mu
         self.nmu = mu.size
         c = self.sc.client
 
         teffs = linspace(*c.teffl, nteff)
         loggs = linspace(*c.loggl, nlogg)
-        zs = linspace(*c.zl, nz)
+        zs = linspace(*c.zl, nmetal)
         teffg, loggg, zg = meshgrid(teffs, loggs, zs)
+        self.teff0, self.dteff, self.nteff = teffs[0], teffs[1]-teffs[0], nteff
+        self.logg0, self.dlogg, self.nlogg = loggs[0], loggs[1]-loggs[0], nlogg
+        self.metal0, self.dmetal, self.nmetal = zs[0], zs[1]-zs[0], nmetal
 
         self.ps = self.sc.create_profiles(teff=teffg.ravel(), logg=loggg.ravel(), metal=zg.ravel())
         self.ps.resample(mu=self.mu)
-        self.profiles = transpose(self.ps._ldps.copy(), axes=(1, 0, 2)).reshape((nteff, nlogg, nz, self.npb, self.nmu))
+        self.profiles = transpose(self.ps._ldps.copy(), axes=(1, 0, 2)).reshape((nteff, nlogg, nmetal, self.npb, self.nmu))
         self.rgi = RGI((teffs, loggs, zs), self.profiles)
 
     def __call__(self, mu: ndarray, x: ndarray) -> Tuple[ndarray, ndarray]:
         if self.mu is None or id(mu) != id(self.mu):
             self._init_interpolation(mu, 5, 3, 3)
-
-        npv = x.shape[0]
-        z = self.ps._z
-        ldp = zeros((npv, self.npb, self.nmu))
-        ldi = zeros((npv, self.npb))
-        for ipv in range(npv):
-            ldp[ipv] = self.rgi(x[ipv])
-            for ipb in range(self.npb):
-                ldi[ipv, ipb] = 2 * pi * ntrapz(z, z * ldp[ipv, ipb, :])
+        ldp = trilinear_interpolation_set(self.profiles, x[:, 0, 0], x[:, 0, 1], x[:, 0, 2],
+                                          self.teff0, self.dteff, self.nteff,
+                                          self.logg0, self.dlogg, self.nlogg,
+                                          self.metal0, self.dmetal, self.nmetal)
+        ldi = integrate_profiles_set(self.mu, ldp)
         return ldp, ldi
 
     def _evaluate(self, mu: ndarray, x: ndarray) -> ndarray:
