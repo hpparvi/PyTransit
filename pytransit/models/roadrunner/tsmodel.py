@@ -36,7 +36,7 @@ from ..ldmodel import LDModel
 from ..numba.ldmodels import *
 from .rrmodel import RoadRunnerModel
 
-from .model_trspec import tsmodel_serial
+from .model_trspec import tsmodel_serial, tsmodel_parallel
 
 __all__ = ['TransmissionSpectroscopyModel']
 
@@ -46,7 +46,7 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
                  i: Union[float, ndarray], e: Union[float, ndarray] = 0.0, w: Union[float, ndarray] = 0.0,
-                 copy: bool = True) -> ndarray:
+                 copy: bool = True, parallel: bool = False) -> ndarray:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
         Parameters
@@ -115,8 +115,13 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
                         istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv, ipb], self._ldz)
 
         dk, dg, weights = calculate_weights_3d(self.nk, self.klims[0], self.klims[1], self.ze, self.ng)
-        flux = tsmodel_serial(self.time, k, t0, p, a, i, e, w, self.nsamples, self.exptimes,
-                              ldp, istar, weights, dk, self.klims[0], self.klims[1], dg, self.ze)
+
+        if parallel:
+            flux = tsmodel_parallel(self.time, k, t0, p, a, i, e, w, self.nsamples, self.exptimes,
+                                  ldp, istar, weights, dk, self.klims[0], self.klims[1], dg, self.ze)
+        else:
+            flux = tsmodel_serial(self.time, k, t0, p, a, i, e, w, self.nsamples, self.exptimes,
+                                  ldp, istar, weights, dk, self.klims[0], self.klims[1], dg, self.ze)
 
         return flux.squeeze()
 
