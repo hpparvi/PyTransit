@@ -54,27 +54,26 @@ class LDTkLDModel(LDModel):
         self.profiles = None
         self.rgi = None
 
-    def _init_interpolation(self, mu, nteff, nlogg, nmetal):
+    def _init_interpolation(self, mu):
         self.mu = mu
         self.nmu = mu.size
         c = self.sc.client
 
-        teffs = linspace(*c.teffl, nteff)
-        loggs = linspace(*c.loggl, nlogg)
-        zs = linspace(*c.zl, nmetal)
+        teffs = linspace(*c.teffl, self.sc.client.nteff)
+        loggs = linspace(*c.loggl, self.sc.client.nlogg)
+        zs = linspace(*c.zl, self.sc.client.nz)
         teffg, loggg, zg = meshgrid(teffs, loggs, zs)
-        self.teff0, self.dteff, self.nteff = teffs[0], teffs[1]-teffs[0], nteff
-        self.logg0, self.dlogg, self.nlogg = loggs[0], loggs[1]-loggs[0], nlogg
-        self.metal0, self.dmetal, self.nmetal = zs[0], zs[1]-zs[0], nmetal
+        self.teff0, self.dteff, self.nteff = teffs[0], teffs[1]-teffs[0], self.sc.client.nteff
+        self.logg0, self.dlogg, self.nlogg = loggs[0], loggs[1]-loggs[0], self.sc.client.nlogg
+        self.metal0, self.dmetal, self.nmetal = zs[0], zs[1]-zs[0], self.sc.client.nz
 
         self.ps = self.sc.create_profiles(teff=teffg.ravel(), logg=loggg.ravel(), metal=zg.ravel())
         self.ps.resample(mu=self.mu)
-        self.profiles = transpose(self.ps._ldps.copy(), axes=(1, 0, 2)).reshape((nteff, nlogg, nmetal, self.npb, self.nmu))
-        self.rgi = RGI((teffs, loggs, zs), self.profiles)
+        self.profiles = transpose(self.ps._ldps.copy(), axes=(1, 0, 2)).reshape((self.nteff, self.nlogg, self.nmetal, self.npb, self.nmu))
 
     def __call__(self, mu: ndarray, x: ndarray) -> Tuple[ndarray, ndarray]:
         if self.mu is None or id(mu) != id(self.mu):
-            self._init_interpolation(mu, 5, 3, 3)
+            self._init_interpolation(mu)
         ldp = trilinear_interpolation_set(self.profiles, x[:, 0, 0], x[:, 0, 1], x[:, 0, 2],
                                           self.teff0, self.dteff, self.nteff,
                                           self.logg0, self.dlogg, self.nlogg,
