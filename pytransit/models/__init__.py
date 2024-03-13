@@ -15,3 +15,10 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from .transitmodel import TransitModel
+from .roadrunner.rrmodel import RoadRunnerModel
+from .roadrunner.opmodel import OblatePlanetModel
+from .roadrunner.tsmodel import TransmissionSpectroscopyModel
+
+RRModel = RoadRunnerModel
+OBModel = OblatePlanetModel
+TSModel = TransmissionSpectroscopyModel

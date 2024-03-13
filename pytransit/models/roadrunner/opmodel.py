@@ -37,10 +37,10 @@ from ..numba.ldmodels import *
 from .opmodel_full import opmodel
 from .rrmodel import RoadRunnerModel
 
-__all__ = ['OPModel']
+__all__ = ['OblatePlanetModel']
 
 
-class OPModel(RoadRunnerModel):
+class OblatePlanetModel(RoadRunnerModel):
     def evaluate(self, k: Union[float, ndarray], f: Union[float, ndarray], alpha: Union[float, ndarray],
                  ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],

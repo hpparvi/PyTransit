@@ -64,12 +64,13 @@ with warnings.catch_warnings():
     from .models.eclipse_model import EclipseModel
     from .models.ma_chromosphere import ChromosphereModel
     from .models.general import GeneralModel
-    from .models.roadrunner.rrmodel import RoadRunnerModel
-    from .models.roadrunner.tsmodel import TransmissionSpectroscopyModel
     from .models.osmodel import OblateStarModel
     from .models.gdmodel import GravityDarkenedModel
 
+    from .models import RoadRunnerModel, OblatePlanetModel, TransmissionSpectroscopyModel
+
     TSModel = TransmissionSpectroscopyModel
+    OPModel = OblatePlanetModel
     RRModel = RoadRunnerModel
 
     # OpenCL models
