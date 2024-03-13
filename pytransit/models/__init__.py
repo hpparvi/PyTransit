@@ -20,5 +20,5 @@ from .roadrunner.opmodel import OblatePlanetModel
 from .roadrunner.tsmodel import TransmissionSpectroscopyModel
 
 RRModel = RoadRunnerModel
-OBModel = OblatePlanetModel
+OPModel = OblatePlanetModel
 TSModel = TransmissionSpectroscopyModel
