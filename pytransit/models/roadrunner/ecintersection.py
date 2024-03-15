@@ -4,18 +4,18 @@ from numpy import ndarray, fabs, pi, full
 from numba import njit
 
 @njit
-def ellipse_circle_intersection_area(ys: ndarray, k: float, b: float, f: float, a: float) -> float:
+def ellipse_circle_intersection_area(ny: int, k: float, b: float, f: float, a: float) -> float:
     """
      Calculate the intersection area between a rotated ellipse and a circle using a scanline fill approach.
 
      Parameters
      ----------
-     ys : ndarray
-         An array of y-coordinates for the scanlines.
+     ny : int
+         Number of y-coordinates for the scanlines.
      k : float
-         A scaling factor for the ellipse.
+         Equatorial planet-star radius ratio (semi-major ellipse radius).
      b : float
-         The y-coordinate of the center of the ellipse.
+         The planet-star center distance.
      f : float
          The flattening factor of the ellipse, defining its eccentricity.
      a : float
@@ -42,13 +42,14 @@ def ellipse_circle_intersection_area(ys: ndarray, k: float, b: float, f: float, 
      intersections over the range of y-coordinates to find the total area. It handles different cases based on the
      relative position and size of the ellipse to optimize calculations.
      """
-    if fabs(b) <= 1.0 - k:
+    b = fabs(b)
+    if b <= 1.0 - k:
         return pi * k * (1.0 - f) * k
-    elif fabs(b) >= 1.0 + k:
+    elif b >= 1.0 + k:
         return 0.0
     else:
-        ny = ys.size
-        dy = k * (ys[1] - ys[0])
+        dy = 2.0 / (ny - 1)
+        sdy = k * dy
         ca, sa = cos(a), sin(a)
         t = 1.0 - f
         t2 = t * t
@@ -56,8 +57,8 @@ def ellipse_circle_intersection_area(ys: ndarray, k: float, b: float, f: float, 
         sa2 = sa * sa
 
         area = 0.0
+        y = -1.0
         for i in range(ny):
-            y = ys[i]
             y2 = y * y
             d = t2 * ca2 + ca2 * ca2 * (-y2) - 2 * ca2 * sa2 * y2 - sa2 * sa2 * y2 + sa2
             if d >= 0:
@@ -66,14 +67,10 @@ def ellipse_circle_intersection_area(ys: ndarray, k: float, b: float, f: float, 
                 v = sa2 / t2 + ca2
                 xe0 = b + k * (-d + u) / v
                 xe1 = b + k * (d + u) / v
-                if b > 0.0:
-                    xs = sqrt(1.0 - (k * y) ** 2)
-                    if xs > xe0:
-                        area += (min(xe1, xs) - xe0) * dy
-                else:
-                    xs = -sqrt(1.0 - (k * y) ** 2)
-                    if xs < xe1:
-                        area += (xe1 - max(xe0, xs)) * dy
+                xs = sqrt(1.0 - (k * y) ** 2)
+                if xs > xe0:
+                    area += (min(xe1, xs) - xe0) * sdy
+            y += dy
         return area
 
 
