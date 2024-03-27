@@ -6,7 +6,7 @@ from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
 from meepmeep.utils import d_from_pkaiews
 
 from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
-from .ecintersection import ellipse_circle_intersection_area as ecia
+from .ecintersection import create_ellipse, ellipse_circle_intersection_area as ecia
 
 def opmodel(times, k, f, alpha, t0, p, a, i, e, w,
             parallelize, nlc, npb, nep, npl,
@@ -49,7 +49,6 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
     npv = k.shape[0]
     npt = times.size
     ng = weights.shape[1]
-    plys = linspace(-1.0, 1.0, npl)
 
     if k.shape[1] > 1 and k.shape[1] != npb:
         raise ValueError('Radius ratios should be given either as an [npv, 1] or [npv, npb] array.')
@@ -71,6 +70,9 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
     ldm = zeros((npv, npb, ng))  # Limb darkening means
     xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
     hwws = zeros((npv, npb))     # Half-window widths [d]
+
+    exs = zeros((npv, npl, 2))   # Ellipse model scanline x-coordinates
+    eys = zeros((npv, npl))      # Elilpse model scanline y-coordinates
 
     for ipv in range(npv):
         if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
@@ -102,6 +104,13 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
         for ilc in range(nlc):
             hwws[ipv, ilc] = 0.0015 + _exptimes[ilc] + hww
 
+        # ----------------------------------
+        # Create the ellipse (x, y) points #
+        # ----------------------------------
+        _y, _x = create_ellipse(npl, ks[ipv,0], f[ipv], alpha[ipv])
+        exs[ipv, :, :] = _x
+        eys[ipv, :] = _y
+
     # ---------------------------#
     # Calculate the light curves #
     # ---------------------------#
@@ -127,7 +136,7 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
                 z = pd_t15sc(tc + time_offset, xyc[ipv])
                 iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + ks[ipv, ipb]), dg, ldm[ipv, ipb])
-                aplanet = ecia(plys, ks[ipv, ipb], z, f[ipv], alpha[ipv])
+                aplanet = ecia(z, ks[ipv, ipb], f[ipv], exs[ipv,:,:], eys[ipv,:])
                 flux[ipv, ipt] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
             flux[ipv, ipt] /= nsamples[ilc]
     return flux
@@ -142,7 +151,6 @@ def op_full_parallel(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
     npv = k.shape[0]
     npt = times.size
     ng = weights.shape[1]
-    plys = linspace(-1.0, 1.0, npl)
 
     if k.shape[1] > 1 and k.shape[1] != npb:
         raise ValueError('Radius ratios should be given either as an [npv, 1] or [npv, npb] array.')
@@ -164,6 +172,9 @@ def op_full_parallel(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
     ldm = zeros((npv, npb, ng))  # Limb darkening means
     xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
     hwws = zeros((npv, npb))     # Half-window widths [d]
+
+    exs = zeros((npv, npv, 2))   # Ellipse model scanline x-coordinates
+    eys = zeros((npv, npv))      # Elilpse model scanline y-coordinates
 
     for ipv in range(npv):
         if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
@@ -195,6 +206,13 @@ def op_full_parallel(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
         for ilc in range(nlc):
             hwws[ipv, ilc] = 0.0015 + _exptimes[ilc] + hww
 
+        # ----------------------------------
+        # Create the ellipse (x, y) points #
+        # ----------------------------------
+        _y, _x = create_ellipse(npl, ks[ipv,0], f[ipv], alpha[ipv])
+        exs[ipv, :, :] = _x
+        eys[ipv, :] = _y
+
     # ---------------------------#
     # Calculate the light curves #
     # ---------------------------#
@@ -220,7 +238,7 @@ def op_full_parallel(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
                 z = pd_t15sc(tc + time_offset, xyc[ipv])
                 iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + ks[ipv, ipb]), dg, ldm[ipv, ipb])
-                aplanet = ecia(plys, ks[ipv, ipb], z, f[ipv], alpha[ipv])
+                aplanet = ecia(z, ks[ipv, ipb], f[ipv], exs[ipv,:,:], eys[ipv,:])
                 flux[ipv, ipt] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
             flux[ipv, ipt] /= nsamples[ilc]
     return flux
