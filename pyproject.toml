@@ -1,6 +1,6 @@
 [project]
 name = "PyTransit"
-version = "2.6.2"
+version = "2.6.3"
 description = 'Fast and painless exoplanet transit light curve modelling.'
 authors=[{name='Hannu Parviainen', email='hpparvi@gmail.com'}]
 classifiers=[
@@ -14,7 +14,7 @@ classifiers=[
 ]
 keywords = ['astronomy',  'astrophysics',  'exoplanets']
 dependencies = ["numpy", "numba", "scipy", "pandas", "xarray", "tables", "meepmeep", "pyopencl", "ldtk",
-                "semantic_version", "deprecated", "uncertainties", "pyrr", "seaborn"]
+                "semantic_version", "deprecated", "uncertainties", "pyrr", "seaborn", "emcee"]
 requires-python = ">= 3.8"
 readme = "README.md"
 license = {text = "GPLv2"}
