@@ -53,16 +53,20 @@ def create_ellipse(ny: int, k: float, f: float, a: float) -> (ndarray, ndarray):
 
 
 @njit
-def ellipse_circle_intersection_area(b: float, k: float, f: float, xs: ndarray, ys: ndarray) -> float:
+def ellipse_circle_intersection_area(cx: float, cy: float, z: float, k: float, f: float, xs: ndarray, ys: ndarray) -> float:
     """
      Calculate the intersection area between a rotated ellipse and a circle using a scanline fill approach.
 
    Parameters
     ----------
-    b : float
-        The offset of the circle's center along the x-axis.
+    cx : float
+        The ellipse's center x coordinate.
+    cy : float
+        The ellipse's center y coordinate.
+    z : float
+        The center-center distance.
     k : float
-        Scale factor for the ellipse.
+        Radius ratio.
     f : float
         Flattening factor for the ellipse. Determines the extent to which the ellipse is squashed along the y-axis.
     xs : ndarray
@@ -87,26 +91,47 @@ def ellipse_circle_intersection_area(b: float, k: float, f: float, xs: ndarray, 
      intersections over the range of y-coordinates to find the total area. It handles different cases based on the
      relative position and size of the ellipse to optimize calculations.
      """
-    b = fabs(b)
-    if b <= 1.0 - k:
+    if z <= 1.0 - k:
         return pi * k * (1.0 - f) * k
-    elif b >= 1.0 + k:
+    elif z >= 1.0 + k:
         return 0.0
     else:
         ny = ys.size
         dy = (ys[1] - ys[0])
         l = 0.0
-        if b >= 1.0:
+        if cx < -k:
             for i in range(ny):
-                if isfinite(xs[i,0]):
-                    xstar = sqrt(1.0 - (ys[i])**2) - b
-                    if xstar > xs[i,0]:
-                        l += min(xstar, xs[i,1]) - xs[i,0]
-            return l*dy
+                if isfinite(xs[i, 0]):
+                    xstar = -sqrt(1.0 - (ys[i] + cy) ** 2) - cx
+                    if xstar <= xs[i, 0]:
+                        l += xs[i, 1] - xs[i, 0]
+                    elif xstar <= xs[i, 1]:
+                        l += xs[i, 1] - xstar
+        elif cx > k:
+            for i in range(ny):
+                if isfinite(xs[i, 0]):
+                    xstar = sqrt(1.0 - (ys[i] + cy) ** 2) - cx
+                    if xstar >= xs[i, 1]:
+                        l += xs[i, 1] - xs[i, 0]
+                    elif xstar >= xs[i, 0]:
+                        l += xstar - xs[i, 0]
         else:
             for i in range(ny):
-                if isfinite(xs[i,0]):
-                    xstar = sqrt(1.0 - (ys[i])**2) - b
-                    if xstar < xs[i,1]:
-                        l += xs[i,1]-  max(xstar, xs[i,0])
-            return pi*k*k*(1.0-f) - l*dy
+                if isfinite(xs[i, 0]):
+                    if fabs(ys[i] + cy) <= 1.0:
+                        xstar = sqrt(1.0 - (ys[i] + cy) ** 2)
+                        xst1 = -xstar - cx
+                        xst2 = xstar - cx
+                        if xst1 <= xs[i, 0]:
+                            l += min(xst2, xs[i, 1]) - xs[i, 0]
+                        elif xst1 > xs[i, 0]:
+                            l +=  min(xst2, xs[i, 1]) - xst1
+        return l*dy
+
+        #else:
+        #    for i in range(ny):
+        #        if isfinite(xs[i,0]):
+        #            xstar = sqrt(1.0 - (ys[i])**2) - b
+        #            if xstar < xs[i,1]:
+        #                l += xs[i,1]-  max(xstar, xs[i,0])
+        #    return pi*k*k*(1.0-f) - l*dy
