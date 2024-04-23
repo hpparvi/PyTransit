@@ -1,6 +1,6 @@
 [project]
 name = "PyTransit"
-version = "2.6.3"
+version = "2.6.4"
 description = 'Fast and painless exoplanet transit light curve modelling.'
 authors=[{name='Hannu Parviainen', email='hpparvi@gmail.com'}]
 classifiers=[
