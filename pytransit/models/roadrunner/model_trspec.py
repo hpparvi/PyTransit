@@ -1,5 +1,5 @@
 from math import fabs, floor
-from numba import njit, prange
+from numba import njit, prange, get_num_threads, set_num_threads
 from numpy import zeros, dot, ndarray, isnan, full, nan, mean, floor, fabs
 
 from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
@@ -13,7 +13,7 @@ from .common import circle_circle_intersection_area_kite as ccia
 def tsmodel_serial(times: ndarray,
                    k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
                    nsamples: ndarray, exptimes: ndarray, ldp: ndarray, istar: ndarray,
-                   weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray) -> ndarray:
+                   weights: ndarray, dk: float, kmin: float, kmax: float, ng: int, dg: float, z_edges: ndarray) -> ndarray:
     if k.ndim != 2:
         raise ValueError(" The radius ratios must be given as a 2D array with shape (npv, npb)")
 
@@ -26,7 +26,9 @@ def tsmodel_serial(times: ndarray,
     npt = times.size
     npv = k.shape[0]
     npb = k.shape[1]
-    ng = weights.shape[1]
+
+    if weights is not None:
+        ng = weights.shape[1]
 
     flux = zeros((npv, npb, npt))  # Model flux
     ldm = zeros((npb, ng))         # Limb darkening means
@@ -43,14 +45,13 @@ def tsmodel_serial(times: ndarray,
         # -----------------------------------#
         # Calculate the limb darkening means #
         # -----------------------------------#
-        if kmin <= kmean <= kmax:
+        if weights is not None and kmin <= kmean <= kmax:
             ik = int(floor((kmean - kmin) / dk))
             ak = (kmean - kmin - ik * dk) / dk
             for ipb in range(npb):
-                ldm[ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb, :]) + ak * dot(weights[ik + 1],
-                                                                                         ldp[ipv, ipb, :])
+                ldm[ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb, :]) + ak * dot(weights[ik + 1], ldp[ipv, ipb, :])
         else:
-            _, _, wg = calculate_weights_2d(kmean, z_edges, ng)
+            _, dg, wg = calculate_weights_2d(kmean, z_edges, ng)
             for ipb in range(npb):
                 ldm[ipb, :] = dot(wg, ldp[ipv, ipb, :])
 
@@ -89,7 +90,12 @@ def tsmodel_serial(times: ndarray,
 def tsmodel_parallel(times: ndarray,
                    k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
                    nsamples: ndarray, exptimes: ndarray, ldp: ndarray, istar: ndarray,
-                   weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray) -> ndarray:
+                   weights: ndarray, dk: float, kmin: float, kmax: float, ng: int, dg: float, z_edges: ndarray,
+                   nthreads: int) -> ndarray:
+
+    nthreads_current = get_num_threads()
+    set_num_threads(nthreads)
+
     if k.ndim != 2:
         raise ValueError(" The radius ratios must be given as a 2D array with shape (npv, npb)")
 
@@ -102,13 +108,14 @@ def tsmodel_parallel(times: ndarray,
     npt = times.size
     npv = k.shape[0]
     npb = k.shape[1]
-    ng = weights.shape[1]
+    if weights is not None:
+        ng = weights.shape[1]
 
     flux = zeros((npv, npb, npt))  # Model flux
     ldm = zeros((npb, ng))         # Limb darkening means
     xyc = zeros((2, 5))            # Taylor series coefficients for the (x, y) position
 
-    for ipv in prange(npv):
+    for ipv in range(npv):
         if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0):
             flux[ipv, :, :] = nan
             continue
@@ -119,15 +126,15 @@ def tsmodel_parallel(times: ndarray,
         # -----------------------------------#
         # Calculate the limb darkening means #
         # -----------------------------------#
-        if kmin <= kmean <= kmax:
+        if weights is not None and kmin <= kmean <= kmax:
             ik = int(floor((kmean - kmin) / dk))
             ak = (kmean - kmin - ik * dk) / dk
             for ipb in range(npb):
                 ldm[ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb, :]) + ak * dot(weights[ik + 1],
                                                                                          ldp[ipv, ipb, :])
         else:
-            _, _, wg = calculate_weights_2d(kmean, z_edges, ng)
-            for ipb in range(npb):
+            dk, dg, wg = calculate_weights_2d(kmean, z_edges, ng)
+            for ipb in prange(npb):
                 ldm[ipb, :] = dot(wg, ldp[ipv, ipb, :])
 
         # -----------------------------------------------------#
@@ -144,7 +151,7 @@ def tsmodel_parallel(times: ndarray,
         # --------------------------#
         # Calculate the light curve #
         # --------------------------#
-        for ipt in range(npt):
+        for ipt in prange(npt):
             epoch = floor((times[ipt] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
             tc = times[ipt] - (t0[ipv] + epoch * p[ipv])
             if fabs(tc) > hww:
@@ -158,4 +165,5 @@ def tsmodel_parallel(times: ndarray,
                         iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
                         flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * aplanet * afac[ipb]) / istar[ipv, ipb]
                 flux[ipv, :, ipt] /= nsamples[0]
+    set_num_threads(nthreads_current)
     return flux

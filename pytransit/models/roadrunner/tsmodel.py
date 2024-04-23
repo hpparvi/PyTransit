@@ -46,7 +46,7 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
                  i: Union[float, ndarray], e: Union[float, ndarray] = 0.0, w: Union[float, ndarray] = 0.0,
-                 copy: bool = True, parallel: bool = False) -> ndarray:
+                 copy: bool = True) -> ndarray:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
         Parameters
@@ -114,14 +114,18 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
                     for ipb in range(npb):
                         istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv, ipb], self._ldz)
 
-        dk, dg, weights = calculate_weights_3d(self.nk, self.klims[0], self.klims[1], self.ze, self.ng)
+        if self.interpolate:
+            dk, dg, weights = self.dk, self.dg, self.weights
+        else:
+            dk, dg, weights = None, None, None
 
-        if parallel:
+        if self.parallel:
             flux = tsmodel_parallel(self.time, k, t0, p, a, i, e, w, self.nsamples, self.exptimes,
-                                  ldp, istar, weights, dk, self.klims[0], self.klims[1], dg, self.ze)
+                                    ldp, istar, weights, dk, self.klims[0], self.klims[1], self.ng, dg, self.ze,
+                                    self.nthreads)
         else:
             flux = tsmodel_serial(self.time, k, t0, p, a, i, e, w, self.nsamples, self.exptimes,
-                                  ldp, istar, weights, dk, self.klims[0], self.klims[1], dg, self.ze)
+                                  ldp, istar, weights, dk, self.klims[0], self.klims[1], self.ng, dg, self.ze)
 
         return flux.squeeze()
 
