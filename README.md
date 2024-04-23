@@ -9,7 +9,8 @@ PyTransit
 
 *PyTransit: fast and versatile exoplanet transit light curve modelling in Python.* PyTransit provides a set of optimised
 transit models with a unified API that makes modelling complex sets of heterogeneous light curve (nearly) as easy as 
-modelling individual transit light curves. 
+modelling individual transit light curves. The models are optimised with Numba which allows for model evaluation speeds
+paralleling Fortran and C-implementations but with hassle-free platform-independent multithreading.
 
 The package has been under continuous development since 2009, and is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433), 
 [Parviainen (2020a)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.1633P/abstract), and [Parviainen (2020b)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.3356P/abstract). 
