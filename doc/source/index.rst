@@ -2,7 +2,7 @@ PyTransit
 =========
 
 Welcome to PyTransit documentation! PyTransit is a package for exoplanet transit light curve modelling
-that offers optimised CPU and GPU implementations of exoplanet transit models with a unified interface. Transit model
+that offers optimised CPU and GPU implementations of exoplanet transit models with a unified interface (API). Transit model
 evaluation is trivial for simple use-cases, such as homogeneous light curves observed in a single passband, but also
 straightforward for more complex use-cases, such as when dealing with *heterogeneous light curves containing transits
 observed in different passbands and different instruments*, or with *transmission spectroscopy*.
@@ -11,14 +11,6 @@ The development of PyTransit began in 2009 to fill the need for a fast and relia
 exoplanet transit modelling toolkit for Python. Since then, PyTransit has gone through several
 iterations, always thriving to be *the fastest and most versatile* exoplanet transit modelling tool for Python.
 
-PyTransit v1.0 was described in Parviainen (2015), which also details the model-specific optimisations and model
-performance. This version relied heavily on Fortran code, which made the installation complicated in non-Linux
-systems. PyTransit v2 replaces all the Fortran routines with numba-accelerated python routines, and
-aims to implement all the major functionality also in OpenCL.
-
-While PyTransit is aimed to work as a library offering tools for customised transit analysis codes, it
-can also be used directly for transit modelling and parameter estimation.
-
 Example
 -------
 
@@ -26,9 +18,9 @@ The transit model initialization is straightforward. At its simplest, the model 
 
 .. code-block:: python
 
-    from pytransit import QuadraticModel
+    from pytransit import RoadRunnerModel
 
-    tm = QuadraticModel()
+    tm = RoadRunnerModel('quadratic')
     tm.set_data(times)
 
 after which it is ready to be evaluated
@@ -71,32 +63,19 @@ of parameters
 
 and PyTransit will calculate the models for the whole parameter set in parallel.
 
-All the models come in CPU and GPU (OpenCL) versions. OpenCL versions can be 10-20 times faster to evaluate
-than the CPU versions (depending on the GPU), and switching to use the GPU is as simple as just importing an `CL` version
-of the model, which will work identically to the CPU version
-
-.. code-block:: python
-
-    from pytransit import QuadraticModelCL
-
-The examples use a transit model with quadratic limb darkening by Mandel & Agol, but all the models follow the same API,
-so when you learn to use one, you can use all of them. Finally, these examples show just the use of the main `evaluate`
-method, but the models have also more optimized evaluation methods for specific use-cases, and the package comes with
-utilities for specialized analyses.
 
 Contents
 --------
 
 .. toctree::
-    :maxdepth: 3
+    :maxdepth: 2
 
     installation
-    quickstart
-    models
-    implemented_models
-    lpfs
-    advanced
-    api/modules
+    notebooks/quickstart
+    notebooks/models/roadrunner/rrmodel
+..    notebooks/roadrunner/roadrunner_model_example_1
+..    api/modules
+
 
 
 Indices and tables
