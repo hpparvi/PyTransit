@@ -27,7 +27,9 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Tuple, Callable, Union, List, Optional
+from warnings import warn
 
+from numba import get_num_threads
 from numpy import ndarray, linspace, isscalar, unique, atleast_1d
 from scipy.integrate import trapz
 
@@ -55,28 +57,49 @@ class RoadRunnerModel(TransitModel):
                 'power-2-pm': ld_power_2_pm}
 
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
-                 interpolate: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
-                 nzin: int = 20, nzlimb: int = 20, zcut=0.7, ng: int = 100, parallel: bool = False,
-                 small_planet_limit: float = 0.05, parallel_limit: int = 5000):
+                 precompute_weights: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
+                 nzin: int = 20, nzlimb: int = 20, zcut: float = 0.7, ng: int = 100,
+                 nthreads: int = 1, small_planet_limit: float = 0.05, **kwargs):
         """The RoadRunner transit model by Parviainen (2020).
 
         Parameters
         ----------
-        interpolate : bool, optional
-            Use the interpolation method presented in Parviainen (2015) if true.
+        precompute_weights : bool, optional
+            Precompute a 3D weight table for radius ratio values set by `klims`.
         klims : tuple, optional
-            Radius ratio limits (kmin, kmax) for the interpolated model.
+            Radius ratio limits (kmin, kmax) for the precomputed weight table.
         nk : int, optional
-            Radius ratio grid size for the interpolated model.
-        nz : int, optional
-            Normalized distance grid size for the interpolated model.
+            Radius ratio grid size for the precomputed weight table.
+        nzin : int, optional
+            Normalized distance grid size for the inner disk.
+        nzlimb : int, optional
+            Normalized distance grid size for the limb.
+        zcut: float, optional
+            Normalized distance that separates the stellar disk into an inner disk and limb.
+        ng : int, optional
+            Size of the grazing value table.
+        nthreads: int, optional
+            Number of threads to use for the model computation.
+        small_planet_limit: float, optional
+            The radius ratio limit below which to use a small planet approximation.
         """
         super().__init__()
-        self.interpolate = interpolate
-        self.parallel = parallel
-        self.splimit = small_planet_limit
-        self.parallel_limit = parallel_limit
-        self.parallelize: bool = False
+
+        if 'interpolate' in kwargs:
+            warn("The 'interpolate' argument has been replaced by 'precompute_weights' and will be removed in the future.", FutureWarning)
+            self.interpolate: bool = kwargs.get('interpolate', False)
+        else:
+            self.interpolate: bool = precompute_weights
+
+        if 'parallel' in kwargs:
+            warn("The 'parallel' argument has been replaced by 'nthreads' and will be removed in the future.", FutureWarning)
+            self.nthreads: int = get_num_threads()
+            self.parallel: bool = True
+        else:
+            self.nthreads: int = nthreads
+            self.parallel = self.nthreads > 1
+
+        self.splimit: float = small_planet_limit
 
         # Set up the limb darkening model
         # --------------------------------
@@ -134,7 +157,6 @@ class RoadRunnerModel(TransitModel):
                  exptimes: Optional[Union[ndarray, List]] = None,
                  epids: Optional[Union[ndarray, List]] = None) -> None:
         super().set_data(time, lcids, pbids, nsamples, exptimes, epids)
-        self.parallelize = self.nsamples[self.lcids].sum() > self.parallel_limit
         self.nep = unique(self.epids).size
 
     def init_integration(self, nzin, nzlimb, zcut, ng, nk):
@@ -146,7 +168,6 @@ class RoadRunnerModel(TransitModel):
         self.ze, self.zm = create_z_grid(zcut, nzin, nzlimb)
         self.mu = sqrt(1 - self.zm ** 2)
         self.dk, self.dg, self.weights = calculate_weights_3d(nk, self.klims[0], self.klims[1], self.ze, ng)
-
 
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
@@ -202,7 +223,7 @@ class RoadRunnerModel(TransitModel):
                     for ipb in range(self.npb):
                         istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv, ipb], self._ldz)
 
-        flux = rrmodel(self.time, k, t0, p, a, i, e, w, self.parallelize,
+        flux = rrmodel(self.time, k, t0, p, a, i, e, w, self.parallel,
                        self.nlc, self.npb, self.nep, self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
                        ldp, istar, self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
 
