@@ -96,7 +96,7 @@ class OblatePlanetModel(RoadRunnerModel):
                     for ipb in range(self.npb):
                         istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv, ipb], self._ldz)
 
-        flux = opmodel(self.time, k, f, alpha, t0, p, a, i, e, w, self.parallelize,
+        flux = opmodel(self.time, k, f, alpha, t0, p, a, i, e, w, self.parallel,
                        self.nlc, self.npb, self.nep, 100,
                        self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
                        ldp, istar, self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
