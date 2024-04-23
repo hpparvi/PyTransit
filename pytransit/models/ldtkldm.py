@@ -18,7 +18,7 @@ from typing import Tuple, Optional, Union
 from pathlib import Path
 
 from numba import njit
-from numpy import zeros, interp, pi, ndarray, linspace, meshgrid, transpose
+from numpy import zeros, interp, pi, ndarray, linspace, meshgrid, transpose, asarray, newaxis, errstate
 from scipy.interpolate import interpn, interpnd, RegularGridInterpolator as RGI
 
 from .ldmodel import LDModel
@@ -67,13 +67,21 @@ class LDTkLDModel(LDModel):
         self.logg0, self.dlogg, self.nlogg = loggs[0], loggs[1]-loggs[0], self.sc.client.nlogg
         self.metal0, self.dmetal, self.nmetal = zs[0], zs[1]-zs[0], self.sc.client.nz
 
-        self.ps = self.sc.create_profiles(teff=teffg.ravel(), logg=loggg.ravel(), metal=zg.ravel())
-        self.ps.resample(mu=self.mu)
-        self.profiles = transpose(self.ps._ldps.copy(), axes=(1, 0, 2)).reshape((self.nteff, self.nlogg, self.nmetal, self.npb, self.nmu))
+        with errstate(divide='ignore'):
+            self.ps = self.sc.create_profiles(teff=teffg.ravel(), logg=loggg.ravel(), metal=zg.ravel())
+            self.ps.resample(mu=self.mu)
+            self.profiles = transpose(self.ps._ldps.copy(), axes=(1, 0, 2)).reshape((self.nteff, self.nlogg, self.nmetal, self.npb, self.nmu))
 
     def __call__(self, mu: ndarray, x: ndarray) -> Tuple[ndarray, ndarray]:
         if self.mu is None or id(mu) != id(self.mu):
             self._init_interpolation(mu)
+
+        x = asarray(x)
+        if x.ndim == 1:
+            x = x[newaxis, newaxis, :]
+        elif x.ndim == 2:
+            x = x[:, newaxis, :]
+
         ldp = trilinear_interpolation_set(self.profiles, x[:, 0, 0], x[:, 0, 1], x[:, 0, 2],
                                           self.teff0, self.dteff, self.nteff,
                                           self.logg0, self.dlogg, self.nlogg,
