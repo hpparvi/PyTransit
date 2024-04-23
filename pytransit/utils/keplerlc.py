@@ -79,7 +79,7 @@ class KeplerLC(object):
 
         # Remove orbits with too big ptp range
         # ------------------------------------
-        msk_inc = ones(self.npt, np.bool)
+        msk_inc = ones(self.npt, bool)
         for tid,ptp in enumerate(list(map(np.ptp, self.normalized_flux_per_transit))):
             if ptp > self.max_ptp:
                 msk_inc[self.tidarr==tid] = 0
@@ -116,7 +116,7 @@ class KeplerLC(object):
 
     def remove_common_orbits(self, lc2):
         is_unique = ~np.in1d(self.orbit_n, lc2.orbit_n)
-        mask = np.ones(self.npt, np.bool)
+        mask = np.ones(self.npt, bool)
         for tid,include in enumerate(is_unique):
             mask[self.tslices[tid]] = include
         self._compress_data(mask)
