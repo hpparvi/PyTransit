@@ -17,8 +17,8 @@
 import warnings
 
 import matplotlib.pyplot as pl
-from exodata.astroquantities import Quantity as Qty
-from numpy import linspace, zeros, atleast_2d, diag, tile, newaxis, arccos, sqrt, array, arange
+from astropy import units as u
+from numpy import linspace, zeros, atleast_2d, diag, tile, newaxis, arccos, sqrt, array, arange, zeros_like
 from numpy.random import multivariate_normal, seed
 
 from pytransit import QuadraticModel
@@ -43,8 +43,8 @@ class SimulationSetup:
               'short_transit': [ 5.00, 18.80, 1.0]} # Roughly an M-dwarf with rho = 5.0
 
     stars = {'F': (6900, [[0.60, 0.13], [0.43, 0.14], [0.35, 0.14], [0.27, 0.15]]),  # Teff, ldcs
-             'G': (5800, []),
-             'M': (3600, [[0.50, 0.27], [0.48, 0.26], [0.32, 0.27], [0.24, 0.26]])}  # M1
+             'G': (5800, [[0.61, 0.10], [0.49, 0.16], [0.41, 0.16], [0.35, 0.15]]),
+             'M': (3600, [[0.50, 0.27], [0.48, 0.26], [0.32, 0.27], [0.24, 0.26]])}
 
     def __init__(self, stype, k, b, c, orbit='long_transit', cteff=None, nights=1,
                  know_host=True, misidentify_host=False, know_orbit=False):
@@ -97,8 +97,8 @@ class MockLC:
 
     def __init__(self, setup: SimulationSetup, **kwargs):
         self.setup = self.s = s = setup
-        self.t_exposure_d = Qty(kwargs.get('exptime', 60), 's').rescale('d')
-        self.t_baseline_d = Qty(s.t_baseline, 'h').rescale('d')
+        self.t_exposure_d = (kwargs.get('exptime', 60) * u.s).to(u.d)
+        self.t_baseline_d = (s.t_baseline * u.h).to(u.d)
         self.ldcs = s.ldcs
         self.tm = QuadraticModel(klims=(0.01, 0.99), nk=512)
 
@@ -106,7 +106,7 @@ class MockLC:
         self.npb = len(self.filters)
         self.k_apparent, self.p, self.a, self.b, self.i = s.orbital_parameters
 
-        self.duration_d = Qty(duration_eccentric(self.p, self.k_apparent, self.a, self.i, 0, 0, 1), 'd')
+        self.duration_d = duration_eccentric(self.p, self.k_apparent, self.a, self.i, 0, 0, 1) * u.d
 
         # Contamination
         # -------------
@@ -118,7 +118,7 @@ class MockLC:
                                [0.10, 0.20, 0.90, 0.96, 0.90, 0.75, 0.11, 0.05])
         qes = qe_be, qe_b, qe_be, qe_be
 
-        self.instrument = instrument = Instrument('MuSCAT2', (sdss_g, sdss_r, sdss_i, sdss_z), qes)
+        self.instrument = instrument = Instrument('MuSCAT2', (sdss_g, sdss_r, sdss_i, sdss_z))
         self.contaminator = SMContamination(instrument, "i'")
 
         self.hteff = setup.hteff
@@ -146,7 +146,7 @@ class MockLC:
         ldcs = ldcs if ldcs is not None else self.ldcs
         seed(rseed)
 
-        self.time = linspace(-0.5 * float(self.t_total_d), 0.5 * float(self.t_total_d), self.n_exp)
+        self.time = linspace(-0.5 * self.t_total_d, 0.5 * self.t_total_d, self.n_exp)
         self.time = (tile(self.time, [nights, 1]) + (self.p * arange(nights))[:, newaxis]).ravel()
         self.npt = self.time.size
         self.tm.set_data(self.time)
@@ -175,7 +175,7 @@ class MockLC:
 
         # Final light curve
         # -----------------
-        self.time_h = Qty(self.time, 'd').rescale('h')
+        self.time_h = self.time.to(u.h)
         self.flux = self.transit + self.wnoise + self.rnoise
         return self.lcdataset
 
@@ -190,7 +190,7 @@ class MockLC:
         axs[0].plot(self.time_h, self.flux + yshift)
         axs[1].plot(self.time_h, self.transit + yshift)
         axs[2].plot(self.time_h, 1 + self.rnoise + yshift)
-        pl.setp(axs, xlabel='Time [h]', xlim=self.time_h[[0, -1]])
+        pl.setp(axs, xlabel='Time [h]', xlim=self.time_h[[0, -1]].value)
         pl.setp(axs[0], ylabel='Normalised flux')
         [pl.setp(ax, title=title) for ax, title in
          zip(axs, 'Transit model + noise, Transit model, Red noise'.split(', '))]

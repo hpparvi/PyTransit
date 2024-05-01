@@ -16,14 +16,12 @@
 
 from numpy import ceil, sqrt, where, inf
 from matplotlib.pyplot import subplots
-from pytransit.contamination import TabulatedFilter, Instrument, SMContamination
+from pytransit.contamination import Instrument, SMContamination
 from pytransit.contamination.filter import sdss_g, sdss_r, sdss_i, sdss_z
 
 from pytransit.lpf.cntlpf import PhysContLPF
-from pytransit.param import NormalPrior as NP
 
 from .mocklc import MockLC
-
 
 class MockLPF(PhysContLPF):
     def __init__(self, name: str, lc: MockLC):
@@ -43,27 +41,22 @@ class MockLPF(PhysContLPF):
         self.k_apparent = lc.k_apparent
         self.b = lc.b
 
-        self.set_prior(1, NP(lc.p, 1e-7))
-
+        self.set_prior('p', 'NP', lc.p, 1e-7)
         if lc.setup.know_orbit:
-            self.set_prior(2, NP(5.0, 0.05))
-            self.set_prior(3, NP(lc.b, 0.01))
+            self.set_prior('rho', 'NP', 5.0, 0.05)
+            self.set_prior('b', 'NP', lc.b, 0.01)
 
         if lc.setup.know_host:
             if lc.setup.misidentify_host:
-                self.set_prior(6, NP(self._lc.cteff, 10))
+                self.set_prior('teff_h', 'NP', self._lc.cteff, 10)
             else:
-                self.set_prior(6, NP(self._lc.hteff, 10))
+                self.set_prior('teff_h', 'NP', self._lc.hteff, 10)
 
     def _init_instrument(self):
         """Set up the instrument and contamination model."""
-
-        qe = TabulatedFilter('MockQE',
-                             [300, 350, 500, 550, 700, 800, 1000, 1050],
-                             [0.10, 0.20, 0.90, 0.96, 0.90, 0.75, 0.11, 0.05])
-        self.instrument = Instrument('MockInstrument', [sdss_g, sdss_r, sdss_i, sdss_z], (qe, qe, qe, qe))
+        self.instrument = Instrument('MockInstrument', [sdss_g, sdss_r, sdss_i, sdss_z])
         self.cm = SMContamination(self.instrument, "i'")
-        self.lnpriors.append(lambda pv: where(pv[:, 4] < pv[:, 5], 0, -inf))
+        self._additional_log_priors.append(lambda pv: where(pv[:, 4] < pv[:, 5], 0, -inf))
 
     def plot_light_curves(self, ncols: int = 2, figsize: tuple = (13, 5)):
         nrows = int(ceil(self.nlc) / ncols)
