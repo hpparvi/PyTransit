@@ -41,6 +41,13 @@ __all__ = ['OblatePlanetModel']
 
 
 class OblatePlanetModel(RoadRunnerModel):
+    def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
+                 precompute_weights: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
+                 nzin: int = 20, nzlimb: int = 20, zcut: float = 0.7, ng: int = 100, nlines: int = 100,
+                 nthreads: int = 1, small_planet_limit: float = 0.05, **kwargs):
+        super().__init__(ldmodel, precompute_weights, klims, nk, nzin, nzlimb, zcut, ng, nthreads, small_planet_limit, **kwargs)
+        self.nlines = nlines
+
     def evaluate(self, k: Union[float, ndarray], f: Union[float, ndarray], alpha: Union[float, ndarray],
                  ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
@@ -97,7 +104,7 @@ class OblatePlanetModel(RoadRunnerModel):
                         istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv, ipb], self._ldz)
 
         flux = opmodel(self.time, k, f, alpha, t0, p, a, i, e, w, self.parallel,
-                       self.nlc, self.npb, self.nep, 100,
+                       self.nlc, self.npb, self.nep, self.nlines,
                        self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
                        ldp, istar, self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
 
