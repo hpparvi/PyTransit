@@ -15,6 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Union, Iterable
 
+from astropy import units as u
 from astropy.constants import R_sun, M_sun
 from matplotlib.patches import Circle
 from matplotlib.pyplot import subplots, setp
@@ -129,7 +130,7 @@ class GravityDarkenedModel(TransitModel):
         tres
             Orbit discretization resolution.
         model
-            The spectroscopic model to use. Can be either 'blackbody', 'husser2013', or 'bt-settl'.
+            The stellar model to use. Can be either 'blackbody', 'husser2013', or 'bt-settl'.
         tmin
             Minimum allowed temperature [K].
         tmax
@@ -148,7 +149,7 @@ class GravityDarkenedModel(TransitModel):
         else:
             self.filters = filters
 
-        self.rstar = rstar*R_sun.value     # Stellar equator radius  [m]
+        self.rstar = (rstar*u.R_sun).to(u.m).value     # Stellar equator radius  [m]
         self.sres = sres                   # Integration resolution for the star
         self.pres = pres                   # Integration resolution for the planet
         self.tres = tres
@@ -176,7 +177,7 @@ class GravityDarkenedModel(TransitModel):
         ldc = atleast_2d(ldc)
         a = as_from_rhop(rho, p)
         inc = i_from_baew(b, a, e, w)
-        mstar, ostar, gpole, f, _ = map_osm(rstar=self.rstar, rho=rho, rperiod=rperiod, tpole=tpole, phi=0.0)
+        mstar, ostar, gpole, f, _ = map_osm(rstar=self.rstar, dstar=rho, rperiod=rperiod, phi=0.0)
 
         # Plot the star
         # -------------
@@ -291,7 +292,7 @@ class GravityDarkenedModel(TransitModel):
         if ldc.size != 2*self.npb:
             raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
-        mstar, ostar, gpole, f, feff = map_osm(self.rstar, rho, rperiod, tpole, phi)
+        mstar, ostar, gpole, f, feff = map_osm(self.rstar, rho, rperiod, phi)
         sphi, cphi = sin(phi), cos(phi)
 
         flux = oblate_model_s(self.time, k, t0, p, a, l, i, e, w, ldc, mstar, self.rstar, ostar, tpole, gpole, f, feff,
@@ -305,7 +306,7 @@ class GravityDarkenedModel(TransitModel):
     def evaluate_brute(self, k: Union[float, ndarray], rho: float, rperiod: float, tpole: float, phi: float,
                        beta: float, ldc: ndarray, t0: float, p: float, a: float, i: float, l: float = 0.0,
                        e: float = 0.0, w: float = 0.0, copy: bool = True, plot: bool = False, res: int = 300) -> ndarray:
-        mstar, ostar, gpole, f, feff = map_osm(self.rstar, rho, rperiod, tpole, phi)
+        mstar, ostar, gpole, f, feff = map_osm(self.rstar, rho, rperiod, phi)
         sphi, cphi = sin(phi), cos(phi)
         ldc = atleast_2d(ldc)
         k = atleast_1d(k)

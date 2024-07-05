@@ -580,12 +580,45 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
     return flux
 
 
-def map_osm(rstar, rho, rperiod, tpole, phi):
-    omega = 2*pi/(rperiod*d2sec)  # Stellar rotation rate [rad/s]
-    rho = 1e3*rho  # Stellar density       [kg/m^3]
+def map_osm(rstar, dstar, rperiod, phi):
+    """
+    Parameters
+    ----------
+    rstar : float
+        Stellar radius [R_Sun]
 
-    f = stellar_oblateness(omega, rho)  # Stellar oblateness
+    dstar : float
+        Stellar density [g/cm^3]
+
+    rperiod : float
+        Stellar rotation period [days]
+
+    phi : float
+        Latitude of the point on the stellar surface [radians]
+
+    Returns
+    -------
+    mstar : float
+        Stellar mass [kg]
+
+    omega : float
+        Stellar rotation rate [rad/s]
+
+    gpole : float
+        Surface gravity at the pole [m/s^2]
+
+    f : float
+        Stellar oblateness
+
+    feff : float
+        Projected stellar oblateness
+
+    """
+    omega = 2*pi/(rperiod*d2sec)    # Stellar rotation rate [rad/s]
+    dstar = 1e3*dstar                   # Stellar density       [kg/m^3]
+
+    f = stellar_oblateness(omega, dstar)  # Stellar oblateness
     feff = 1 - sqrt((1 - f)**2*cos(phi)**2 + sin(phi)**2)  # Projected stellar oblateness
-    mstar = rho*4*pi/3*rstar**2*rstar*(1 - f)  # Stellar mass [kg]
+    mstar = dstar*4*pi/3*rstar**2*rstar*(1 - f)  # Stellar mass [kg]
     gpole = G*mstar/(rstar*(1 - f))**2  # Surface gravity at the pole  [m/s^2]
     return mstar, omega, gpole, f, feff
