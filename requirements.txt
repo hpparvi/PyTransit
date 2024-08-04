@@ -19,3 +19,4 @@ pyopencl
 corner
 celerite
 pyrr
+meepmeep
