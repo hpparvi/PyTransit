@@ -31,7 +31,7 @@ from warnings import warn
 
 from numba import get_num_threads
 from numpy import ndarray, linspace, isscalar, unique, atleast_1d
-from scipy.integrate import trapz
+from scipy.integrate import trapezoid
 
 from ..ldmodel import LDModel
 from ..numba.ldmodels import *
@@ -221,7 +221,7 @@ class RoadRunnerModel(TransitModel):
                 ldpi = evaluate_ld(self.ldmodel, self._ldmu, ldc)
                 for ipv in range(npv):
                     for ipb in range(self.npb):
-                        istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv, ipb], self._ldz)
+                        istar[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv, ipb], self._ldz)
 
         flux = rrmodel(self.time, k, t0, p, a, i, e, w, self.parallel,
                        self.nlc, self.npb, self.nep, self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,

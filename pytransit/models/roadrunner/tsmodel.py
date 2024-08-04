@@ -30,7 +30,7 @@ from typing import Union, List, Optional
 
 from numpy import ndarray, isscalar, atleast_2d, atleast_1d, array
 from pytransit.models.roadrunner.common import calculate_weights_3d
-from scipy.integrate import trapz
+from scipy.integrate import trapezoid
 
 from ..ldmodel import LDModel
 from ..numba.ldmodels import *
@@ -112,7 +112,7 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
                 ldpi = evaluate_ld(self.ldmodel, self._ldmu, ldc)
                 for ipv in range(npv):
                     for ipb in range(npb):
-                        istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv, ipb], self._ldz)
+                        istar[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv, ipb], self._ldz)
 
         if self.interpolate:
             dk, dg, weights = self.dk, self.dg, self.weights
