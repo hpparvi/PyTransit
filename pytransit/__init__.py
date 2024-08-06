@@ -41,59 +41,53 @@ Date
 
 """
 
-import warnings
-from numba import NumbaDeprecationWarning
+__version__ = '2.6.9'
 
-#TODO: Find where we're using generated_jit and fix it...
+# Generic
+# -------
+from .models.transitmodel import TransitModel
+from .contamination.filter import DeltaFilter, BoxcarFilter, TabulatedFilter, sdss_g, sdss_r, sdss_i, sdss_z
 
-with warnings.catch_warnings():
-    warnings.simplefilter('ignore', NumbaDeprecationWarning)
+# Numba models
+# ------------
+from .models.qpower2 import QPower2Model
+from .models.ma_quadratic import QuadraticModel
+from .models.ma_uniform import UniformModel
+from .models.eclipse_model import EclipseModel
+from .models.ma_chromosphere import ChromosphereModel
+from .models.general import GeneralModel
+from .models.osmodel import OblateStarModel
+from .models.gdmodel import GravityDarkenedModel
 
-    from .version import __version__
+from .models import RoadRunnerModel, OblatePlanetModel, TransmissionSpectroscopyModel
 
-    # Generic
-    # -------
-    from .models.transitmodel import TransitModel
-    from .contamination.filter import DeltaFilter, BoxcarFilter, TabulatedFilter, sdss_g, sdss_r, sdss_i, sdss_z
+TSModel = TransmissionSpectroscopyModel
+OPModel = OblatePlanetModel
+RRModel = RoadRunnerModel
 
-    # Numba models
-    # ------------
-    from .models.qpower2 import QPower2Model
-    from .models.ma_quadratic import QuadraticModel
-    from .models.ma_uniform import UniformModel
-    from .models.eclipse_model import EclipseModel
-    from .models.ma_chromosphere import ChromosphereModel
-    from .models.general import GeneralModel
-    from .models.osmodel import OblateStarModel
-    from .models.gdmodel import GravityDarkenedModel
+# OpenCL models
+# -------------
+from .models.qpower2_cl import QPower2ModelCL
+from .models.ma_quadratic_cl import QuadraticModelCL
+from .models.ma_uniform_cl import UniformModelCL
 
-    from .models import RoadRunnerModel, OblatePlanetModel, TransmissionSpectroscopyModel
+# LDTk limb darkening for the Swift model
+# ---------------------------------------
 
-    TSModel = TransmissionSpectroscopyModel
-    OPModel = OblatePlanetModel
-    RRModel = RoadRunnerModel
+from .models.ldtkldm import LDTkLDModel #, LDTkLD
+from .models.ldtkldm import LDTkLD
 
-    # OpenCL models
-    # -------------
-    from .models.qpower2_cl import QPower2ModelCL
-    from .models.ma_quadratic_cl import QuadraticModelCL
-    from .models.ma_uniform_cl import UniformModelCL
+# Log posterior functions
+# -----------------------
+from .lpf.lpf import BaseLPF
+from .lpf.transitlpf import TransitLPF
+from .lpf.cntlpf import PhysContLPF
+from .lpf.baselines.legendrebaseline import LegendreBaseline
+from .lpf.baselines.linearbaseline import LinearModelBaseline
+from .lpf.transitanalysis import TransitAnalysis
 
-    # LDTk limb darkening for the Swift model
-    # ---------------------------------------
-    from .models.ldtkldm import LDTkLDModel, LDTkLD
-
-    # Log posterior functions
-    # -----------------------
-    from .lpf.lpf import BaseLPF
-    from .lpf.transitlpf import TransitLPF
-    from .lpf.cntlpf import PhysContLPF
-    from .lpf.baselines.legendrebaseline import LegendreBaseline
-    from .lpf.baselines.linearbaseline import LinearModelBaseline
-    from .lpf.transitanalysis import TransitAnalysis
-
-    # Utilities
-    # ---------
-    from .param.parameter import UniformPrior, NormalPrior
-    from .utils import md_rs_from_rho
-    from .utils.mocklc import create_mock_light_curve
+# Utilities
+# ---------
+from .param.parameter import UniformPrior, NormalPrior
+from .utils import md_rs_from_rho
+from .utils.mocklc import create_mock_light_curve

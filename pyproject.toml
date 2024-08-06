@@ -4,7 +4,6 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "PyTransit"
-version = "2.6.8"
 description = 'Fast and painless exoplanet transit light curve modelling.'
 authors=[{name='Hannu Parviainen', email='hpparvi@gmail.com'}]
 classifiers=[
@@ -21,13 +20,14 @@ keywords = ['astronomy',  'astrophysics',  'exoplanets']
 requires-python = ">= 3.8"
 readme = "README.md"
 license = {text = "GPLv2"}
-dynamic = ["dependencies"]
+dynamic = ["version", "dependencies"]
 
 [project.urls]
 homepage = 'https://github.com/hpparvi/PyTransit'
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
+version = {attr = "pytransit.__version__"}
 
 [tool.setuptools]
 include-package-data = true
