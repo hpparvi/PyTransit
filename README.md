@@ -48,11 +48,11 @@ tm.evaluate(k=[[0.10, 0.12], [0.11, 0.13]], ldc=[[0.2, 0.1], [0.5, 0.1],[0.4, 0.
 RoadRunner [(Parviainen, 2020a)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.1633P/abstract) is a fast exoplanet transit model that can use any radially symmetric function to model stellar limb darkening 
 while still being faster to evaluate than the analytical transit model for quadratic limb darkening.
 
-- [RRModel example 1](https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_1.ipynb) 
+- [RRModel example 1](https://github.com/hpparvi/PyTransit/blob/dev/doc/source/notebooks/models/roadrunner/roadrunner_model_example_1.ipynb) 
   shows how to use RoadRunner with the included limb darkening models.
-- [RRModel example 2](https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_2.ipynb)
+- [RRModel example 2](https://github.com/hpparvi/PyTransit/blob/dev/doc/source/notebooks/models/roadrunner/roadrunner_model_example_2.ipynb)
   shows how to use RoadRunner with your own limb darkening model.
-- [RRModel example 3](https://github.com/hpparvi/PyTransit/blob/master/notebooks/roadrunner/roadrunner_model_example_3.ipynb) 
+- [RRModel example 3](https://github.com/hpparvi/PyTransit/blob/dev/doc/source/notebooks/models/roadrunner/roadrunner_model_example_3.ipynb) 
   shows how to use an LDTk-based limb darkening model LDTkM with RoadRunner.
 
 ### Transmission spectroscopy transit model
