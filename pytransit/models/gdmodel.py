@@ -227,9 +227,9 @@ class GravityDarkenedModel(TransitModel):
 
         # Plot the info
         # -------------
-        ax.text(0.025, 0.95, f"i$_\star$ = {degrees(istar):.1f}$^\circ$", transform=ax.transAxes)
-        ax.text(0.025, 0.90, f"i$_\mathrm{{p}}$ = {degrees(inc):.1f}$^\circ$", transform=ax.transAxes)
-        ax.text(1 - 0.025, 0.95, fr"$\alpha$ = {degrees(alpha):.1f}$^\circ$", transform=ax.transAxes, ha='right')
+        ax.text(0.025, 0.95, f"i$_\\star$ = {degrees(istar):.1f}$^\\circ$", transform=ax.transAxes)
+        ax.text(0.025, 0.90, f"i$_\\mathrm{{p}}$ = {degrees(inc):.1f}$^\\circ$", transform=ax.transAxes)
+        ax.text(1 - 0.025, 0.95, fr"$\\alpha$ = {degrees(alpha):.1f}$^\\circ$", transform=ax.transAxes, ha='right')
         ax.text(0.025, 0.05, f"f = {f:.1f}", transform=ax.transAxes)
 
         setp(ax, xlim=(-1.1, 1.1), ylim=(-1.1, 1.1), xticks=[], yticks=[])
