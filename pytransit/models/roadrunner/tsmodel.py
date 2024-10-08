@@ -77,7 +77,7 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
         Returns
         -------
         ndarray
-            Modelled flux either as a 1D or 2D ndarray.
+            Modelled flux either as a 3D ndarray.
         """
         k = atleast_2d(k)
         ldc = atleast_2d(ldc)
@@ -127,7 +127,7 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
             flux = tsmodel_serial(self.time, k, t0, p, a, i, e, w, self.nsamples, self.exptimes,
                                   ldp, istar, weights, dk, self.klims[0], self.klims[1], self.ng, dg, self.ze)
 
-        return flux.squeeze()
+        return flux
 
     def __call__(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
