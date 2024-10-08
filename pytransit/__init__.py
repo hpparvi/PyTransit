@@ -41,7 +41,7 @@ Date
 
 """
 
-__version__ = '2.6.10'
+__version__ = '2.6.11'
 
 # Generic
 # -------
