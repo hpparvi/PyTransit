@@ -136,7 +136,7 @@ class LogPosteriorFunction:
 
     def optimize_global(self, niter=200, npop=50, population=None, pool=None, lnpost=None, vectorize=True,
                         label='Global optimisation', leave=False, plot_convergence: bool = True, use_tqdm: bool = True,
-                        plot_parameters: tuple = (0, 2, 3, 4), min_ptp: float = 0.01):
+                        plot_parameters: tuple = (0, 2, 3, 4), min_ptp: float = 1e-2):
 
         lnpost = lnpost or self.lnposterior
         if self.de is None:
@@ -180,24 +180,28 @@ class LogPosteriorFunction:
             raise ValueError('The MCMC sampler is set to save the results, but the result directory is not set.')
 
         lnpost = lnpost or self.lnposterior
-        if self.sampler is None:
-            if population is not None:
-                pop0 = population
-            elif hasattr(self, '_local_minimization') and self._local_minimization is not None:
-                pop0 = multivariate_normal(self._local_minimization.x, diag(full(len(self.ps), 0.001 ** 2)), size=npop)
-            elif self.de is not None:
-                pop0 = self.de.population.copy()
-            else:
-                raise ValueError('Sample MCMC needs an initial population.')
-            self.sampler = EnsembleSampler(pop0.shape[0], pop0.shape[1], lnpost, vectorize=vectorize, pool=pool)
+        if population is not None:
+            pop0 = population
         else:
-            pop0 = self.sampler.chain[:, -1, :].copy()
+            if self.sampler is None:
+                if hasattr(self, '_local_minimization') and self._local_minimization is not None:
+                    pop0 = multivariate_normal(self._local_minimization.x, diag(full(len(self.ps), 0.001 ** 2)), size=npop)
+                elif self.de is not None:
+                    pop0 = self.de.population.copy()
+                else:
+                    raise ValueError('Sample MCMC needs an initial population.')
+            else:
+                pop0 = self.sampler.chain[:, -1, :].copy()
+
+        if self.sampler is None:
+            self.sampler = EnsembleSampler(pop0.shape[0], pop0.shape[1], lnpost, vectorize=vectorize, pool=pool)
 
         for i in tqdm(range(repeats), desc=label, disable=(not use_tqdm), leave=leave):
-            if reset or i > 0:
+            if (self.sampler is not None and reset) or i > 0:
                 self.sampler.reset()
-            for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin), total=niter,
-                          desc='Run {:d}/{:d}'.format(i + 1, repeats), leave=False, disable=(not use_tqdm)):
+            for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin, skip_initial_state_check=False),
+                          total=niter, desc='Run {:d}/{:d}'.format(i + 1, repeats), leave=False,
+                          disable=(not use_tqdm)):
                 pass
             if save:
                 self.save(self.result_dir)
