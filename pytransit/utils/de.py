@@ -118,7 +118,7 @@ class DiffEvol(object):
     """
 
     def __init__(self, fun, bounds, npop, f=None, c=None, seed=None, maximize=False, vectorize=False, cbounds=(0.25, 1),
-                 fbounds=(0.25, 0.75), pool=None, min_ptp=1e-2, args=[], kwargs={}):
+                 fbounds=(0.25, 0.75), pool=None, min_ptp=0.01, args=[], kwargs={}):
         if seed is not None:
             rseed(seed)
 

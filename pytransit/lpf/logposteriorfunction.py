@@ -136,11 +136,12 @@ class LogPosteriorFunction:
 
     def optimize_global(self, niter=200, npop=50, population=None, pool=None, lnpost=None, vectorize=True,
                         label='Global optimisation', leave=False, plot_convergence: bool = True, use_tqdm: bool = True,
-                        plot_parameters: tuple = (0, 2, 3, 4)):
+                        plot_parameters: tuple = (0, 2, 3, 4), min_ptp: float = 0.01):
 
         lnpost = lnpost or self.lnposterior
         if self.de is None:
-            self.de = DiffEvol(lnpost, clip(self.ps.bounds, -1, 1), npop, maximize=True, vectorize=vectorize, pool=pool)
+            self.de = DiffEvol(lnpost, clip(self.ps.bounds, -1, 1), npop, maximize=True, vectorize=vectorize,
+                               pool=pool, min_ptp=min_ptp)
             if population is None:
                 self.de._population[:, :] = self.create_pv_population(npop)
             else:
