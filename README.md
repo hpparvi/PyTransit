@@ -13,7 +13,7 @@ modelling individual transit light curves. The models are optimised with Numba w
 paralleling Fortran and C-implementations but with hassle-free platform-independent multithreading.
 
 The package has been under continuous development since 2009, and is described in [Parviainen (2015)](http://arxiv.org/abs/1504.07433), 
-[Parviainen (2020a)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.1633P/abstract), and [Parviainen (2020b)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.3356P/abstract). 
+[Parviainen (2020a)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.1633P/abstract), and [Parviainen & Korth (2020b)](https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.3356P/abstract). 
 
 
 ```Python
