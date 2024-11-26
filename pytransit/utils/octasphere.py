@@ -21,8 +21,12 @@
 
 from math import sin, cos, acos, pi
 from numpy import empty, array, vstack, cross, dot
-from pyrr import quaternion
 
+try:
+    from pyrr import quaternion
+    with_pyrr = True
+except ImportError:
+    with_pyrr = False
 
 def octasphere(ndivisions: int):
     """Creates a unit sphere using octagon subdivision.
@@ -30,6 +34,9 @@ def octasphere(ndivisions: int):
     Creates a unit sphere using octagon subdivision. Modified slightly from the original code
     by Philip Rideout (https://prideout.net/blog/octasphere).
     """
+
+    if not with_pyrr:
+        raise ModuleNotFoundError("The pyrr package is required for GDModel visualization.")
 
     n = 2**ndivisions + 1
     num_verts = n * (n + 1) // 2

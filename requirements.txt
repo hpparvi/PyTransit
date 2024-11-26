@@ -17,5 +17,4 @@ emcee
 pyopencl
 corner
 celerite
-pyrr
 meepmeep
