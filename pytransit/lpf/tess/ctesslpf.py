@@ -25,7 +25,6 @@ from typing import Union
 from numpy import repeat, inf, where, newaxis, squeeze, atleast_2d, isfinite, concatenate, zeros
 from numpy.random import uniform
 from uncertainties import ufloat, UFloat
-from ldtk import tess
 
 from ..tesslpf import TESSLPF
 from ...param import UniformPrior as UP, NormalPrior as NP, PParameter

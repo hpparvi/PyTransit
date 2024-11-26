@@ -17,9 +17,8 @@
 from typing import Tuple, Optional, Union
 from pathlib import Path
 
+from numpy import ndarray, linspace, meshgrid, transpose, asarray, newaxis, errstate
 from numba import njit
-from numpy import zeros, interp, pi, ndarray, linspace, meshgrid, transpose, asarray, newaxis, errstate
-from scipy.interpolate import interpn, interpnd, RegularGridInterpolator as RGI
 
 from .ldmodel import LDModel
 from .numba.ldtkldm import trilinear_interpolation_set, integrate_profiles_set

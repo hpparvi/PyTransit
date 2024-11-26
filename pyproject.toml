@@ -17,7 +17,7 @@ classifiers=[
 ]
 
 keywords = ['astronomy',  'astrophysics',  'exoplanets']
-requires-python = ">= 3.8"
+requires-python = ">= 3.10"
 readme = "README.md"
 license = {text = "GPLv2"}
 dynamic = ["version", "dependencies"]

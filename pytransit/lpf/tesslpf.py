@@ -103,7 +103,7 @@ class TESSLPF(BaseLPF):
         if with_ldtk:
             super().add_ldtk_prior(teff, logg, z, passbands=(tess,))
         else:
-            raise ImportError('Could not import LDTk, cannot add an LDTk prior.')
+            raise ModuleNotFoundError('Could not import LDTk, cannot add an LDTk prior.')
 
     def plot_individual_transits(self, solution: str = 'de', pv: ndarray = None, ncols: int = 2, n_samples: int = 100,
                                  xlim: tuple = None, ylim: tuple = None, axs=None, figsize: tuple = None,

@@ -34,9 +34,7 @@ from pytransit import BaseLPF
 from pytransit.lpf.tesslpf import TESSLPF, downsample_time
 from pytransit.orbits import as_from_rhop, i_from_ba
 from pytransit.param import UniformPrior as UP, NormalPrior as NP, PParameter, GParameter
-from ldtk import tess
 from pytransit.utils.misc import fold
-from scipy.ndimage import label
 from uncertainties import ufloat, UFloat
 
 

@@ -536,6 +536,9 @@ class BaseLPF(LogPosteriorFunction):
             raise DeprecationWarning(
                 'Passing passbands by name has been deprecated, they should be now Filter instances.')
 
+        if not with_ldtk:
+            raise ModuleNotFoundError('Could not import LDTk, cannot add an LDTk prior.')
+
         self.ldsc = LDPSetCreator(teff, logg, z, list(passbands))
         self.ldps = self.ldsc.create_profiles(1000)
         self.ldps.resample_linear_z()

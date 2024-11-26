@@ -41,7 +41,7 @@ Date
 
 """
 
-__version__ = '2.6.11'
+__version__ = '2.6.12'
 
 # Generic
 # -------
@@ -74,8 +74,10 @@ from .models.ma_uniform_cl import UniformModelCL
 # LDTk limb darkening for the Swift model
 # ---------------------------------------
 
-from .models.ldtkldm import LDTkLDModel #, LDTkLD
-from .models.ldtkldm import LDTkLD
+try:
+    from .models.ldtkldm import LDTkLDModel, LDTkLD
+except ImportError:
+    pass
 
 # Log posterior functions
 # -----------------------

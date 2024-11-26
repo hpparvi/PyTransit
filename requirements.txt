@@ -14,7 +14,6 @@ setuptools
 deprecated
 seaborn
 emcee
-ldtk
 pyopencl
 corner
 celerite
