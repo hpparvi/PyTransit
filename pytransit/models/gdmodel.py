@@ -23,7 +23,7 @@ from numpy import linspace, sin, cos, array, ndarray, asarray, squeeze, cross, n
     zeros, polyfit, atleast_2d, atleast_1d, nansum, zeros_like
 from numpy.linalg import norm
 from scipy.interpolate import interp1d
-from scipy.spatial.transform.rotation import Rotation
+from scipy.spatial.transform import Rotation
 
 from .transitmodel import TransitModel
 from .numba.gdmodel import create_star_xy, create_planet_xy, map_osm, xy_taylor_vt, oblate_model_s, \
