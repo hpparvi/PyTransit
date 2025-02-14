@@ -16,7 +16,7 @@
 
 import unittest
 from math import pi
-from numpy import array, copysign, inf
+from numpy import array, copysign, inf, errstate
 from numpy.testing import assert_almost_equal
 
 from pytransit.contamination import true_radius_ratio, apparent_radius_ratio
@@ -30,11 +30,13 @@ class TestContamination(unittest.TestCase):
 
     def test_true_radius_ratio(self):
         assert_almost_equal(true_radius_ratio(0.1, 0.0), 0.1)
-        assert_almost_equal(true_radius_ratio(0.1, 1.0), inf)
+        with errstate(divide='ignore'):
+            assert_almost_equal(true_radius_ratio(0.1, 1.0), inf)
 
     def test_apparent_radius_ratio(self):
         assert_almost_equal(apparent_radius_ratio(0.1, 0.0), 0.1)
-        assert_almost_equal(apparent_radius_ratio(0.1, 1.0), 0.0)
+        with errstate(divide='ignore'):
+            assert_almost_equal(apparent_radius_ratio(0.1, 1.0), 0.0)
 
 
 if __name__ == '__main__':
