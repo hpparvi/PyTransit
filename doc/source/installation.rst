@@ -8,6 +8,12 @@ Pytransit can be installed from PyPI
 
     pip install pytransit
 
+using conda
+
+.. code-block:: bash
+
+    conda install conda-forge::pytransit
+
 or by cloning the repository from GitHub and running the setup script
 
 .. code-block:: bash
