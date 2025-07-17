@@ -113,7 +113,7 @@ def write_table(df):
 
 
 def read_bt_settl_table():
-    spectra = pf.getdata(bt_settl_file)
+    spectra = pf.getdata(bt_settl_file).astype('d')
     teff = pf.getdata(bt_settl_file, 1)['TEff'].astype('d')
     wl = pf.getval(bt_settl_file, 'CRVAL1') + arange(spectra.shape[1]) * pf.getval(bt_settl_file, 'CDELT1')
     return pd.DataFrame(spectra, index=pd.Index(teff, name='TEff [K]'), columns=pd.Index(wl, name='Wavelength [nm]'))

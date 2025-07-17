@@ -123,7 +123,7 @@ def write_table(df):
 
 
 def read_husser2013_table():
-    spectra = pf.getdata(husser2013_file)
+    spectra = pf.getdata(husser2013_file).astype('d')
     teff = pf.getdata(husser2013_file, 1)['TEff'].astype('d')
     wl = pf.getval(husser2013_file, 'CRVAL1') + arange(spectra.shape[1]) * pf.getval(husser2013_file, 'CDELT1')
     return pd.DataFrame(spectra, index=pd.Index(teff, name='TEff [K]'), columns=pd.Index(wl, name='Wavelength [nm]'))
