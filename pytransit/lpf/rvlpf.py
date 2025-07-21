@@ -57,7 +57,7 @@ def lnlike_normal(o, m, e):
 
 
 class RVLPF(LogPosteriorFunction):
-    def __init__(self, name: str, nplanets: int, times, rvs, rves, rvis=None):
+    def __init__(self, name: str, nplanets: int, times, rvs, rves, rvis=None, slope_order: int = 1):
         super().__init__(name)
 
         def transform_input(a):
@@ -77,7 +77,7 @@ class RVLPF(LogPosteriorFunction):
             rvis = zeros(len(times), 'int')
 
         self._tref = concatenate(times).mean()
-        self.rvm: RVModel = RVModel(self, nplanets, times, rvs, rves, rvis)
+        self.rvm: RVModel = RVModel(self, nplanets, times, rvs, rves, rvis, slope_order=slope_order)
 
     def model(self, pv):
         return self.rvm.rv_model(pv)
@@ -103,7 +103,7 @@ class RVModel:
 
     def __init__(self, lpf: LogPosteriorFunction, nplanets: int,
                  times, rvs: Iterable, rves: Iterable, rvis: Iterable,
-                 tref: Optional[float] = None):
+                 tref: Optional[float] = None, slope_order: int = 1):
         self.lpf = lpf
 
         if hasattr(lpf, 'nplanets'):
@@ -125,6 +125,7 @@ class RVModel:
         self._rva = None
         self._rvea = None
         self._rv_ids = None
+        self.slope_order = slope_order
 
         self.setup_data(times, rvs, rves, rvis)
 
@@ -183,7 +184,7 @@ class RVModel:
         self._start_rvk = ps.blocks[-1].start
         self._sl_rvk = ps.blocks[-1].slice
 
-        psl = [GParameter('rv_slope', 'linear rv slope', 'm/s', NP(0.0, 1.0), (-inf, inf))]
+        psl = [GParameter(f'rv_slope_{i}', 'rv slope', '', NP(0.0, 1.0), (-inf, inf)) for i in range(1, self.slope_order+1)]
         ps.add_global_block('rv_slope', psl)
         self._start_rv_slope = ps.blocks[-1].start
         self._sl_rv_slope = ps.blocks[-1].slice
@@ -202,7 +203,10 @@ class RVModel:
 
     def rv_slope(self, pvp, times):
         pvp = atleast_2d(pvp)
-        return times * pvp[:, self._sl_rv_slope]
+        slope = times * pvp[:, self._start_rv_slope : self._start_rv_slope + 1]
+        if self.slope_order == 2:
+            slope += times**2 * pvp[:, self._start_rv_slope + 1: self._start_rv_slope + 2]
+        return slope
 
     def rv_model(self, pvp, times=None, planets=None, add_sv=True, add_slope=True):
         times = self._timea if times is None else times - self._tref
@@ -264,10 +268,10 @@ class RVModel:
         rv_time = linspace(self._timea.min() - 1, self._timea.max() + 1, num=ntimes) + self._tref
 
         if pvp is None:
-            rv_model = self.rv_model(pv, rv_time, add_sv=False)
+            rv_model = self.rv_model(pv, rv_time, add_sv=False, add_slope=slope)
             rv_model_limits = None
         else:
-            rv_percentiles = percentile(self.rv_model(pvp, rv_time, add_sv=False), [50, 16, 84, 2.5, 97.5], 0)
+            rv_percentiles = percentile(self.rv_model(pvp, rv_time, add_sv=False, add_slope=slope), [50, 16, 84, 2.5, 97.5], 0)
             rv_model = rv_percentiles[0]
             rv_model_limits = rv_percentiles[1:]
 
@@ -279,10 +283,13 @@ class RVModel:
             colors = len(self.rvis) * ['k']
         if markers is None:
             markers = len(self.rvis) * ['.']
-        rvs = self._rva - self.rv_shifts(pv) - squeeze(self.rv_slope(pv, self._timea))
+        rvs = self._rva - self.rv_shifts(pv)
+        if not slope:
+            rvs -= squeeze(self.rv_slope(pv, self._timea))
+
         for iid, instrument in enumerate(self.rvis):
             m = self._rv_ids == iid
-            axs[0].errorbar(self._timea[m] + self._tref, rvs[m], self._rvea[m], fmt='o', marker=markers[iid],
+            axs[0].errorbar(self._timea[m] + self._tref, rvs[m], self._rvea[m], marker=markers[iid], ls='',
                             c=colors[iid], ms=4, label=instrument)
             axs[1].errorbar(self._timea[m] + self._tref, self._rva[m] - squeeze(self.rv_model(pv))[m], self._rvea[m],
                             fmt='ok', ms=4)
