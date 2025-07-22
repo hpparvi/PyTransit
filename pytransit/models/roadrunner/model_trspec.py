@@ -1,6 +1,6 @@
 from math import fabs, floor
 from numba import njit, prange, get_num_threads, set_num_threads
-from numpy import zeros, dot, ndarray, isnan, full, nan, mean, floor, fabs
+from numpy import zeros, dot, ndarray, isnan, full, nan, mean, floor, fabs, max
 
 from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
 from meepmeep.utils import d_from_pkaiews
@@ -40,6 +40,7 @@ def tsmodel_serial(times: ndarray,
             continue
 
         kmean = mean(k[ipv])
+        kmax = max(k[ipv])
         afac = k[ipv] ** 2 / kmean ** 2
 
         # -----------------------------------#
@@ -78,10 +79,16 @@ def tsmodel_serial(times: ndarray,
                 for isample in range(1, nsamples[0] + 1):
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
                     z = pd_t15sc(tc + time_offset, xyc)
-                    aplanet = ccia(1.0, kmean, z)[0]
-                    for ipb in range(npb):
-                        iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
-                        flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * aplanet * afac[ipb]) / istar[ipv, ipb]
+                    ap0, kappa = ccia(1.0, kmean, z)
+                    dadk = 2.0*kmean*kappa
+                    if z <= 1.0 - kmax:
+                        for ipb in range(npb):
+                            iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
+                            flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * ap0 * afac[ipb]) / istar[ipv, ipb]
+                    else:
+                        for ipb in range(npb):
+                            iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
+                            flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * (ap0 + (k[ipv, ipb]-kmean)*dadk)) / istar[ipv, ipb]
                 flux[ipv, :, ipt] /= nsamples[0]
     return flux
 
@@ -121,6 +128,7 @@ def tsmodel_parallel(times: ndarray,
             continue
 
         kmean = mean(k[ipv])
+        kmax = max(k[ipv])
         afac = k[ipv] ** 2 / kmean ** 2
 
         # -----------------------------------#
@@ -160,10 +168,18 @@ def tsmodel_parallel(times: ndarray,
                 for isample in range(1, nsamples[0] + 1):
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
                     z = pd_t15sc(tc + time_offset, xyc)
-                    aplanet = ccia(1.0, kmean, z)[0]
+                    ap0, kappa = ccia(1.0, kmean, z)
+                    dadk = 2.0*kmean*kappa
                     for ipb in range(npb):
-                        iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
-                        flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * aplanet * afac[ipb]) / istar[ipv, ipb]
+                        if z <= 1.0 - kmax:
+                            for ipb in range(npb):
+                                iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
+                                flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * ap0 * afac[ipb]) / istar[ipv, ipb]
+                        else:
+                            for ipb in range(npb):
+                                iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
+                                flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * (
+                                            ap0 + (k[ipv, ipb] - kmean) * dadk)) / istar[ipv, ipb]
                 flux[ipv, :, ipt] /= nsamples[0]
     set_num_threads(nthreads_current)
     return flux
