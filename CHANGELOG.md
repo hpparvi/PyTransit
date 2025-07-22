@@ -1,4 +1,12 @@
 # Changelog
+## [2.6.9] - 2025-07-22
+
+### Changed
+
+- Improved `TSModel` accuracy by using a first-order Taylor series expansion of the planet-star intersection area. The
+  error in transit depth estimates should now be ~1 ppm for Jupiter-sized planets and below this for smaller planets.
+- Fixed issues with Scipy 2.0.
+
 ## [2.6.0] - 2024-02-01
 
 ### Added
