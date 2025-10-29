@@ -76,8 +76,8 @@ class UniformModel(TransitModel):
         # ---------------------------
         else:
             npv = t0.size
-            e = zeros(npv) if e is None else e
-            w = zeros(npv) if w is None else w
+            e = zeros(npv) if e is None else asarray(e)
+            w = zeros(npv) if w is None else asarray(w)
 
             if k.ndim == 1:
                 k = k.reshape((k.size,1))

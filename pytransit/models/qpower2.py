@@ -90,12 +90,13 @@ class QPower2Model(TransitModel):
                 e, w = 0., 0.
 
             flux = qpower2_model_s(self.time, k, ldc, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes)
+
         # Parameter population branch
         # ---------------------------
         else:
             npv = t0.size
-            if e is None:
-                e, w = zeros(npv), zeros(npv)
+            e = zeros(npv) if e is None else asarray(e)
+            w = zeros(npv) if w is None else asarray(w)
 
             if k.ndim == 1:
                 k = k.reshape((k.size,1))

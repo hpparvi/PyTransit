@@ -127,8 +127,8 @@ class QuadraticModel(TransitModel):
                 t0 = t0.reshape((t0.size, 1))
 
             npv = p.size
-            e = zeros(npv) if e is None else e
-            w = zeros(npv) if w is None else w
+            e = zeros(npv) if e is None else asarray(e)
+            w = zeros(npv) if w is None else asarray(w)
 
             if ldc.ndim == 3:
                 ldc = ldc.reshape([npv, -1])
