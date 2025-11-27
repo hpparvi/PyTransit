@@ -1,4 +1,6 @@
 from math import fabs, floor
+
+from meepmeep.tsorbit import bounding_box
 from numba import njit, prange
 from numpy import zeros, dot, ndarray, isnan, nan, ones, full
 
@@ -54,7 +56,7 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
     pv_is_good = full(npv, True)
     ldm = zeros((npv, npb, ng))  # Limb darkening means
     xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
-    hwws = zeros((npv, npb))     # Half-window widths [d]
+    bbs = zeros((npv, nlc, 2))
 
     for ipv in range(npv):
         if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
@@ -79,12 +81,15 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
         # ------------------------------------------------------#
         xyc[ipv, :, :] = solve_xy_p5s(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
 
-        # ---------------------------------#
-        # Calculate the half-window widths #
-        # ---------------------------------#
-        hww = 0.5 * d_from_pkaiews(p[ipv], ks[ipv, 0], a[ipv], i[ipv], e[ipv], w[ipv], 1, 14)
+        # -----------------------------#
+        # Calculate the bounding boxes #
+        # -----------------------------#
+        bt1, bt4 = bounding_box(k, xyc)
+        bbs[ipv, :, 0] = bt1
+        bbs[ipv, :, 1] = bt4
         for ilc in range(nlc):
-            hwws[ipv, ilc] = 0.0015 + _exptimes[ilc] + hww
+            bbs[ipv, ilc, 0] -= 0.003 + _exptimes[ilc]
+            bbs[ipv, ilc, 1] += 0.003 + _exptimes[ilc]
 
     # ---------------------------#
     # Calculate the light curves #
@@ -104,8 +109,8 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
 
         epoch = floor((times[ipt] - t0[ipv, iep] + 0.5 * p[ipv]) / p[ipv])
         tc = times[ipt] - (t0[ipv, iep] + epoch * p[ipv])
-        if fabs(tc) > hwws[ipv, ilc]:
-            flux[ipv, ipt] = 1.0
+        if not (bbs[ipv, ilc, 0] <= tc <= bbs[ipv, ilc, 1]):
+            flux[ipt] = 1.0
         else:
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
@@ -115,6 +120,7 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
                 flux[ipv, ipt] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
             flux[ipv, ipt] /= nsamples[ilc]
     return flux
+
 
 @njit(parallel=True, fastmath=False)
 def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
@@ -146,6 +152,7 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
     ldm = zeros((npv, npb, ng))  # Limb darkening means
     xyc = zeros((npv, 2, 5))  # Taylor series coefficients for the (x, y) position
     hwws = zeros((npv, npb))  # Half-window widths [d]
+    bbs = zeros((npv, nlc, 2))
 
     for ipv in range(npv):
         if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
@@ -171,12 +178,15 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
         # ------------------------------------------------------#
         xyc[ipv, :, :] = solve_xy_p5s(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
 
-        # ---------------------------------#
-        # Calculate the half-window widths #
-        # ---------------------------------#
-        hww = 0.5 * d_from_pkaiews(p[ipv], ks[ipv, 0], a[ipv], i[ipv], e[ipv], w[ipv], 1, 14)
+        # -----------------------------#
+        # Calculate the bounding boxes #
+        # -----------------------------#
+        bt1, bt4 = bounding_box(k, xyc)
+        bbs[ipv, :, 0] = bt1
+        bbs[ipv, :, 1] = bt4
         for ilc in range(nlc):
-            hwws[ipv, ilc] = 0.0015 + _exptimes[ilc] + hww
+            bbs[ipv, ilc, 0] -= 0.003 + _exptimes[ilc]
+            bbs[ipv, ilc, 1] += 0.003 + _exptimes[ilc]
 
     # ---------------------------#
     # Calculate the light curves #
@@ -196,8 +206,8 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
 
         epoch = floor((times[ipt] - t0[ipv, iep] + 0.5 * p[ipv]) / p[ipv])
         tc = times[ipt] - (t0[ipv, iep] + epoch * p[ipv])
-        if fabs(tc) > hwws[ipv, ilc]:
-            flux[ipv, ipt] = 1.0
+        if not (bbs[ipv, ilc, 0] <= tc <= bbs[ipv, ilc, 1]):
+            flux[ipt] = 1.0
         else:
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)

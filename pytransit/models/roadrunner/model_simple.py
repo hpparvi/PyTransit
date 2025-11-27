@@ -2,7 +2,7 @@ from math import fabs, floor
 from numba import njit, prange
 from numpy import zeros, dot, ndarray, isnan, full, nan
 
-from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
+from meepmeep.xy.position import solve_xy_p5s, pd_t15sc, bounding_box
 from meepmeep.utils import d_from_pkaiews
 
 from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
@@ -54,11 +54,12 @@ def rr_simple_serial(times: ndarray, k: float, t0: float, p: float, a: float, i:
     # -----------------------------------------------------#
     xyc[:, :] = solve_xy_p5s(0.0, p, a, i, e, w)
 
-    # --------------------------------#
-    # Calculate the half-window width #
-    # --------------------------------#
-    hww = 0.5 * d_from_pkaiews(p, k, a, i, e, w, 1, 14)
-    hww = 0.0015 + exptimes + hww
+    # ---------------------------#
+    # Calculate the bounding box #
+    # ---------------------------#
+    bt1, bt4 = bounding_box(k, xyc)
+    bt1 -= 0.003 + exptimes
+    bt4 += 0.003 + exptimes
 
     # --------------------------#
     # Calculate the light curve #
@@ -67,7 +68,7 @@ def rr_simple_serial(times: ndarray, k: float, t0: float, p: float, a: float, i:
     for ipt in range(npt):
         epoch = floor((times[ipt] - t0 + 0.5 * p) / p)
         tc = times[ipt] - (t0 + epoch * p)
-        if fabs(tc) > hww:
+        if not (bt1 <= tc <= bt4):
             flux[ipt] = 1.0
         else:
             for isample in range(1, nsamples+ 1):
@@ -111,11 +112,12 @@ def rr_simple_parallel(times: ndarray, k: float, t0: float, p: float, a: float, 
     # -----------------------------------------------------#
     xyc[:, :] = solve_xy_p5s(0.0, p, a, i, e, w)
 
-    # --------------------------------#
-    # Calculate the half-window width #
-    # --------------------------------#
-    hww = 0.5 * d_from_pkaiews(p, k, a, i, e, w, 1, 14)
-    hww = 0.0015 + exptimes + hww
+    # ---------------------------#
+    # Calculate the bounding box #
+    # ---------------------------#
+    bt1, bt4 = bounding_box(k, xyc)
+    bt1 -= 0.003 + exptimes
+    bt4 += 0.003 + exptimes
 
     # --------------------------#
     # Calculate the light curve #
@@ -124,7 +126,7 @@ def rr_simple_parallel(times: ndarray, k: float, t0: float, p: float, a: float, 
     for ipt in prange(npt):
         epoch = floor((times[ipt] - t0 + 0.5 * p) / p)
         tc = times[ipt] - (t0 + epoch * p)
-        if fabs(tc) > hww:
+        if not (bt1 <= tc <= bt4):
             flux[ipt] = 1.0
         else:
             for isample in range(1, nsamples+ 1):

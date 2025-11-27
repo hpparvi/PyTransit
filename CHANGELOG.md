@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.6.17] - 2025-11-27
+
+### Changed
+
+- Improved RoadRunnerModel transit bounding box calculation for eccentric orbits.
+
 ## [2.6.16] - 2025-10-29
 
 ### Changed
