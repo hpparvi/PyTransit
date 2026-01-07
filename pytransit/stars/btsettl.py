@@ -27,20 +27,19 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from os.path import join
+from importlib.resources import files
 
 import astropy.io.fits as pf
 import pandas as pd
 from astropy.table import Table
 from numba import njit
 from numpy import linspace, zeros, array, arange
-from pkg_resources import resource_filename
 from scipy.interpolate import RegularGridInterpolator
 from tqdm.auto import tqdm
 
 __all__ = ['bt_settl_file', 'compute_averaged_bt_settl_table', 'create_bt_settl_interpolator', 'read_bt_settl_table']
 
-bt_settl_file = resource_filename(__name__, join("data", "avg_bt_settl.fits"))
+bt_settl_file = str(files(__package__).joinpath("data", "avg_bt_settl.fits"))
 
 @njit
 def bin_spectrum(wl, fl, lmin: int = 10, lmax: int = 30_000):

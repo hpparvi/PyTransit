@@ -32,10 +32,8 @@
 """
 
 import warnings
-from os.path import dirname, join
-from pathlib import Path
+from importlib.resources import files
 from typing import Union, Optional
-from pkg_resources import resource_filename
 
 import pyopencl as cl
 from pyopencl import CompilerWarning
@@ -84,10 +82,10 @@ class UniformModelCL(TransitModel):
 
         # Build the program
         # -----------------
-        rd = Path(resource_filename('pytransit', 'models/opencl'))
-        po = rd / 'orbits.cl'
-        pm = rd / 'ma_uniform.cl'
-        self.prg = cl.Program(self.ctx, po.read_text() + pm.read_text()).build()
+        opencl_pkg = files('pytransit.models.opencl')
+        orbits_src = opencl_pkg.joinpath('orbits.cl').read_text()
+        model_src = opencl_pkg.joinpath('ma_uniform.cl').read_text()
+        self.prg = cl.Program(self.ctx, orbits_src + model_src).build()
 
 
     def set_data(self, time: ndarray, lcids: ndarray = None, pbids: ndarray = None, nsamples: ndarray = None, exptimes: ndarray = None):

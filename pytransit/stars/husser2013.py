@@ -27,18 +27,18 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from os.path import join
+from importlib.resources import files
+
 import astropy.io.fits as pf
 import pandas as pd
 from numba import njit
 from numpy import linspace, zeros, array, arange, exp
-from pkg_resources import resource_filename
 from scipy.interpolate import RegularGridInterpolator
 from tqdm.auto import tqdm
 
 __all__ = ['husser2013_file', 'compute_averaged_husser2013_table', 'create_husser2013_interpolator', 'read_husser2013_table']
 
-husser2013_file = resource_filename(__name__, join("data", "avg_husser2013.fits"))
+husser2013_file = str(files(__package__).joinpath("data", "avg_husser2013.fits"))
 
 
 def get_teff(f):

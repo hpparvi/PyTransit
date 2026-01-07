@@ -26,16 +26,13 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from pathlib import Path
+from importlib.resources import files
 from typing import Union, Optional
 
 import numpy as np
 import pyopencl as cl
-from os.path import dirname, join
 
 import warnings
-
-from pkg_resources import resource_filename
 from pyopencl import CompilerWarning
 
 from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, empty, \
@@ -126,10 +123,10 @@ class QuadraticModelCL(TransitModel):
 
         self._time_id = None   # Time array ID
 
-        rd = Path(resource_filename('pytransit', 'models/opencl'))
-        po = rd / 'orbits.cl'
-        pm = rd / 'ma_quadratic.cl'
-        self.prg = cl.Program(self.ctx, po.read_text() + pm.read_text()).build()
+        opencl_pkg = files('pytransit.models.opencl')
+        orbits_src = opencl_pkg.joinpath('orbits.cl').read_text()
+        model_src = opencl_pkg.joinpath('ma_quadratic.cl').read_text()
+        self.prg = cl.Program(self.ctx, orbits_src + model_src).build()
 
     def set_data(self, time, lcids=None, pbids=None, nsamples=None, exptimes=None):
         mf = cl.mem_flags
