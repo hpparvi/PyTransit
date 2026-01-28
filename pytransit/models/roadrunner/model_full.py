@@ -1,8 +1,6 @@
-from math import fabs, floor
-
 from meepmeep.tsorbit import bounding_box
 from numba import njit, prange
-from numpy import zeros, dot, ndarray, isnan, nan, ones, full
+from numpy import zeros, dot, ndarray, isnan, nan, full, floor
 
 from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
 from meepmeep.utils import d_from_pkaiews
@@ -84,7 +82,7 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
         # -----------------------------#
         # Calculate the bounding boxes #
         # -----------------------------#
-        bt1, bt4 = bounding_box(k, xyc)
+        bt1, bt4 = bounding_box(ks[ipv, 0], xyc)
         bbs[ipv, :, 0] = bt1
         bbs[ipv, :, 1] = bt4
         for ilc in range(nlc):
@@ -110,7 +108,7 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
         epoch = floor((times[ipt] - t0[ipv, iep] + 0.5 * p[ipv]) / p[ipv])
         tc = times[ipt] - (t0[ipv, iep] + epoch * p[ipv])
         if not (bbs[ipv, ilc, 0] <= tc <= bbs[ipv, ilc, 1]):
-            flux[ipt] = 1.0
+            flux[ipv, ipt] = 1.0
         else:
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
@@ -151,7 +149,6 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
     pv_is_good = full(npv, True)
     ldm = zeros((npv, npb, ng))  # Limb darkening means
     xyc = zeros((npv, 2, 5))  # Taylor series coefficients for the (x, y) position
-    hwws = zeros((npv, npb))  # Half-window widths [d]
     bbs = zeros((npv, nlc, 2))
 
     for ipv in range(npv):
@@ -181,7 +178,7 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
         # -----------------------------#
         # Calculate the bounding boxes #
         # -----------------------------#
-        bt1, bt4 = bounding_box(k, xyc)
+        bt1, bt4 = bounding_box(ks[ipv, 0], xyc)
         bbs[ipv, :, 0] = bt1
         bbs[ipv, :, 1] = bt4
         for ilc in range(nlc):
@@ -207,7 +204,7 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
         epoch = floor((times[ipt] - t0[ipv, iep] + 0.5 * p[ipv]) / p[ipv])
         tc = times[ipt] - (t0[ipv, iep] + epoch * p[ipv])
         if not (bbs[ipv, ilc, 0] <= tc <= bbs[ipv, ilc, 1]):
-            flux[ipt] = 1.0
+            flux[ipv, ipt] = 1.0
         else:
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
