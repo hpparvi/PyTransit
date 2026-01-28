@@ -6,8 +6,13 @@
 *~
 *pkl
 *pdf
+.DS_Store
+
+.ipynb_checkpoints
+PyTransit.egg-info
 build
 venv
 dist
 
 .idea/*
+notebooks
