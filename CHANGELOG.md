@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.6.18] - 2026-01-28
+
+### Changed
+
+- Fixed a RoadRunnerModel bug introduced in v2.6.17.
+
 ## [2.6.17] - 2025-11-27
 
 ### Changed
