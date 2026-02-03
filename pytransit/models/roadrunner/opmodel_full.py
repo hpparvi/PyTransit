@@ -2,8 +2,8 @@ from math import fabs, floor, sqrt
 from numba import njit, prange
 from numpy import zeros, dot, ndarray, isnan, nan, ones, full, linspace, squeeze, atleast_2d, atleast_1d
 
-from meepmeep.xy.position import solve_xy_p5s, pd_t15sc, xy_t15sc
-from meepmeep.utils import d_from_pkaiews
+from meepmeep.backends.numba.ts2d.position import solve_xy_p5, pd_t15c,  xy_t15c
+from meepmeep.backends.numba.utils import d_from_pkaiews
 
 from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
 from .ecintersection import create_ellipse, ellipse_circle_intersection_area as ecia
@@ -134,7 +134,7 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
         else:
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                cx, cy = xy_t15sc(tc + time_offset, xyc[ipv])
+                cx, cy = pd_t15c(tc + time_offset, xyc[ipv])
                 z = sqrt(cx*cx + cy*cy)
                 iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + ks[ipv, ipb]), dg, ldm[ipv, ipb])
                 aplanet = ecia(cx, cy, z, ks[ipv, ipb], f[ipv], exs[ipv,:,:], eys[ipv,:])

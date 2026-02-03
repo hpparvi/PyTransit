@@ -1,9 +1,8 @@
-from meepmeep.tsorbit import bounding_box
 from numba import njit, prange
 from numpy import zeros, dot, ndarray, isnan, nan, full, floor
 
-from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
-from meepmeep.utils import d_from_pkaiews
+from meepmeep.backends.numba.ts2d.position import solve_xy_p5, pd_t15c, bounding_box
+from meepmeep.backends.numba.utils import d_from_pkaiews
 
 from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
 from .common import circle_circle_intersection_area_kite as ccia
@@ -77,7 +76,7 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
         # ------------------------------------------------------#
         # Calculate the Taylor series expansions for the orbits #
         # ------------------------------------------------------#
-        xyc[ipv, :, :] = solve_xy_p5s(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        xyc[ipv, :, :] = solve_xy_p5(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
 
         # -----------------------------#
         # Calculate the bounding boxes #
@@ -112,7 +111,7 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
         else:
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = pd_t15sc(tc + time_offset, xyc[ipv])
+                z = pd_t15c(tc + time_offset, xyc[ipv])
                 iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + ks[ipv, ipb]), dg, ldm[ipv, ipb])
                 aplanet = ccia(1.0, ks[ipv, ipb], z)[0]
                 flux[ipv, ipt] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
@@ -173,7 +172,7 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
         # ------------------------------------------------------#
         # Calculate the Taylor series expansions for the orbits #
         # ------------------------------------------------------#
-        xyc[ipv, :, :] = solve_xy_p5s(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        xyc[ipv, :, :] = solve_xy_p5(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
 
         # -----------------------------#
         # Calculate the bounding boxes #
@@ -208,7 +207,7 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
         else:
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = pd_t15sc(tc + time_offset, xyc[ipv])
+                z = pd_t15c(tc + time_offset, xyc[ipv])
                 iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + ks[ipv, ipb]), dg, ldm[ipv, ipb])
                 aplanet = ccia(1.0, ks[ipv, ipb], z)[0]
                 flux[ipv, ipt] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]

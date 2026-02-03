@@ -2,8 +2,8 @@ from math import fabs, floor
 from numba import njit, prange
 from numpy import zeros, dot, ndarray, isnan, full, nan
 
-from meepmeep.xy.position import solve_xy_p5s, pd_t15sc, bounding_box
-from meepmeep.utils import d_from_pkaiews
+from meepmeep.backends.numba.ts2d.position import solve_xy_p5, pd_t15c, bounding_box
+from meepmeep.backends.numba.utils import d_from_pkaiews
 
 from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
 from .common import circle_circle_intersection_area_kite as ccia
@@ -73,7 +73,7 @@ def rr_simple_serial(times: ndarray, k: float, t0: float, p: float, a: float, i:
         else:
             for isample in range(1, nsamples+ 1):
                 time_offset = exptimes * ((isample - 0.5) / nsamples - 0.5)
-                z = pd_t15sc(tc + time_offset, xyc)
+                z = pd_t15c(tc + time_offset, xyc)
                 iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + k), dg, ldm)
                 aplanet = ccia(1.0, k, z)[0]
                 flux[ipt] += (istar - iplanet * aplanet) / istar
@@ -131,7 +131,7 @@ def rr_simple_parallel(times: ndarray, k: float, t0: float, p: float, a: float, 
         else:
             for isample in range(1, nsamples+ 1):
                 time_offset = exptimes * ((isample - 0.5) / nsamples - 0.5)
-                z = pd_t15sc(tc + time_offset, xyc)
+                z = pd_t15c(tc + time_offset, xyc)
                 iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + k), dg, ldm)
                 aplanet = ccia(1.0, k, z)[0]
                 flux[ipt] += (istar - iplanet * aplanet) / istar

@@ -45,10 +45,10 @@ from numba import njit, prange
 from numpy import pi, sqrt, arccos, abs, zeros_like, sign, sin, cos, abs, atleast_2d, zeros, atleast_1d, isnan, inf, \
     nan, copysign, fmax, floor
 
-from meepmeep.xy.position import pd_t15sc, solve_xy_p5s, xyd_t15s
-from meepmeep.xy.derivatives import pd_with_derivatives_s, xy_derivative_coeffs, pd_derivatives_s
+from meepmeep.backends.numba.ts2d.position import solve_xy_p5, pd_t15c, bounding_box
+from meepmeep.backends.numba.ts2d.derivatives import pd_with_derivatives_s, xy_derivative_coeffs, pd_derivatives_s
+from meepmeep.backends.numba.utils import d_from_pkaiews
 
-from ...orbits import d_from_pkaiews
 from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st, vajs_from_paiew_eclipse, t14
 
 TWO_PI = 2.0 * pi
@@ -163,7 +163,7 @@ def dfdz(z, r1, r2):
 #     # Solve the Taylor series coefficients for the planet's (x, y) location
 #     # and its derivatives if they're requested.
 #     # ---------------------------------------------------------------------
-#     cf = solve_xy_p5s(0.0, p, a, i, e, w)
+#     cf = solve_xy_p5(0.0, p, a, i, e, w)
 #     if with_derivatives:
 #         dcf = xy_derivative_coeffs(diffs(p, a, i, e, w, 1e-4), 1e-4, cf)
 #     else:
