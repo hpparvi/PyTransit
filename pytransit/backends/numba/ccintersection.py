@@ -3,7 +3,7 @@ from numpy import arccos, sqrt, arctan2, pi, nan, floor
 
 
 @njit
-def tsort(r1, r2, b):
+def _tsort(r1, r2, b):
     """
     Sort three values (radii and separation) in descending order.
 
@@ -54,7 +54,7 @@ def tsort(r1, r2, b):
 
 
 @njit
-def circle_circle_intersection_area(r1, r2, b):
+def ccia(r1, r2, b):
     """
     Calculate the area of intersection between two circles and the angle k0.
 
@@ -74,59 +74,68 @@ def circle_circle_intersection_area(r1, r2, b):
     -------
     a_lens : float
         The area of the intersection (overlap region).
-    k0 : float
-        An auxiliary angle used in limb-darkening calculations, specifically
-        the half-angle subtended by the intersection at the center of r2.
     """
     if r1 + r2 <= b:
-        return 0.0, 0.0
+        return 0.0
     elif abs(r1 - r2) < b and b <= r1 + r2:
-        x, y, z = tsort(r1, r2, b)
+        x, y, z = _tsort(r1, r2, b)
         a_kite = 0.5 * sqrt((x + (y + z)) * (z - (x - y)) * (z + (x - y)) * (x + (y - z)))
         k0 = arctan2(2.0 * a_kite, (r2 - r1) * (r2 + r1) + b * b)
         k1 = arctan2(2.0 * a_kite, (r1 - r2) * (r1 + r2) + b * b)
         a_lens = r1 * r1 * k1 + r2 * r2 * k0 - a_kite
-        return a_lens, k0
+        return a_lens
     elif b <= r1 - r2:
-        return pi * r2 ** 2, pi
+        return pi * r2 ** 2
     elif b <= r2 - r1:
-        return pi * r1 ** 2, 0.0
+        return pi * r1 ** 2
     else:
-        return nan, nan
+        return nan
 
 
 @njit
-def dadz(z, dz, r1, r2):
+def ccia_and_grad(r1, r2, b):
     """
-    Compute the derivative of the intersection area with respect to separation z.
+    Calculate the area of intersection between two circles and the angle k0.
+
+    Adapted from Agol et al. (2020). Handles all overlap cases: no overlap,
+    partial overlap, and complete occultation.
 
     Parameters
     ----------
-    z : float
-        Separation between circle centers.
-    dz : float
-        The derivative of z with respect to a higher-level parameter (chain rule).
     r1 : float
-        Radius of the first circle.
+        Radius of the first circle (e.g., the occulted star).
     r2 : float
-        Radius of the second circle.
+        Radius of the second circle (e.g., the occulting planet).
+    b : float
+        Distance between the centers of the two circles.
 
     Returns
     -------
-    da_dz : float
-        The partial derivative of the intersection area with respect to the
-        orbital parameters, scaled by dz.
+    a_lens : float
+        The area of the intersection (overlap region).
     """
-    if r1 < z - r2:
-        return 0.0
-    elif r1 >= z + r2:
-        return 0.0
-    elif z - r2 <= -r1:
-        return 0.0
+    if r1 + r2 <= b:
+        return 0.0, (0.0, 0.0)
+    elif abs(r1 - r2) < b and b <= r1 + r2:
+        x, y, z = _tsort(r1, r2, b)
+        a_kite = 0.5 * sqrt((x + (y + z)) * (z - (x - y)) * (z + (x - y)) * (x + (y - z)))
+        k0 = arctan2(2.0 * a_kite, (r2 - r1) * (r2 + r1) + b * b)
+        k1 = arctan2(2.0 * a_kite, (r1 - r2) * (r1 + r2) + b * b)
+        a_lens = r1 * r1 * k1 + r2 * r2 * k0 - a_kite
+    elif b <= r1 - r2:
+        a_lens = pi * r2 ** 2
+        k0 = pi
+    elif b <= r2 - r1:
+        k0 = 0.0
+        a_lens = pi * r1 ** 2
     else:
-        a = z**2 + r2**2 - r1**2
-        b = z**2 + r1**2 - r2**2
-        t1 = - r2**2*(1/r2 - a/(2*r2*z**2))/sqrt(1 - a**2/(4*r2**2*z**2))
-        t2 = - r1**2*(1/r1 - b/(2*r1*z**2))/sqrt(1 - b**2/(4*r1**2*z**2))
-        t3 = z*(r1**2 + r2**2 - z**2)/sqrt((-z + r2 + r1)*(z + r2 - r1)*(z - r2 + r1)*(z + r2 + r1))
-        return dz*(t1 + t2 - t3)
+        return nan, (nan, nan)
+
+    dadr2 = 2*k0*r2
+
+    if abs(b) > 1e-8:
+        dadb = -2*a_kite/b
+    else:
+        dadb = 0.0
+
+    return a_lens, (dadr2, dadb)
