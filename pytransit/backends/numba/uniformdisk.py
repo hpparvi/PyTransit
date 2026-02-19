@@ -2,7 +2,7 @@ from meepmeep.backends.numba.ts2d import pd_t15c, solve_xy_p5, pd_t15_d, solve_x
 from meepmeep.backends.numba.utils import d_from_pkaiews
 from numba import njit
 from numpy import floor, pi, zeros, nan, fabs
-from ccintersection import ccia, ccia_and_grad
+from .ccintersection import ccia, ccia_and_grad
 
 @njit(fastmath=True)
 def folded_time(t, t0, p):
