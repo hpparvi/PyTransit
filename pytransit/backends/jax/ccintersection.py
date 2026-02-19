@@ -11,6 +11,7 @@ guard on the sqrt argument to avoid inf/NaN gradients at the boundary
 (sqrt(0) -> inf grad).
 """
 
+import jax
 import jax.numpy as jnp
 
 _EPS_SQRT = 1e-12   # Guard for sqrt(x): must be > 0
@@ -55,3 +56,12 @@ def ccia(r1, r2, b):
               k0)))
 
     return area
+
+
+def ccia_and_grad(r1, r2, b):
+    """Circle-circle intersection area with gradients w.r.t. r2 and b.
+
+    Returns (area, dA/dr2, dA/db) using JAX autodiff on the branchless ccia.
+    """
+    area, (dadr2, dadb) = jax.value_and_grad(ccia, argnums=(1, 2))(r1, r2, b)
+    return area, dadr2, dadb
