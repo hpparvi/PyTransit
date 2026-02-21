@@ -1,7 +1,5 @@
-from math import pi
-
 from numba import njit
-from numpy import zeros
+from numpy import zeros, pi
 
 
 @njit(fastmath=True)

@@ -12,3 +12,8 @@ def ld_uniform(mu, pv):
 @njit(fastmath=True)
 def ldi_uniform(pv):
     return pi
+
+
+@njit(fastmath=True)
+def ldd_uniform(pv):
+    return 0.0

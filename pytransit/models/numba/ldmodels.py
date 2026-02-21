@@ -36,7 +36,7 @@ def ld_linear(mu, pv):
 
 @njit(fastmath=True)
 def ldi_linear(pv):
-    return 2 * pi * 1 / 6 * (3 - 2 * pv[0])
+    return 2 * pi * 1 / 6 * (3 - pv[0])
 
 
 @njit(fastmath=True)
