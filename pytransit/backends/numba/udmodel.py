@@ -1,4 +1,4 @@
-from meepmeep.backends.numba.ts2d import pd_t15c, solve_xy_p5, pd_t15_d, solve_xy_p5_d
+from meepmeep.backends.numba.ts2d import pd_t15c, solve_xy_p5, pd_t15c_d, solve_xy_p5_d
 from meepmeep.backends.numba.utils import d_from_pkaiews
 from numba import njit
 from numpy import floor, pi, zeros, nan, fabs
@@ -40,8 +40,8 @@ def uniform_model(times, k, t0, p, a, i, e, w):
 
 
 @njit
-def _uniform_model_and_grad(t, k, t0, p, cf, dcf):
-    z, dz = pd_t15_d(t, t0, p, cf, dcf)
+def _uniform_model_and_grad(t, k, cf, dcf):
+    z, dz = pd_t15c_d(t, cf, dcf)
     flux = 0.0
     dflux = zeros(7)
     if z <= 1.0 + k:
@@ -70,5 +70,5 @@ def uniform_model_and_grad(times, k, t0, p, a, i, e, w):
     for j in range(npt):
         t = folded_time(times[j], t0, p)
         if fabs(t) < half_window_width:
-            flux[j], dflux[j,:] = _uniform_model_and_grad(t, k, t0, p, cf, dcf)
+            flux[j], dflux[j,:] = _uniform_model_and_grad(t, k, cf, dcf)
     return flux, dflux
