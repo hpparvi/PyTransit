@@ -17,4 +17,5 @@ emcee
 pyopencl
 corner
 celerite
+jax
 meepmeep >= 0.8.0
