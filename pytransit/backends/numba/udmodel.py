@@ -1,6 +1,6 @@
 from meepmeep.backends.numba.ts2d import pd_t15c, solve_xy_p5, pd_t15c_d, solve_xy_p5_d
 from meepmeep.backends.numba.utils import d_from_pkaiews
-from numba import njit
+from numba import njit, prange
 from numpy import floor, pi, zeros, nan, fabs
 from .ccintersection import ccia, ccia_and_grad
 
@@ -20,7 +20,6 @@ def _uniform_model(t, k, cf):
         return 0.0
 
 
-@njit
 def uniform_model(times, k, t0, p, a, i, e, w):
     npt = times.size
     flux = zeros(npt)
@@ -32,7 +31,7 @@ def uniform_model(times, k, t0, p, a, i, e, w):
     cf = solve_xy_p5(0.0, p, a, i, e, w)
 
     half_window_width = 0.025 + 0.5 * d_from_pkaiews(p, k, a, i, e, w, 1)
-    for j in range(npt):
+    for j in prange(npt):
         t = folded_time(times[j], t0, p)
         if fabs(t) < half_window_width:
             flux[j] = _uniform_model(t, k, cf)
@@ -54,7 +53,6 @@ def _uniform_model_and_grad(t, k, cf, dcf):
     return flux, dflux
 
 
-@njit
 def uniform_model_and_grad(times, k, t0, p, a, i, e, w):
     npt = times.size
     flux = zeros(npt)
@@ -67,7 +65,7 @@ def uniform_model_and_grad(times, k, t0, p, a, i, e, w):
     cf, dcf = solve_xy_p5_d(0.0, p, a, i, e, w)
 
     half_window_width = 0.025 + 0.5 * d_from_pkaiews(p, k, a, i, e, w, 1)
-    for j in range(npt):
+    for j in prange(npt):
         t = folded_time(times[j], t0, p)
         if fabs(t) < half_window_width:
             flux[j], dflux[j,:] = _uniform_model_and_grad(t, k, cf, dcf)
