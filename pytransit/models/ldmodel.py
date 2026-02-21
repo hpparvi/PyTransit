@@ -23,10 +23,13 @@ class LDModel:
         self._int_z = linspace(0, 1, niz)
         self._int_mu = sqrt(1 - self._int_z ** 2)
 
-    def __call__(self, mu: ndarray, x: ndarray) -> Tuple[ndarray, ndarray]:
-        return self._evaluate(mu, x), self._integrate(x)
+    def __call__(self, mu: ndarray, x: ndarray) -> Tuple[ndarray, ndarray, ndarray]:
+        return self._evaluate(mu, x), self._gradient(mu, x), self._integrate(x)
 
     def _evaluate(self, mu: ndarray, x:ndarray) -> ndarray:
+        raise NotImplementedError
+
+    def _gradient(self, mu: ndarray, x: ndarray) -> ndarray:
         raise NotImplementedError
 
     def _integrate(self, x: ndarray) -> ndarray:
