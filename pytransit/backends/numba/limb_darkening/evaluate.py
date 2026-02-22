@@ -36,3 +36,14 @@ def evaluate_ldi(ldi, pvo):
         for ipb in range(npb):
             istar[ipv, ipb] = ldi(pv[ipv, ipb])
     return istar
+
+
+@njit
+def evaluate_ldig(ldig, pvo):
+    if pvo.ndim == 1:
+        pv = pvo.reshape((1, 1, -1))
+    elif pvo.ndim == 2:
+        pv = pvo.reshape((1, pvo.shape[1], -1))
+    else:
+        pv = pvo
+    return ldig(pv[0, 0])

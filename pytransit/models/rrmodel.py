@@ -36,19 +36,19 @@ from .ldmodel import LDModel
 from .transitmodel import TransitModel
 from ..backends.numba.limb_darkening import *
 from ..backends.numba.limb_darkening.uniform import ldd_uniform
-from ..backends.numba.rrmodel import create_z_grid, calculate_weights_3d, rr_simple
+from ..backends.numba.rrmodel import create_z_grid, calculate_weights_3d, rr_simple, rr_simple_and_grad
 
 __all__ = ['RoadRunnerModel']
 
 
 class RoadRunnerModel(TransitModel):
-    ldmodels = {'uniform': (ld_uniform, ldd_uniform, ldi_uniform),
-                'linear': (ld_linear, ldd_linear, ldi_linear),
-                'quadratic': (ld_quadratic, ldd_quadratic, ldi_quadratic),
-                'quadratic-tri': (ld_quadratic_tri, ldd_quadratic_tri, ldi_quadratic_tri),
-                'nonlinear': (ld_nonlinear, ldd_nonlinear, ldi_nonlinear),
-                'general': (ld_general, ldd_general, ldi_general),
-                'power-2': (ld_power_2, ldd_power_2, ldi_power_2)}
+    ldmodels = {'uniform': (ld_uniform, ldd_uniform, ldi_uniform, ldig_uniform),
+                'linear': (ld_linear, ldd_linear, ldi_linear, ldig_linear),
+                'quadratic': (ld_quadratic, ldd_quadratic, ldi_quadratic, ldig_quadratic),
+                'quadratic-tri': (ld_quadratic_tri, ldd_quadratic_tri, ldi_quadratic_tri, ldig_quadratic_tri),
+                'nonlinear': (ld_nonlinear, ldd_nonlinear, ldi_nonlinear, ldig_nonlinear),
+                'general': (ld_general, ldd_general, ldi_general, ldig_general),
+                'power-2': (ld_power_2, ldd_power_2, ldi_power_2, ldig_power_2)}
 
     def __init__(self, backend: Literal["numba", "jax"] = "numba", return_grad: bool = False,
                  parallel: bool = False, n_threads: int | None = None,
@@ -84,7 +84,10 @@ class RoadRunnerModel(TransitModel):
         if backend == "jax":
             raise NotImplementedError("RoadRunnerModel is not yet implemented for JAX.")
         elif backend == "numba":
-            self._model = numba.njit(rr_simple, parallel=parallel)
+            if return_grad:
+                self._model = numba.njit(rr_simple_and_grad, parallel=parallel)
+            else:
+                self._model = numba.njit(rr_simple, parallel=parallel)
         else:
             raise ValueError(f"Unknown backend: {backend}")
 
@@ -99,6 +102,7 @@ class RoadRunnerModel(TransitModel):
                     self.ldmodel = self.ldmodels[ldmodel][0]
                     self.ldgrad  = self.ldmodels[ldmodel][1]
                     self.ldmmean = self.ldmodels[ldmodel][2]
+                    self.ldigmean = self.ldmodels[ldmodel][3]
             except KeyError:
                 print(
                     f"Unknown limb darkening model: {ldmodel}. Choose from [{', '.join(self.ldmodels.keys())}] or supply a callable function.")
@@ -154,7 +158,7 @@ class RoadRunnerModel(TransitModel):
 
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
-                 i: Union[float, ndarray], e: Union[float, ndarray] = 0.0, w: Union[float, ndarray] = 0.0) -> ndarray:
+                 i: Union[float, ndarray], e: Union[float, ndarray] = 0.0, w: Union[float, ndarray] = 0.0) -> ndarray | tuple[ndarray, ndarray]:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
         Parameters
@@ -197,7 +201,7 @@ class RoadRunnerModel(TransitModel):
             ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
 
             if self.return_grad:
-                ldg = evaluate_ld(self.ldgrad, self.mu, ldc)
+                ldg = self.ldgrad(self.mu, atleast_1d(ldc))
             else:
                 ldg = None
 
@@ -210,8 +214,14 @@ class RoadRunnerModel(TransitModel):
                     for ipb in range(self.npb):
                         ldi[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv, ipb], self._ldz)
 
-        flux = self._model(self.times, k, t0, p, a, i, e, w,
-                           self.nsamples, self.exptimes, ldp, ldg, ldi,
-                           self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
-
-        return flux
+        if self.return_grad:
+            dldi = evaluate_ldig(self.ldigmean, ldc)
+            flux, dflux = self._model(self.times, k, t0, p, a, i, e, w,
+                                      self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
+                                      self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
+            return flux, dflux
+        else:
+            flux = self._model(self.times, k, t0, p, a, i, e, w,
+                               self.nsamples, self.exptimes, ldp, ldg, ldi,
+                               self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
+            return flux
