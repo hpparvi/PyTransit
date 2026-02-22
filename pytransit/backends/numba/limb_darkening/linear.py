@@ -13,6 +13,13 @@ def ldi_linear(pv):
 
 
 @njit(fastmath=True)
+def ldig_linear(pv):
+    g = zeros(1)
+    g[0] = -pi / 3.0
+    return g
+
+
+@njit(fastmath=True)
 def ldd_linear(mu, pv):
     ldd = zeros((2, mu.size))
     ldd[0] = pv[0]

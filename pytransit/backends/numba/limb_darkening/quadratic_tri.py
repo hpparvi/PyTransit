@@ -16,6 +16,15 @@ def ldi_quadratic_tri(pv):
 
 
 @njit(fastmath=True)
+def ldig_quadratic_tri(pv):
+    a = sqrt(pv[0])
+    g = zeros(2)
+    g[0] = -pi * (1.0 + 2.0 * pv[1]) / (12.0 * a)
+    g[1] = -pi * a / 3.0
+    return g
+
+
+@njit(fastmath=True)
 def ldd_quadratic_tri(mu, pv):
     a = sqrt(pv[0])
     b = 2 * pv[1]

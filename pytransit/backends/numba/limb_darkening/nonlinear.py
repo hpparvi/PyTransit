@@ -13,6 +13,16 @@ def ldi_nonlinear(pv):
 
 
 @njit(fastmath=True)
+def ldig_nonlinear(pv):
+    g = zeros(4)
+    g[0] = -pi / 5.0
+    g[1] = -pi / 3.0
+    g[2] = -3.0 * pi / 7.0
+    g[3] = -pi / 2.0
+    return g
+
+
+@njit(fastmath=True)
 def ldd_nonlinear(mu, pv):
     ldd = zeros((5, mu.size))
     ldd[0] = 0.5 * pv[0] * mu**(-0.5) + pv[1] + 1.5 * pv[2] * mu**0.5 + 2.0 * pv[3] * mu

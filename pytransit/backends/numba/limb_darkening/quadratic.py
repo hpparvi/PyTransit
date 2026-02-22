@@ -12,6 +12,14 @@ def ldi_quadratic(pv):
     return 2 * pi * 1 / 12 * (-2 * pv[0] - pv[1] + 6)
 
 @njit(fastmath=True)
+def ldig_quadratic(pv):
+    g = zeros(2)
+    g[0] = -pi / 3.0
+    g[1] = -pi / 6.0
+    return g
+
+
+@njit(fastmath=True)
 def ldd_quadratic(mu, pv):
     """Quadratic limb darkening model derivatives.
 

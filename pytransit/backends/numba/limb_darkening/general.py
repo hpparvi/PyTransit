@@ -19,6 +19,15 @@ def ldi_general(pv):
 
 
 @njit(fastmath=True)
+def ldig_general(pv):
+    n = pv.size
+    g = zeros(n)
+    for i in range(n):
+        g[i] = pi * (i + 1.0) / (i + 3.0)
+    return g
+
+
+@njit(fastmath=True)
 def ldd_general(mu, pv):
     n = pv.size
     ldd = zeros((1 + n, mu.size))

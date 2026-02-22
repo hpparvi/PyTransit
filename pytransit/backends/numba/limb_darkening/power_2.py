@@ -13,6 +13,15 @@ def ldi_power_2(pv):
 
 
 @njit(fastmath=True)
+def ldig_power_2(pv):
+    c, a = pv[0], pv[1]
+    g = zeros(2)
+    g[0] = -pi * a / (a + 2.0)
+    g[1] = -2.0 * pi * c / (a + 2.0) ** 2
+    return g
+
+
+@njit(fastmath=True)
 def ldd_power_2(mu, pv):
     ldd = zeros((3, mu.size))
     ldd[0] = pv[0]*pv[1]*mu**(pv[1]-1.0)
