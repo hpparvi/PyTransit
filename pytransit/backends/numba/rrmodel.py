@@ -134,7 +134,7 @@ def interpolate_mean_limb_darkening_v(gs, dg, lda):
 
 
 def rr_simple(times: ndarray, k: float, t0: float, p: float, a: float, i: float, e: float, w: float,
-              nsamples: ndarray, exptimes: ndarray, ldp: ndarray, ldg: ndarray, ldi: float,
+              nsamples: ndarray, exptimes: ndarray, ldp: ndarray, ldg: ndarray, ldi: float, dldi: ndarray,
               weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray):
     """Simplified RoadRunner model for a single homogeneous light curve."""
 

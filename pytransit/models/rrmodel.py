@@ -28,6 +28,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Tuple, Callable, Union, List, Literal
 
+import jax
 import numba
 from numpy import ndarray, linspace, isscalar, atleast_1d, sqrt, pi, zeros
 from scipy.integrate import trapezoid
@@ -37,6 +38,7 @@ from .transitmodel import TransitModel
 from ..backends.numba.limb_darkening import *
 from ..backends.numba.limb_darkening.uniform import ldd_uniform
 from ..backends.numba.rrmodel import create_z_grid, calculate_weights_3d, rr_simple, rr_simple_and_grad
+from ..backends.jax.rrmodel import rr_simple as jax_model
 
 __all__ = ['RoadRunnerModel']
 
@@ -82,10 +84,11 @@ class RoadRunnerModel(TransitModel):
         super().__init__(backend, return_grad, parallel, n_threads)
 
         if backend == "jax":
-            raise NotImplementedError("RoadRunnerModel is not yet implemented for JAX.")
+            self._model = jax.jit(jax_model)
         elif backend == "numba":
             if return_grad:
                 self._model = numba.njit(rr_simple_and_grad, parallel=parallel)
+
             else:
                 self._model = numba.njit(rr_simple, parallel=parallel)
         else:
@@ -216,12 +219,11 @@ class RoadRunnerModel(TransitModel):
 
         if self.return_grad:
             dldi = evaluate_ldig(self.ldigmean, ldc)
-            flux, dflux = self._model(self.times, k, t0, p, a, i, e, w,
+            return self._model(self.times, k, t0, p, a, i, e, w,
                                       self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
                                       self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
-            return flux, dflux
         else:
-            flux = self._model(self.times, k, t0, p, a, i, e, w,
-                               self.nsamples, self.exptimes, ldp, ldg, ldi,
+            dldi = None
+            return self._model(self.times, k, t0, p, a, i, e, w,
+                               self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
                                self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
-            return flux
