@@ -1,6 +1,6 @@
 from meepmeep.backends.numba.ts2d import solve_xy_p5, pd_t15c, solve_xy_p5_d, pd_t15c_d
 from meepmeep.backends.numba.ts2d.position import bounding_box
-from numba import njit
+from numba import njit, prange
 from numpy import ndarray, zeros, sqrt, linspace, nan, floor, isnan, full, dot, any, fabs, mean
 
 from .ccintersection import ccia_and_k0, ccia_and_grad
@@ -46,11 +46,11 @@ def tsmodel(times: ndarray,
         if weights is not None and kmin <= kmean <= kmax:
             ik = int(floor((kmean - kmin) / dk))
             ak = (kmean - kmin - ik * dk) / dk
-            for ipb in range(npb):
+            for ipb in prange(npb):
                 ldm[ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb, :]) + ak * dot(weights[ik + 1], ldp[ipv, ipb, :])
         else:
             _, dg, wg = calculate_weights_2d(kmean, z_edges, ng)
-            for ipb in range(npb):
+            for ipb in prange(npb):
                 ldm[ipb, :] = dot(wg, ldp[ipv, ipb, :])
 
         # -----------------------------------------------------#
@@ -68,7 +68,7 @@ def tsmodel(times: ndarray,
         # --------------------------#
         # Calculate the light curve #
         # --------------------------#
-        for ipt in range(npt):
+        for ipt in prange(npt):
             epoch = floor((times[ipt] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
             tc = times[ipt] - (t0[ipv] + epoch * p[ipv])
             if not (bt1 <= tc <= bt4):
@@ -180,13 +180,13 @@ def tsmodel_and_grad(times: ndarray,
         if weights is not None and kmin <= kmean <= kmax:
             ik = int(floor((kmean - kmin) / dk))
             ak = (kmean - kmin - ik * dk) / dk
-            for ipb in range(npb):
+            for ipb in prange(npb):
                 ldm[ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb, :]) + ak * dot(weights[ik + 1], ldp[ipv, ipb, :])
                 for j in range(nldc):
                     dldm_dc[ipb, j, :] = (1.0 - ak) * dot(weights[ik], ldg[ipv, ipb, j + 1, :]) + ak * dot(weights[ik + 1], ldg[ipv, ipb, j + 1, :])
         else:
-            _, dg_calc, wg = calculate_weights_2d(kmean, z_edges, ng)
-            for ipb in range(npb):
+            _, dg, wg = calculate_weights_2d(kmean, z_edges, ng)
+            for ipb in prange(npb):
                 ldm[ipb, :] = dot(wg, ldp[ipv, ipb, :])
                 for j in range(nldc):
                     dldm_dc[ipb, j, :] = dot(wg, ldg[ipv, ipb, j + 1, :])
@@ -206,7 +206,7 @@ def tsmodel_and_grad(times: ndarray,
         # ----------------------------------#
         # Calculate the light curve & grads #
         # ----------------------------------#
-        for ipt in range(npt):
+        for ipt in prange(npt):
             epoch = floor((times[ipt] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
             tc = times[ipt] - (t0[ipv] + epoch * p[ipv])
             if not (bt1 <= tc <= bt4):
