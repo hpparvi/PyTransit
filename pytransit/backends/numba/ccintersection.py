@@ -93,6 +93,45 @@ def ccia(r1, r2, b):
 
 
 @njit
+def ccia_and_k0(r1, r2, b):
+    """
+    Calculate the area of intersection between two circles and the angle k0.
+
+    Adapted from Agol et al. (2020). Handles all overlap cases: no overlap,
+    partial overlap, and complete occultation.
+
+    Parameters
+    ----------
+    r1 : float
+        Radius of the first circle (e.g., the occulted star).
+    r2 : float
+        Radius of the second circle (e.g., the occulting planet).
+    b : float
+        Distance between the centers of the two circles.
+
+    Returns
+    -------
+    a_lens : float
+        The area of the intersection (overlap region).
+    """
+    if r1 + r2 <= b:
+        return 0.0, 0.0
+    elif abs(r1 - r2) < b and b <= r1 + r2:
+        x, y, z = _tsort(r1, r2, b)
+        a_kite = 0.5 * sqrt((x + (y + z)) * (z - (x - y)) * (z + (x - y)) * (x + (y - z)))
+        k0 = arctan2(2.0 * a_kite, (r2 - r1) * (r2 + r1) + b * b)
+        k1 = arctan2(2.0 * a_kite, (r1 - r2) * (r1 + r2) + b * b)
+        a_lens = r1 * r1 * k1 + r2 * r2 * k0 - a_kite
+        return a_lens, k0
+    elif b <= r1 - r2:
+        return pi * r2 ** 2, pi
+    elif b <= r2 - r1:
+        return pi * r1 ** 2, 0.0
+    else:
+        return nan, nan
+
+
+@njit
 def ccia_and_grad(r1, r2, b):
     """
     Calculate the area of intersection between two circles and the angle k0.
