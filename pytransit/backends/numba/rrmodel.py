@@ -256,22 +256,16 @@ def rr_simple_and_grad(times: ndarray, k: float, t0: float, p: float, a: float, 
 
     # ------------------------------------------ #
     # Calculate the limb darkening mean (ldm)    #
-    # and its finite-difference derivative in k  #
     # ------------------------------------------ #
     ldm = zeros(ng)
-    dldm_dk = zeros(ng)
 
     if kmin <= k <= kmax:
         ik = int(floor((k - kmin) / dk))
         ak = (k - kmin - ik * dk) / dk
         ldm[:] = (1.0 - ak) * dot(weights[ik], ldp[0, 0]) + ak * dot(weights[ik + 1], ldp[0, 0])
-        dldm_dk[:] = (dot(weights[ik + 1], ldp[0, 0]) - dot(weights[ik], ldp[0, 0])) / dk
     else:
         _, _, wg = calculate_weights_2d(k, z_edges, ng)
         ldm[:] = dot(wg, ldp[0, 0])
-        eps_k = 1e-5
-        _, _, wg2 = calculate_weights_2d(k + eps_k, z_edges, ng)
-        dldm_dk[:] = (dot(wg2, ldp[0, 0]) - ldm) / eps_k
 
     # ------------------------------------------ #
     # LD coefficient derivatives: dldm_dc        #
@@ -325,11 +319,8 @@ def rr_simple_and_grad(times: ndarray, k: float, t0: float, p: float, a: float, 
                 # dI_p/dz = (dI_p/dg) / (1+k)
                 dIp_dz = dIp_dg / (1.0 + k)
 
-                # --- k derivative ---
-                # dI_p/dk has two paths: through g and through ldm(k)
-                dIp_dk_via_g = dIp_dg * (-z / (1.0 + k) ** 2)
-                dIp_dk_via_w = interpolate_mean_limb_darkening_s(g, dg, dldm_dk)
-                dIp_dk = dIp_dk_via_g + dIp_dk_via_w
+                # --- k derivative (dldm/dk ≈ 0) ---
+                dIp_dk = dIp_dg * (-z / (1.0 + k) ** 2)
                 dflux[ipt, 0] += -(dIp_dk * aplanet + iplanet * dadk) / ldi_val
 
                 # --- t0 derivative ---
