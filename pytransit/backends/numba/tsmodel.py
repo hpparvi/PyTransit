@@ -72,7 +72,7 @@ def tsmodel(times: ndarray,
             epoch = floor((times[ipt] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
             tc = times[ipt] - (t0[ipv] + epoch * p[ipv])
             if not (bt1 <= tc <= bt4):
-                flux[ipt] = 1.0
+                flux[ipv, :, ipt] = 1.0
             else:
                 for isample in range(1, nsamples[0] + 1):
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
