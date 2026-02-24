@@ -3,7 +3,8 @@ import numba
 
 from numpy import array, ndarray
 
-from pytransit.backends.numba.udmodel import uniform_model as nb_model, uniform_model_and_grad as nb_model_with_grad
+from pytransit.backends.numba.udmodel import uniform_model as nb_model
+from pytransit.backends.numba.udmodel_grad import uniform_model_and_grad as nb_model_with_grad
 from pytransit.backends.jax.udmodel import uniform_model as jax_model, _uniform_model_fwd as jax_model_with_grad
 from pytransit.models.transitmodel import TransitModel
 
