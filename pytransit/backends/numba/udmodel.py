@@ -28,7 +28,7 @@ def _folded_time(t, t0, p):
 
 
 @njit
-def _uniform_model(t, k, cf, flux):
+def _udmodel(t, k, cf, flux):
     """Compute the flux deficit for a single time stamp (uniform disk).
 
     Evaluates the circle-circle intersection area between the stellar
@@ -52,7 +52,7 @@ def _uniform_model(t, k, cf, flux):
         flux[0] = -is_area / pi
 
 
-def uniform_model(times, k, t0, p, a, i, e, w):
+def udmodel(times, k, t0, p, a, i, e, w):
     """Evaluate the uniform-disk transit model over an array of times.
 
     Computes the relative flux deficit caused by a planet transiting a
@@ -96,5 +96,5 @@ def uniform_model(times, k, t0, p, a, i, e, w):
     for j in prange(npt):
         t = _folded_time(times[j], t0, p)
         if fabs(t) < half_window_width:
-            _uniform_model(t, k, cf, flux[j:j+1])
+            _udmodel(t, k, cf, flux[j:j + 1])
     return flux

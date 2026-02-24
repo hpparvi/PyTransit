@@ -8,7 +8,7 @@ from .udmodel import _folded_time
 
 
 @njit
-def _uniform_model_and_grad(t, k, cf, dcf, flux, dflux):
+def _udmodel_grad(t, k, cf, dcf, flux, dflux):
     """Compute the flux deficit and its gradient for a single time stamp.
 
     Evaluates the circle-circle intersection area and its analytical
@@ -39,7 +39,7 @@ def _uniform_model_and_grad(t, k, cf, dcf, flux, dflux):
             dflux[i+1] = - dadz * dz[i] / pi
 
 
-def uniform_model_and_grad(times, k, t0, p, a, i, e, w):
+def udmodel_grad(times, k, t0, p, a, i, e, w):
     """Evaluate the uniform-disk transit model and gradient over an array of times.
 
     Computes both the relative flux deficit and its analytical gradient
@@ -87,5 +87,5 @@ def uniform_model_and_grad(times, k, t0, p, a, i, e, w):
     for j in prange(npt):
         t = _folded_time(times[j], t0, p)
         if fabs(t) < half_window_width:
-            _uniform_model_and_grad(t, k, cf, dcf, flux[j:j+1], dflux[j,:])
+            _udmodel_grad(t, k, cf, dcf, flux[j:j + 1], dflux[j, :])
     return flux, dflux
