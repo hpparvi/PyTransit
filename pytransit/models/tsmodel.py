@@ -85,7 +85,7 @@ class TransmissionSpectroscopyModel(TransitModel):
                 'power-2': (ld_power_2, ldd_power_2, ldi_power_2, ldig_power_2)}
 
     def __init__(self, backend: Literal["numba", "jax"] = "numba", return_grad: bool = False,
-                 parallel: bool = False, n_threads: int | None = None,
+                 parallel: bool = False, n_threads: int | None = None, fastmath: bool = False,
                  ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  precompute_weights: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
                  nzin: int = 20, nzlimb: int = 20, zcut: float = 0.7, ng: int = 100, **kwargs):
@@ -94,16 +94,12 @@ class TransmissionSpectroscopyModel(TransitModel):
         if backend == "jax":
             raise NotImplementedError("JAX backend not yet implemented for TransmissionSpectroscopyModel")
         elif backend == "numba":
-            if parallel:
-                if return_grad:
-                    self._model = numba.njit(tsmodel_and_grad.py_func, parallel=True)
-                else:
-                    self._model = numba.njit(tsmodel.py_func, parallel=True)
+            needs_rejit = parallel or fastmath
+            if needs_rejit:
+                fn = tsmodel_and_grad.py_func if return_grad else tsmodel.py_func
+                self._model = numba.njit(fn, parallel=parallel, fastmath=fastmath)
             else:
-                if return_grad:
-                    self._model = tsmodel_and_grad
-                else:
-                    self._model = tsmodel
+                self._model = tsmodel_and_grad if return_grad else tsmodel
         else:
             raise ValueError(f"Unknown backend: {backend}")
 

@@ -4,7 +4,7 @@ from numba import njit, prange
 from numpy import ndarray, zeros, sqrt, linspace, nan, floor, isnan, full, dot, any, fabs, mean
 
 from .ccintersection import ccia_and_k0, ccia_and_grad
-from .rrmodel import calculate_weights_2d, interpolate_mean_limb_darkening_s, interpolate_mean_limb_darkening_and_grad_s
+from .rrmodel import calculate_weights_2d, interpolate_mean_limb_darkening, interpolate_mean_limb_darkening_and_grad
 
 @njit(fastmath=False)
 def tsmodel(times: ndarray,
@@ -39,6 +39,12 @@ def tsmodel(times: ndarray,
         kmean = mean(k[ipv])
         kmax = max(k[ipv])
         afac = k[ipv] ** 2 / kmean ** 2
+
+        # Pre-compute reciprocals to replace divisions in the hot loop
+        inv_nsamples = 1.0 / nsamples[0]
+        inv_istar = zeros(npb)
+        for ipb in range(npb):
+            inv_istar[ipb] = 1.0 / istar[ipv, ipb]
 
         # -----------------------------------#
         # Calculate the limb darkening means #
@@ -81,13 +87,12 @@ def tsmodel(times: ndarray,
                     dadk = 2.0*kmean*k0
                     if z <= 1.0 - kmax:
                         for ipb in range(npb):
-                            iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
-                            flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * ap0 * afac[ipb]) / istar[ipv, ipb]
+                            iplanet = interpolate_mean_limb_darkening(z / (1.0 + kmean), dg, ldm[ipb])
+                            flux[ipv, ipb, ipt] += (1.0 - iplanet * ap0 * afac[ipb] * inv_istar[ipb]) * inv_nsamples
                     else:
                         for ipb in range(npb):
-                            iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
-                            flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * (ap0 + (k[ipv, ipb]-kmean)*dadk)) / istar[ipv, ipb]
-                flux[ipv, :, ipt] /= nsamples[0]
+                            iplanet = interpolate_mean_limb_darkening(z / (1.0 + kmean), dg, ldm[ipb])
+                            flux[ipv, ipb, ipt] += (1.0 - iplanet * (ap0 + (k[ipv, ipb]-kmean)*dadk) * inv_istar[ipb]) * inv_nsamples
     return flux
 
 
@@ -174,6 +179,12 @@ def tsmodel_and_grad(times: ndarray,
                 kmax_band = k[ipv, ipb]
         afac = k[ipv] ** 2 / kmean ** 2
 
+        # Pre-compute reciprocals to replace divisions in the hot loop
+        inv_nsamples = 1.0 / nsamples[0]
+        inv_istar = zeros(npb)
+        for ipb in range(npb):
+            inv_istar[ipb] = 1.0 / istar[ipv, ipb]
+
         # -----------------------------------#
         # Calculate the limb darkening means #
         # -----------------------------------#
@@ -225,72 +236,68 @@ def tsmodel_and_grad(times: ndarray,
                         ap0, (dadk_mean, dadz_mean) = ccia_and_grad(1.0, kmean, z)
 
                         for ipb in range(npb):
-                            istar_val = istar[ipv, ipb]
+                            inv_is = inv_istar[ipb]
                             g = z / (1.0 + kmean)
-                            iplanet, dIp_dg = interpolate_mean_limb_darkening_and_grad_s(g, dg, ldm[ipb])
+                            iplanet, dIp_dg = interpolate_mean_limb_darkening_and_grad(g, dg, ldm[ipb])
                             aeff = ap0 * afac[ipb]
 
-                            flux[ipv, ipb, ipt] += (istar_val - iplanet * aeff) / istar_val
+                            flux[ipv, ipb, ipt] += (1.0 - iplanet * aeff * inv_is) * inv_nsamples
 
                             # k derivative: d(aeff)/dk_ipb = ap0 * 2*k[ipb] / kmean^2
                             daeff_dk = ap0 * 2.0 * k[ipv, ipb] / (kmean * kmean)
-                            dflux[ipv, ipb, ipt, 0] += -(iplanet * daeff_dk) / istar_val
+                            dflux[ipv, ipb, ipt, 0] += -(iplanet * daeff_dk) * inv_is * inv_nsamples
 
                             # z derivatives for orbital parameters
                             dIp_dz = dIp_dg / (1.0 + kmean)
                             daeff_dz = dadz_mean * afac[ipb]
+                            dfdz = (dIp_dz * aeff + iplanet * daeff_dz) * inv_is * inv_nsamples
 
                             # t0 derivative: dz/dt0 = -dz[0]
-                            dflux[ipv, ipb, ipt, 1] += (dIp_dz * aeff + iplanet * daeff_dz) * dz[0] / istar_val
+                            dflux[ipv, ipb, ipt, 1] += dfdz * dz[0]
                             # p, a, i, e, w derivatives
                             for ip in range(1, 6):
-                                dflux[ipv, ipb, ipt, ip + 1] += -(dIp_dz * aeff + iplanet * daeff_dz) * dz[ip] / istar_val
+                                dflux[ipv, ipb, ipt, ip + 1] += -dfdz * dz[ip]
 
                             # LD coefficient derivatives
                             for j in range(nldc):
-                                dIp_dcj = interpolate_mean_limb_darkening_s(g, dg, dldm_dc[ipb, j])
-                                dflux[ipv, ipb, ipt, 7 + j] += -aeff * dIp_dcj / istar_val
+                                dIp_dcj = interpolate_mean_limb_darkening(g, dg, dldm_dc[ipb, j])
+                                dflux[ipv, ipb, ipt, 7 + j] += -aeff * dIp_dcj * inv_is * inv_nsamples
                     else:
                         # -------------------------------------------------#
                         # Edge case: planet may cross the stellar limb     #
                         # -------------------------------------------------#
                         for ipb in range(npb):
-                            istar_val = istar[ipv, ipb]
+                            inv_is = inv_istar[ipb]
                             kb = k[ipv, ipb]
                             g = z / (1.0 + kb)
-                            iplanet, dIp_dg = interpolate_mean_limb_darkening_and_grad_s(g, dg, ldm[ipb])
+                            iplanet, dIp_dg = interpolate_mean_limb_darkening_and_grad(g, dg, ldm[ipb])
                             aplanet, (dadk, dadz) = ccia_and_grad(1.0, kb, z)
 
-                            flux[ipv, ipb, ipt] += (istar_val - iplanet * aplanet) / istar_val
+                            flux[ipv, ipb, ipt] += (1.0 - iplanet * aplanet * inv_is) * inv_nsamples
 
                             # k derivative
                             dIp_dk = dIp_dg * (-z / (1.0 + kb) ** 2)
-                            dflux[ipv, ipb, ipt, 0] += -(dIp_dk * aplanet + iplanet * dadk) / istar_val
+                            dflux[ipv, ipb, ipt, 0] += -(dIp_dk * aplanet + iplanet * dadk) * inv_is * inv_nsamples
 
                             # z derivatives for orbital parameters
                             dIp_dz = dIp_dg / (1.0 + kb)
+                            dfdz = (dIp_dz * aplanet + iplanet * dadz) * inv_is * inv_nsamples
 
                             # t0 derivative
-                            dflux[ipv, ipb, ipt, 1] += (dIp_dz * aplanet + iplanet * dadz) * dz[0] / istar_val
+                            dflux[ipv, ipb, ipt, 1] += dfdz * dz[0]
                             # p, a, i, e, w derivatives
                             for ip in range(1, 6):
-                                dflux[ipv, ipb, ipt, ip + 1] += -(dIp_dz * aplanet + iplanet * dadz) * dz[ip] / istar_val
+                                dflux[ipv, ipb, ipt, ip + 1] += -dfdz * dz[ip]
 
                             # LD coefficient derivatives
                             for j in range(nldc):
-                                dIp_dcj = interpolate_mean_limb_darkening_s(g, dg, dldm_dc[ipb, j])
-                                dflux[ipv, ipb, ipt, 7 + j] += -aplanet * dIp_dcj / istar_val
-
-                # Supersample average
-                for ipb in range(npb):
-                    flux[ipv, ipb, ipt] /= nsamples[0]
-                    for ip in range(7 + nldc):
-                        dflux[ipv, ipb, ipt, ip] /= nsamples[0]
+                                dIp_dcj = interpolate_mean_limb_darkening(g, dg, dldm_dc[ipb, j])
+                                dflux[ipv, ipb, ipt, 7 + j] += -aplanet * dIp_dcj * inv_is * inv_nsamples
 
                 # Add the distar contribution for LD coefficients
                 for ipb in range(npb):
-                    istar_val = istar[ipv, ipb]
+                    inv_is = inv_istar[ipb]
                     for j in range(nldc):
-                        dflux[ipv, ipb, ipt, 7 + j] += (1.0 - flux[ipv, ipb, ipt]) * distar[ipv, ipb, j] / istar_val
+                        dflux[ipv, ipb, ipt, 7 + j] += (1.0 - flux[ipv, ipb, ipt]) * distar[ipv, ipb, j] * inv_is
 
     return flux, dflux
