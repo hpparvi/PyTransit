@@ -113,6 +113,8 @@ class TransitModel:
 
         if include_orbit_variations:
             self.nor = self.ntc
+        else:
+            self.nor = 1
 
         if self.epids.size != self.nlc:
             raise ValueError(f"Epoch index array size ({self.epids.size}) should equal to the number of ligt curves ({self.nlc}).")
