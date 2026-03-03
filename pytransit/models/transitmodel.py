@@ -27,39 +27,10 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import jax
-import numba
 
 from typing import Literal
 
-from numpy import (ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype, integer, float64, array,
-                   atleast_2d, full)
-
-
-def _normalize_parameter_shape(name, p, npv, nd2):
-    p = asarray(p)
-    if p.ndim == 0:
-        if npv == 1 and nd2 == 1:
-            return atleast_2d(p)
-        else:
-            return full((npv, nd2), p)
-    elif p.ndim == 1:
-        if p.size == nd2:
-            if npv > 1:
-                raise ValueError(
-                    f"Cannot cast 1D {name} parameter array with a shape {p.shape} to a 2D array with a shape ({npv}, {nd2}).")
-            return atleast_2d(p)
-        else:
-            if p.size != npv:
-                raise ValueError(
-                    f"Cannot cast 1D {name} parameter array with a shape {p.shape} to a 2D array with a shape ({npv}, {nd2}).")
-            return atleast_2d(p).T
-    elif p.ndim == 2:
-        if p.shape[1] != nd2:
-            raise ValueError(
-                f"The 2D {name} parameter array with a shape {p.shape} should have a shape ({npv}, {nd2}).")
-        return p
-    else:
-        raise ValueError(f"The 2D {name} parameter array  with a shape {p.shape} should have a shape ({npv}, {nd2}).")
+from numpy import (ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype, integer, float64, array)
 
 
 class TransitModel:
@@ -72,7 +43,6 @@ class TransitModel:
         self.n_threads = n_threads
         self.parallel = parallel
 
-        self_model = None
         self.times = None
         self.lcids = None
         self.pbids = None
@@ -83,7 +53,8 @@ class TransitModel:
         self.nlc: int = 0
         self.npt: int = 0
         self.npb: int = 0
-        self.nep: int = 0
+        self.ntc: int = 0
+        self.nor: int = 0
 
         self.simple = True
         self._time_id: int | None = None
@@ -99,12 +70,13 @@ class TransitModel:
                  pbids: ndarray | list | None = None,
                  epids: ndarray | list | None = None,
                  nsamples: ndarray | list | None  = None,
-                 exptimes: ndarray | list | None = None) -> None:
+                 exptimes: ndarray | list | None = None,
+                 include_orbit_variations: bool = False) -> None:
 
         if id(times) == self._time_id and lcids is None and pbids is None and nsamples is None and exptimes is None and epids is None:
             return
 
-        self.time_id  = id(times)
+        self._time_id = id(times)
         self.times    = array(times, float64)
         self.npt      = self.times.size
 
@@ -137,13 +109,16 @@ class TransitModel:
         # Epoch indices
         # -------------
         self.epids = asarray(epids) if epids is not None else zeros(self.nlc, 'int')
-        self.nep = unique(self.epids).size
+        self.ntc = unique(self.epids).size
+
+        if include_orbit_variations:
+            self.nor = self.ntc
 
         if self.epids.size != self.nlc:
             raise ValueError(f"Epoch index array size ({self.epids.size}) should equal to the number of ligt curves ({self.nlc}).")
 
-        if not (self.epids.max() == (self.nep-1) and self.epids.min() == 0):
-            raise ValueError(f"Epoch indices (`epids`) for {self.nep} unique epochs should be given as integers between 0 and {self.nep - 1}.")
+        if not (self.epids.max() == (self.ntc-1) and self.epids.min() == 0):
+            raise ValueError(f"Epoch indices (`epids`) for {self.ntc} unique epochs should be given as integers between 0 and {self.ntc - 1}.")
 
         # Supersampling
         # -------------
@@ -151,7 +126,7 @@ class TransitModel:
         self.nsamples = atleast_1d(nsamples) if nsamples is not None else ones(self.nlc, 'int')
         self.exptimes = atleast_1d(exptimes) if exptimes is not None else zeros(self.nlc, 'int')
 
-        if self.npb > 1 or self.nep > 1:
+        if self.npb > 1 or self.ntc > 1:
             self.simple = False
 
         if self.backend == "jax":
@@ -160,33 +135,6 @@ class TransitModel:
             self.epids = jax.device_put(self.epids)
             self.nsamples = jax.device_put(self.nsamples)
             self.exptimes = jax.device_put(self.exptimes)
-
-    @staticmethod
-    def _normalize_parameter_shapes(k, t0, p, a, i, e, w, npb, ntc, nor):
-        k = asarray(k)
-
-        if k.ndim == 0:
-            npv = 1
-        elif k.ndim == 1:
-            if k.size == npb:
-                npv = 1
-            else:
-                npv = k.size
-        elif k.ndim == 2:
-            if k.shape[1] != npb:
-                raise ValueError("The radius ratio array should have a shape (npv, npb).")
-            npv = k.shape[0]
-        else:
-            raise ValueError("The radius ratio array should have a shape (npv, npb).")
-
-        ks = _normalize_parameter_shape('radius ratio', k, npv, npb)
-        t0s = _normalize_parameter_shape('transit center', t0, npv, ntc)
-        ps = _normalize_parameter_shape('period', p, npv, nor)
-        smas = _normalize_parameter_shape('semi-major axis', a, npv, nor)
-        incs = _normalize_parameter_shape('inclination', i, npv, nor)
-        eccs = _normalize_parameter_shape('eccentricity', e, npv, nor)
-        ws = _normalize_parameter_shape('argument of periastron', w, npv, nor)
-        return ks, t0s, ps, smas, incs, eccs, ws
 
     def evaluate(self,
                  k: float | ndarray,
