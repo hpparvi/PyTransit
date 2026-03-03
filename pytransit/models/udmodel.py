@@ -22,13 +22,15 @@ class UniformDiskModel(TransitModel):
                 self._model = jax.jit(jaxmodel_grad)
             else:
                 self._model = jax.jit(jaxmodel)
-
-    def set_data(self, times) -> None:
-        if self.backend == 'jax':
-            self.times = jax.device_put(times)
-        else:
-            self.times = array(times)
-
-    def evaluate(self, k, t0, p, a, i, e, w) -> ndarray | tuple[ndarray, ndarray]:
+    def evaluate(self,
+                 k: float | ndarray,
+                 t0: float | ndarray,
+                 p: float | ndarray,
+                 a: float | ndarray,
+                 i: float | ndarray,
+                 e: float | ndarray = 0.0,
+                 w: float | ndarray = 0.0,
+                 ldp: ndarray | None = None) -> ndarray | tuple[ndarray, ndarray]:
+        k, t0, p, a, i, e, w = self._normalize_parameter_shapes(k, t0, p, a, i, e, w)
         return self._model(self.times, k, t0, p, a, i, e, w)
 

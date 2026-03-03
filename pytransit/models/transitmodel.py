@@ -1,5 +1,5 @@
 #  PyTransit: fast and easy exoplanet transit modelling in Python.
-#  Copyright (C) 2010-2019  Hannu Parviainen
+#  Copyright (C) 2010-2026  Hannu Parviainen
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -31,11 +31,39 @@ import numba
 
 from typing import Literal
 
-from numpy import ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype, integer, float64, array
+from numpy import (ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype, integer, float64, array,
+                   atleast_2d, full)
 
 
-class TransitModel(object):
-    """Exoplanet transit light curve model
+def _normalize_parameter_shape(name, p, npv, nd2):
+    p = asarray(p)
+    if p.ndim == 0:
+        if npv == 1 and nd2 == 1:
+            return atleast_2d(p)
+        else:
+            return full((npv, nd2), p)
+    elif p.ndim == 1:
+        if p.size == nd2:
+            if npv > 1:
+                raise ValueError(
+                    f"Cannot cast 1D {name} parameter array with a shape {p.shape} to a 2D array with a shape ({npv}, {nd2}).")
+            return atleast_2d(p)
+        else:
+            if p.size != npv:
+                raise ValueError(
+                    f"Cannot cast 1D {name} parameter array with a shape {p.shape} to a 2D array with a shape ({npv}, {nd2}).")
+            return atleast_2d(p).T
+    elif p.ndim == 2:
+        if p.shape[1] != nd2:
+            raise ValueError(
+                f"The 2D {name} parameter array with a shape {p.shape} should have a shape ({npv}, {nd2}).")
+        return p
+    else:
+        raise ValueError(f"The 2D {name} parameter array  with a shape {p.shape} should have a shape ({npv}, {nd2}).")
+
+
+class TransitModel:
+    """Exoplanet transit light curve model.
     """
     def __init__(self, backend: Literal["numba", "jax"] = "numba", return_grad: bool = False,
                  parallel: bool = False, n_threads: int | None = None, **kwargs):
@@ -77,7 +105,7 @@ class TransitModel(object):
             return
 
         self.time_id  = id(times)
-        self.times     = array(times, float64)
+        self.times    = array(times, float64)
         self.npt      = self.times.size
 
         # Light curve indices
@@ -133,6 +161,33 @@ class TransitModel(object):
             self.nsamples = jax.device_put(self.nsamples)
             self.exptimes = jax.device_put(self.exptimes)
 
+    @staticmethod
+    def _normalize_parameter_shapes(k, t0, p, a, i, e, w, npb, ntc, nor):
+        k = asarray(k)
+
+        if k.ndim == 0:
+            npv = 1
+        elif k.ndim == 1:
+            if k.size == npb:
+                npv = 1
+            else:
+                npv = k.size
+        elif k.ndim == 2:
+            if k.shape[1] != npb:
+                raise ValueError("The radius ratio array should have a shape (npv, npb).")
+            npv = k.shape[0]
+        else:
+            raise ValueError("The radius ratio array should have a shape (npv, npb).")
+
+        ks = _normalize_parameter_shape('radius ratio', k, npv, npb)
+        t0s = _normalize_parameter_shape('transit center', t0, npv, ntc)
+        ps = _normalize_parameter_shape('period', p, npv, nor)
+        smas = _normalize_parameter_shape('semi-major axis', a, npv, nor)
+        incs = _normalize_parameter_shape('inclination', i, npv, nor)
+        eccs = _normalize_parameter_shape('eccentricity', e, npv, nor)
+        ws = _normalize_parameter_shape('argument of periastron', w, npv, nor)
+        return ks, t0s, ps, smas, incs, eccs, ws
+
     def evaluate(self,
                  k: float | ndarray,
                  t0: float | ndarray,
@@ -141,12 +196,6 @@ class TransitModel(object):
                  i: float | ndarray,
                  e: float | ndarray = 0.0,
                  w: float | ndarray = 0.0,
-                 d: float | ndarray | None = None,
-                 b: float | ndarray | None = None,
-                 g: float | ndarray | None = None,
-                 rho: float | ndarray | None = None,
-                 secw: float | ndarray | None = None,
-                 sesw: float | ndarray | None = None,
-                 **kwargs) -> ndarray:
+                 ldp: ndarray | None = None) -> ndarray | tuple[ndarray, ndarray]:
         raise NotImplementedError
 
