@@ -37,7 +37,8 @@ from .ldmodel import LDModel
 from .transitmodel import TransitModel
 from ..backends.numba.limb_darkening import *
 from ..backends.numba.limb_darkening.uniform import ldd_uniform
-from ..backends.numba.rrmodel import create_z_grid, calculate_weights_3d, rr_simple, rr_simple_and_grad
+from ..backends.numba.rrmodel import create_z_grid, calculate_weights_3d, rr_simple
+from ..backends.numba.rrmodel_grad import rr_simple_and_grad
 from ..backends.jax.rrmodel import rr_simple as jax_model
 
 __all__ = ['RoadRunnerModel']
