@@ -30,7 +30,7 @@ import jax
 
 from typing import Literal
 
-from numpy import (ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype, integer, float64, array)
+from numpy import (ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype, integer, float64, array, full, isscalar)
 
 
 class TransitModel:
@@ -94,14 +94,14 @@ class TransitModel:
 
         # Passband indices
         # ----------------
-        self.pbids    = asarray(pbids) if pbids is not None else zeros(self.nlc, 'int')
+        self.pbids = asarray(pbids) if pbids is not None else zeros(self.nlc, 'int')
         self.npb = unique(self.pbids).size
 
         if not issubdtype(self.pbids.dtype, integer):
             raise ValueError(f"The passband indices must be given as integers instead of {self.pbids.dtype}.")
 
         if self.pbids.size != self.nlc:
-            raise ValueError(f"Passband index array size ({self.pbids.size}) should equal to the number of ligt curves ({self.nlc}).")
+            raise ValueError(f"Passband index array size ({self.pbids.size}) should equal to the number of light curves ({self.nlc}).")
 
         if not (self.pbids.max() == (self.npb-1) and self.pbids.min() == 0):
             raise ValueError(f"Passband indices (`pbids`) for {self.npb} unique passbands should be given as integers between 0 and {self.npb - 1}.")
@@ -117,7 +117,7 @@ class TransitModel:
             self.nor = 1
 
         if self.epids.size != self.nlc:
-            raise ValueError(f"Epoch index array size ({self.epids.size}) should equal to the number of ligt curves ({self.nlc}).")
+            raise ValueError(f"Epoch index array size ({self.epids.size}) should equal to the number of light curves ({self.nlc}).")
 
         if not (self.epids.max() == (self.ntc-1) and self.epids.min() == 0):
             raise ValueError(f"Epoch indices (`epids`) for {self.ntc} unique epochs should be given as integers between 0 and {self.ntc - 1}.")
@@ -125,8 +125,29 @@ class TransitModel:
         # Supersampling
         # -------------
         # A number of samples and the exposure time for each light curve.
-        self.nsamples = atleast_1d(nsamples) if nsamples is not None else ones(self.nlc, 'int')
-        self.exptimes = atleast_1d(exptimes) if exptimes is not None else zeros(self.nlc, 'int')
+        if nsamples is None:
+            self.nsamples = ones(self.nlc, 'int')
+        else:
+            if isscalar(nsamples):
+                self.nsamples = full(self.nlc, nsamples, 'int')
+            else:
+                self.nsamples = asarray(nsamples, 'int')
+                if self.nsamples.min() < 1:
+                    raise ValueError(f"The number of samples must be at least 1, but got {self.nsamples.min()}.")
+                if self.nsamples.size != self.nlc:
+                    raise ValueError(f"Number of samples array size ({self.nsamples.size}) should equal to the number of light curves ({self.nlc}).")
+
+        if exptimes is None:
+            self.exptimes = zeros(self.nlc, 'd')
+        else:
+            if isscalar(exptimes):
+                self.exptimes = full(self.nlc, exptimes, 'd')
+            else:
+                self.exptimes = asarray(exptimes, 'd')
+                if self.exptimes.min() < 0.0:
+                    raise ValueError(f"The exposure time must be positive, but got {self.exptimes.min()}.")
+                if self.exptimes.size != self.nlc:
+                    raise ValueError(f"Exposure time array size ({self.exptimes.size}) should equal to the number of light curves ({self.nlc}).")
 
         if self.npb > 1 or self.ntc > 1:
             self.simple = False
