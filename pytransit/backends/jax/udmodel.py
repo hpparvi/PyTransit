@@ -27,142 +27,125 @@ def _compute_half_window(k_max, p, a, inc, e, w):
 
 def _udmodel_fwd(times, k, t0, p, a, i, e, w,
                  lcids, pbids, epids, nsamples, exptimes,
-                 npv, npb, nep):
+                 npb, nep):
     """Forward pass returning flux and per-parameter Jacobian.
 
     Parameters
     ----------
     times : array (npt,)
-    k : array (npv, npb)
-    t0 : array (npv, nep)
-    p, a, i, e, w : array (npv, nep)
+    k : array (npb,)
+    t0 : array (nep,)
+    p, a, i, e, w : array (nep,)
     lcids : array (npt,)
     pbids : array (nlc,)
     epids : array (nlc,)
     nsamples : array (nlc,)
     exptimes : array (nlc,)
-    npv, npb, nep : int
+    npb, nep : int
 
     Returns
     -------
-    flux : array (npv, npt)
+    flux : array (npt,)
         Flux deviation (negative during transit, zero outside).
-    dflux : array (npv, npt, 7)
+    dflux : array (npt, 7)
         Jacobian rows: dflux/d(k, t0, p, a, i, e, w).
     """
-    all_flux = []
-    all_dflux = []
+    # Pre-compute Taylor coefficients for all epochs
+    cfs, dcfs = jax.vmap(
+        lambda pp, aa, ii, ee, ww: solve_xy_p5_d(0.0, pp, aa, ii, ee, ww)
+    )(p, a, i, e, w)
 
-    for ipv in range(npv):
-        k_pv = k[ipv]       # (npb,)
-        t0_pv = t0[ipv]     # (nep,)
-        p_pv = p[ipv]       # (nep,)
-        a_pv = a[ipv]       # (nep,)
-        i_pv = i[ipv]       # (nep,)
-        e_pv = e[ipv]       # (nep,)
-        w_pv = w[ipv]       # (nep,)
+    # Compute half-window per epoch using max k across passbands
+    k_max = jnp.max(k)
+    half_windows = jax.vmap(
+        lambda pp, aa, ii, ee, ww: _compute_half_window(k_max, pp, aa, ii, ee, ww)
+    )(p, a, i, e, w)
 
-        # Pre-compute Taylor coefficients for all epochs
-        cfs, dcfs = jax.vmap(
-            lambda pp, aa, ii, ee, ww: solve_xy_p5_d(0.0, pp, aa, ii, ee, ww)
-        )(p_pv, a_pv, i_pv, e_pv, w_pv)
-        # cfs: (nep, 2, 5), dcfs: (nep, 6, 2, 5)
+    # Gather per-time-point parameters using index arrays
+    ilcs = lcids
+    ipbs = pbids[ilcs]
+    if nep > 1:
+        ieps = epids[ilcs]
+    else:
+        ieps = jnp.zeros_like(ilcs)
 
-        # Compute half-window per epoch using max k across passbands
-        k_max = jnp.max(k_pv)
-        half_windows = jax.vmap(
-            lambda pp, aa, ii, ee, ww: _compute_half_window(k_max, pp, aa, ii, ee, ww)
-        )(p_pv, a_pv, i_pv, e_pv, w_pv)
+    k_pt = k[ipbs]
+    t0_pt = t0[ieps]
+    p_pt = p[ieps]
+    cf_pt = cfs[ieps]
+    dcf_pt = dcfs[ieps]
+    hw_pt = half_windows[ieps]
+    ns_pt = nsamples[ilcs]
+    et_pt = exptimes[ilcs]
 
-        # Gather per-time-point parameters using index arrays
-        ilcs = lcids
-        ipbs = pbids[ilcs]
-        if nep > 1:
-            ieps = epids[ilcs]
-        else:
-            ieps = jnp.zeros_like(ilcs)
+    def _single_time(tc, k_val, t0_val, p_val, cf, dcf, hw, ns, et):
+        # Fold time
+        epoch = jnp.floor((tc - t0_val + 0.5 * p_val) / p_val)
+        dt = tc - (t0_val + epoch * p_val)
 
-        k_pt = k_pv[ipbs]
-        t0_pt = t0_pv[ieps]
-        p_pt = p_pv[ieps]
-        cf_pt = cfs[ieps]
-        dcf_pt = dcfs[ieps]
-        hw_pt = half_windows[ieps]
-        ns_pt = nsamples[ilcs]
-        et_pt = exptimes[ilcs]
+        # Supersampling via lax.fori_loop
+        def body(isample, acc):
+            flux_acc, dflux_acc = acc
+            offset = et * ((isample + 0.5) / ns - 0.5)
 
-        def _single_time(tc, k_val, t0_val, p_val, cf, dcf, hw, ns, et):
-            # Fold time
-            epoch = jnp.floor((tc - t0_val + 0.5 * p_val) / p_val)
-            dt = tc - (t0_val + epoch * p_val)
+            z, dz = pd_t15_d(tc + offset, t0_val, p_val, cf, dcf)
+            z = jnp.abs(z)
 
-            # Supersampling via lax.fori_loop
-            def body(isample, acc):
-                flux_acc, dflux_acc = acc
-                offset = et * ((isample + 0.5) / ns - 0.5)
+            area, dadk, dadz = ccia_and_grad(1.0, k_val, z)
+            flux_sample = -area / jnp.pi
 
-                z, dz = pd_t15_d(tc + offset, t0_val, p_val, cf, dcf)
-                z = jnp.abs(z)
+            dflux_sample = jnp.array([
+                -dadk / jnp.pi,
+                 dadz * dz[0] / jnp.pi,
+                -dadz * dz[1] / jnp.pi,
+                -dadz * dz[2] / jnp.pi,
+                -dadz * dz[3] / jnp.pi,
+                -dadz * dz[4] / jnp.pi,
+                -dadz * dz[5] / jnp.pi,
+            ])
 
-                area, dadk, dadz = ccia_and_grad(1.0, k_val, z)
-                flux_sample = -area / jnp.pi
+            return (flux_acc + flux_sample, dflux_acc + dflux_sample)
 
-                dflux_sample = jnp.array([
-                    -dadk / jnp.pi,
-                     dadz * dz[0] / jnp.pi,
-                    -dadz * dz[1] / jnp.pi,
-                    -dadz * dz[2] / jnp.pi,
-                    -dadz * dz[3] / jnp.pi,
-                    -dadz * dz[4] / jnp.pi,
-                    -dadz * dz[5] / jnp.pi,
-                ])
+        init = (jnp.float64(0.0), jnp.zeros(7))
+        flux, dflux = jax.lax.fori_loop(0, ns, body, init)
+        flux = flux / ns
+        dflux = dflux / ns
 
-                return (flux_acc + flux_sample, dflux_acc + dflux_sample)
+        # Window mask
+        in_window = jnp.abs(dt) < hw
+        flux = jnp.where(in_window, flux, 0.0)
+        dflux = jnp.where(in_window, dflux, jnp.zeros(7))
 
-            init = (jnp.float64(0.0), jnp.zeros(7))
-            flux, dflux = jax.lax.fori_loop(0, ns, body, init)
-            flux = flux / ns
-            dflux = dflux / ns
+        return flux, dflux
 
-            # Window mask
-            in_window = jnp.abs(dt) < hw
-            flux = jnp.where(in_window, flux, 0.0)
-            dflux = jnp.where(in_window, dflux, jnp.zeros(7))
-
-            return flux, dflux
-
-        flux_pv, dflux_pv = jax.vmap(_single_time)(
-            times, k_pt, t0_pt, p_pt, cf_pt, dcf_pt, hw_pt, ns_pt, et_pt
-        )
-        all_flux.append(flux_pv)
-        all_dflux.append(dflux_pv)
-
-    return jnp.stack(all_flux), jnp.stack(all_dflux)
+    return jax.vmap(_single_time)(
+        times, k_pt, t0_pt, p_pt, cf_pt, dcf_pt, hw_pt, ns_pt, et_pt
+    )
 
 
-@functools.partial(jax.custom_jvp, nondiff_argnums=(8, 9, 10, 11, 12, 13, 14, 15))
+@functools.partial(jax.custom_jvp, nondiff_argnums=(8, 9, 10, 11, 12, 13, 14))
 def udmodel(times, k, t0, p, a, i, e, w,
             lcids, pbids, epids, nsamples, exptimes,
-            npv, npb, nep):
+            npb, nep):
     """Uniform-disk transit model (JAX). Returns flux deviation array.
 
     Parameters
     ----------
     times : array (npt,)
         Observation times.
-    k : array (npv, npb)
+    k : array (npb,)
         Planet-to-star radius ratio.
-    t0 : array (npv, nep)
+    t0 : array (nep,)
         Mid-transit time.
-    p : array (npv, nep)
+    p : array (nep,)
         Orbital period.
-    a : array (npv, nep)
+    a : array (nep,)
         Scaled semi-major axis (a/R*).
-    i : array (npv, nep)
+    i : array (nep,)
         Orbital inclination [rad].
-    e : array (npv, nep)
+    e : array (nep,)
         Eccentricity.
-    w : array (npv, nep)
+    w : array (nep,)
         Argument of periastron [rad].
     lcids : array (npt,)
         Light curve index per time point.
@@ -174,8 +157,6 @@ def udmodel(times, k, t0, p, a, i, e, w,
         Number of supersamples per light curve.
     exptimes : array (nlc,)
         Exposure time per light curve.
-    npv : int
-        Number of parameter vectors.
     npb : int
         Number of passbands.
     nep : int
@@ -183,24 +164,24 @@ def udmodel(times, k, t0, p, a, i, e, w,
 
     Returns
     -------
-    array (npv, npt)
+    array (npt,)
         Flux deviation (negative during transit, zero out of transit).
     """
     flux, _ = _udmodel_fwd(times, k, t0, p, a, i, e, w,
                            lcids, pbids, epids, nsamples, exptimes,
-                           npv, npb, nep)
+                           npb, nep)
     return flux
 
 
 @udmodel.defjvp
-def udmodel_jvp(lcids, pbids, epids, nsamples, exptimes, npv, npb, nep,
+def udmodel_jvp(lcids, pbids, epids, nsamples, exptimes, npb, nep,
                 primals, tangents):
     times, k, t0, p, a, i, e, w = primals
     _, k_dot, t0_dot, p_dot, a_dot, i_dot, e_dot, w_dot = tangents
 
     flux, dflux = _udmodel_fwd(times, k, t0, p, a, i, e, w,
                                lcids, pbids, epids, nsamples, exptimes,
-                               npv, npb, nep)
+                               npb, nep)
 
     # Gather per-time-point tangent indices
     ipbs = pbids[lcids]
@@ -210,27 +191,27 @@ def udmodel_jvp(lcids, pbids, epids, nsamples, exptimes, npv, npb, nep,
         ieps = jnp.zeros_like(lcids)
 
     # Contract Jacobian with tangent vectors
-    flux_dot = (dflux[:, :, 0] * k_dot[:, ipbs]
-              + dflux[:, :, 1] * t0_dot[:, ieps]
-              + dflux[:, :, 2] * p_dot[:, ieps]
-              + dflux[:, :, 3] * a_dot[:, ieps]
-              + dflux[:, :, 4] * i_dot[:, ieps]
-              + dflux[:, :, 5] * e_dot[:, ieps]
-              + dflux[:, :, 6] * w_dot[:, ieps])
+    flux_dot = (dflux[:, 0] * k_dot[ipbs]
+              + dflux[:, 1] * t0_dot[ieps]
+              + dflux[:, 2] * p_dot[ieps]
+              + dflux[:, 3] * a_dot[ieps]
+              + dflux[:, 4] * i_dot[ieps]
+              + dflux[:, 5] * e_dot[ieps]
+              + dflux[:, 6] * w_dot[ieps])
 
     return flux, flux_dot
 
 
 def udmodel_grad(times, k, t0, p, a, i, e, w,
                  lcids, pbids, epids, nsamples, exptimes,
-                 npv, npb, nep):
+                 npb, nep):
     """Uniform-disk transit model with gradient (JAX).
 
     Returns
     -------
-    flux : array (npv, npt)
-    dflux : array (npv, npt, 7)
+    flux : array (npt,)
+    dflux : array (npt, 7)
     """
     return _udmodel_fwd(times, k, t0, p, a, i, e, w,
                         lcids, pbids, epids, nsamples, exptimes,
-                        npv, npb, nep)
+                        npb, nep)
