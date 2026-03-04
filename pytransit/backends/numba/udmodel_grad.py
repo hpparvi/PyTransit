@@ -39,7 +39,7 @@ def _udmodel_grad(t, k, cf, dcf, flux, dflux):
             dflux[i+1] -= dadz * dz[i] / pi
 
 
-def udmodel_grad(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes, npv, npb, ntc, nor):
+def udmodel_grad(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes, npv, npb, nep):
     """Evaluate the uniform-disk transit model and gradient over an array of times.
 
     Computes both the relative flux deficit and its analytical gradient
@@ -79,10 +79,8 @@ def udmodel_grad(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exp
         Number of parameter vectors.
     npb : int
         Number of passbands.
-    ntc : int
-        Number of light curves.
-    nor : int
-        Number of orbits (epochs).
+    nep : int
+        Number of epochs.
 
     Returns
     -------
@@ -97,9 +95,9 @@ def udmodel_grad(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exp
     dflux = zeros((npv, npt, 7))
 
     for ipv in range(npv):
-        xyc = zeros((nor, 2, 5))
-        dxyc = zeros((nor, 6, 2, 5))
-        for iep in range(nor):
+        xyc = zeros((nep, 2, 5))
+        dxyc = zeros((nep, 6, 2, 5))
+        for iep in range(nep):
             xyc[iep], dxyc[iep] = solve_xy_p5_d(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
 
         bt1, bt4 = bounding_box(k[ipv, 0], xyc[0])
@@ -111,7 +109,7 @@ def udmodel_grad(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exp
             ipb = pbids[ilc]
 
             itc = epids[ilc]
-            if nor > 1:
+            if nep > 1:
                 iep = epids[ilc]
             else:
                 iep = 0

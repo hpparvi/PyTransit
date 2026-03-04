@@ -33,7 +33,7 @@ def _udmodel(t, k, cf, flux):
         flux[0] -= is_area / pi
 
 
-def udmodel(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes, npv, npb, ntc, nor):
+def udmodel(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes, npv, npb, nep):
     """Evaluate the uniform-disk transit model over an array of times.
 
     Computes the relative flux deficit caused by a planet transiting a
@@ -69,8 +69,8 @@ def udmodel(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes
     flux = zeros((npv, npt))
 
     for ipv in range(npv):
-        xyc = zeros((nor, 2, 5))
-        for iep in range(nor):
+        xyc = zeros((nep, 2, 5))
+        for iep in range(nep):
             xyc[iep, :, :] = solve_xy_p5(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
 
         bt1, bt4 = bounding_box(k[ipv, 0], xyc[0])
@@ -82,7 +82,7 @@ def udmodel(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes
             ipb = pbids[ilc]
 
             itc = epids[ilc]
-            if nor > 1:
+            if nep > 1:
                 iep = epids[ilc]
             else:
                 iep = 0
