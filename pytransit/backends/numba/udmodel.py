@@ -102,12 +102,13 @@ def udmodel(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes
             ilc = lcids[ipt]
             ipb = pbids[ilc]
 
+            itc = epids[ilc]
             if nor > 1:
                 iep = epids[ilc]
             else:
                 iep = 0
 
-            t = _folded_time(times[ipt], t0[ipv, iep], p[ipv, iep])
+            t = _folded_time(times[ipt], t0[ipv, itc], p[ipv, iep])
             if ((bt1 - exptimes[ilc]) <= t <= (bt4 + exptimes[ilc])):
                 for isample in range(1, nsamples[ilc] + 1):
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
