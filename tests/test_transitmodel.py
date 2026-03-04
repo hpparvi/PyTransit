@@ -191,7 +191,7 @@ class TestSetDataValidation:
         tm = ConcreteTransitModel()
         times = np.linspace(-0.1, 0.1, 40)
         lcids = np.array([0]*20 + [1]*20)
-        with pytest.raises(ValueError, match="number of ligt curves"):
+        with pytest.raises(ValueError, match="number of light curves"):
             tm.set_data(times, lcids=lcids, pbids=np.array([0, 1, 2]))
 
     def test_pbids_non_contiguous(self):
@@ -205,7 +205,7 @@ class TestSetDataValidation:
         tm = ConcreteTransitModel()
         times = np.linspace(-0.1, 0.1, 40)
         lcids = np.array([0]*20 + [1]*20)
-        with pytest.raises(ValueError, match="number of ligt curves"):
+        with pytest.raises(ValueError, match="number of light curves"):
             tm.set_data(times, lcids=lcids, epids=np.array([0, 1, 2]))
 
     def test_epids_non_contiguous(self):
