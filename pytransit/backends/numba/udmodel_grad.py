@@ -34,7 +34,7 @@ def _udmodel_grad(t, k, cf, dcf, flux, dflux):
         is_area, (dadk, dadz) = ccia_and_grad(1.0, k, z)
         flux[0] -= is_area / pi
         dflux[0] -= dadk / pi
-        dflux[1] += 2 * dadz * dz[0] / pi
+        dflux[1] += dadz * dz[0] / pi
         for i in range(1, 6):
             dflux[i+1] -= dadz * dz[i] / pi
 
