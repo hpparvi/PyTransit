@@ -1,32 +1,11 @@
 from meepmeep.backends.numba.ts2d import pd_t15c, solve_xy_p5
 from meepmeep.backends.numba.ts2d.position import bounding_box
-from meepmeep.backends.numba.utils import d_from_pkaiews
 
-from numba import njit, prange
-from numpy import floor, pi, zeros, nan, fabs, unique, isnan
+from numba import njit
+from numpy import pi, zeros
+
+from ._utils import _folded_time
 from .ccintersection import ccia
-
-
-@njit(fastmath=True)
-def _folded_time(t, t0, p):
-    """Fold a time value to the interval around mid-transit.
-
-    Parameters
-    ----------
-    t : float
-        Time value.
-    t0 : float
-        Mid-transit time.
-    p : float
-        Orbital period.
-
-    Returns
-    -------
-    tf : float
-        Folded time centered on mid-transit.
-    """
-    epoch = floor((t - t0 + 0.5 * p) / p)
-    return t - (t0 + epoch * p)
 
 
 @njit

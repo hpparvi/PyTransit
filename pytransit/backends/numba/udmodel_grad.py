@@ -4,7 +4,7 @@ from numba import prange, njit
 from numpy import zeros, nan, fabs, pi
 
 from .ccintersection import ccia_and_grad
-from .udmodel import _folded_time
+from ._utils import _folded_time
 
 
 @njit
