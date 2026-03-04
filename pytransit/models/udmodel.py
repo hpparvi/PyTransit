@@ -35,8 +35,13 @@ class UniformDiskModel(TransitModel):
                  ldp: ndarray | None = None) -> ndarray | tuple[ndarray, ndarray]:
         npv = _npv_from_k(k, self.npb)
         k, t0, p, a, i, e, w = _normalize_parameter_shapes(k, t0, p, a, i, e, w, self.npb, self.ntc, self.nor)
-        return squeeze(self._model(self.times,
+        flux = self._model(self.times,
                            k, t0, p, a, i, e, w,
                            self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
-                           npv, self.npb, self.ntc, self.nor))
+                           npv, self.npb, self.ntc, self.nor)
+
+        if self.return_grad:
+            return squeeze(flux[0]), squeeze(flux[1])
+        else:
+            return squeeze(flux)
 
