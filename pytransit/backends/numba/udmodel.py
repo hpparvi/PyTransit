@@ -54,7 +54,7 @@ def _udmodel(t, k, cf, flux):
         flux[0] = -is_area / pi
 
 
-def udmodel(times, k, t0, p, a, i, e, w):
+def udmodel(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes, npv, npb, ntc, nor):
     """Evaluate the uniform-disk transit model over an array of times.
 
     Computes the relative flux deficit caused by a planet transiting a
@@ -85,40 +85,14 @@ def udmodel(times, k, t0, p, a, i, e, w):
     flux : ndarray
         Relative flux deficit for each time stamp.
     """
-    npt = times.size
-    flux = zeros(npt)
-
-    if a <= 1.0 or e >= 0.99:
-        flux[:] = nan
-        return flux
-
-    cf = solve_xy_p5(0.0, p, a, i, e, w)
-
-    half_window_width = 0.025 + 0.5 * d_from_pkaiews(p, k, a, i, e, w, 1)
-    for j in prange(npt):
-        t = _folded_time(times[j], t0, p)
-        if fabs(t) < half_window_width:
-            _udmodel(t, k, cf, flux[j:j + 1])
-    return flux
-
-
-def udmodel_full(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes):
 
     npt = times.size   # Number of points
-    npv = k.shape[0]   # Number of parameter vectors
-    npb = k.shape[1]   # Number of passbands
-    nep = t0.shape[1]   # Number of epochs
     flux = zeros((npv, npt))
 
     for ipv in range(npv):
-
-        xyc = zeros((nep, 2, 5))
-        xyc[0, :, :] = solve_xy_p5(0.0, p[ipv, 0], a[ipv, 0], i[ipv, 0], e[ipv, 0], w[ipv, 0])
-        if nep > 1 and isnan(p[ipv, 1]):
-            xyc[:, :, :] = xyc[0:1, :, :]
-        else:
-            for iep in range(nep):
-                xyc[iep, :, :] = solve_xy_p5(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
+        xyc = zeros((nor, 2, 5))
+        for iep in range(nor):
+            xyc[iep, :, :] = solve_xy_p5(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
 
         bt1, bt4 = bounding_box(k[ipv, 0], xyc[0])
         bt1 -= 0.003 + exptimes[0]
@@ -127,7 +101,11 @@ def udmodel_full(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exp
         for ipt in range(npt):
             ilc = lcids[ipt]
             ipb = pbids[ilc]
-            iep = epids[ilc]
+
+            if nor > 1:
+                iep = epids[ilc]
+            else:
+                iep = 0
 
             t = _folded_time(times[ipt], t0[ipv, iep], p[ipv, iep])
             if (bt1 <= t <= bt4):

@@ -1,13 +1,13 @@
 import jax
 import numba
 
-from numpy import array, ndarray
+from numpy import array, ndarray, squeeze
 
 from ..backends.numba.udmodel import udmodel as nbmodel
 from ..backends.numba.udmodel_grad import udmodel_grad as nbmodel_grad
 from ..backends.jax.udmodel import uniform_model as jaxmodel, _uniform_model_fwd as jaxmodel_grad
 from .transitmodel import TransitModel
-from ._utils import _normalize_parameter_shapes
+from ._utils import _normalize_parameter_shapes, _npv_from_k
 
 __all__ = ['UniformDiskModel']
 
@@ -33,6 +33,10 @@ class UniformDiskModel(TransitModel):
                  e: float | ndarray = 0.0,
                  w: float | ndarray = 0.0,
                  ldp: ndarray | None = None) -> ndarray | tuple[ndarray, ndarray]:
+        npv = _npv_from_k(k, self.npb)
         k, t0, p, a, i, e, w = _normalize_parameter_shapes(k, t0, p, a, i, e, w, self.npb, self.ntc, self.nor)
-        return self._model(self.times, k, t0, p, a, i, e, w)
+        return squeeze(self._model(self.times,
+                           k, t0, p, a, i, e, w,
+                           self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
+                           npv, self.npb, self.ntc, self.nor))
 
