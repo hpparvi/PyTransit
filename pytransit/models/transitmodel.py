@@ -28,7 +28,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import jax
 
-from typing import Literal
+from typing import Literal, Callable
 
 from numpy import (ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype, integer, float64, array, full, isscalar)
 
@@ -168,5 +168,8 @@ class TransitModel:
                  e: float | ndarray = 0.0,
                  w: float | ndarray = 0.0,
                  ldp: ndarray | None = None) -> ndarray | tuple[ndarray, ndarray]:
+        raise NotImplementedError
+
+    def get_callable(self) -> Callable:
         raise NotImplementedError
 

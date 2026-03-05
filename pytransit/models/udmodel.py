@@ -64,3 +64,14 @@ class UniformDiskModel(TransitModel):
                 return squeeze(flux[0]), squeeze(flux[1])
             else:
                 return squeeze(flux)
+
+    def get_callable(self):
+        if self.backend == 'jax':
+            def model(k, t0, p, a, i, e, w):
+                return jaxmodel(self.times, k, t0, p, a, i, e, w,
+                          self.lcids, self.pbids, self.epids,
+                          self.nsamples, self.exptimes,
+                          self.npb, self.nor)
+            return model
+        else:
+            return self._model
