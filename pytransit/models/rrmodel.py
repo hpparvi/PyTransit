@@ -41,7 +41,7 @@ from ..backends.numba.limb_darkening import *
 from ..backends.numba.limb_darkening.uniform import ldd_uniform
 from ..backends.numba.rrmodel import create_z_grid, calculate_weights_3d, rrmodel
 from ..backends.numba.rrmodel_grad import rrmodel_grad
-from ..backends.jax.rrmodel import rr_simple as jax_model
+from ..backends.jax.rrmodel import rrmodel as jax_model
 
 __all__ = ['RoadRunnerModel']
 

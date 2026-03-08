@@ -37,9 +37,9 @@ def _interpolate_ldm(g, dg, ldm):
     return jnp.where((g >= 0.0) & (g <= 1.0), val, 0.0)
 
 
-def rr_simple(times, k, t0, p, a, i, e, w,
-              nsamples, exptimes, ldp, ldg, ldi, dldi,
-              weights, dk, kmin, kmax, dg, ze):
+def rrmodel(times, k, t0, p, a, i, e, w,
+            nsamples, exptimes, ldp, ldg, ldi, dldi,
+            weights, dk, kmin, kmax, dg, ze):
     """RoadRunner limb-darkened transit model (JAX).
 
     Compatible with jax.jit and jax.grad / jax.jacobian.
