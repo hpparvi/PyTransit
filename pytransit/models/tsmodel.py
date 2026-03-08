@@ -23,7 +23,8 @@ from .ldmodel import LDModel
 from .transitmodel import TransitModel
 from ..backends.numba.limb_darkening import *
 from ..backends.numba.limb_darkening.uniform import ldd_uniform
-from ..backends.numba.tsmodel import tsmodel, tsmodel_and_grad
+from ..backends.numba.tsmodel import tsmodel
+from pytransit.backends.numba.tsmodel_grad import tsmodel_and_grad
 from ..backends.numba.rrmodel import create_z_grid, calculate_weights_3d
 
 __all__ = ['TransmissionSpectroscopyModel']
