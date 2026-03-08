@@ -125,9 +125,9 @@ def interpolate_mean_limb_darkening_and_grad(g, dg, lda):
     return value, dvalue
 
 
-def rr_simple(times: ndarray, k: float, t0: float, p: float, a: float, i: float, e: float, w: float,
-              nsamples: ndarray, exptimes: ndarray, ldp: ndarray, ldg: ndarray, ldi: float, dldi: ndarray,
-              weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray):
+def rrmodel(times: ndarray, k: float, t0: float, p: float, a: float, i: float, e: float, w: float,
+            nsamples: ndarray, exptimes: ndarray, ldp: ndarray, ldg: ndarray, ldi: float, dldi: ndarray,
+            weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray):
     """Simplified RoadRunner model for a single homogeneous light curve."""
 
     npt = times.size

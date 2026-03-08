@@ -33,12 +33,13 @@ import numba
 from numpy import ndarray, linspace, isscalar, atleast_1d, sqrt, pi, zeros
 from scipy.integrate import trapezoid
 
+from ._utils import _normalize_parameter_shapes
 from .ldmodel import LDModel
 from .transitmodel import TransitModel
 from ..backends.numba.limb_darkening import *
 from ..backends.numba.limb_darkening.uniform import ldd_uniform
-from ..backends.numba.rrmodel import create_z_grid, calculate_weights_3d, rr_simple
-from ..backends.numba.rrmodel_grad import rr_simple_and_grad
+from ..backends.numba.rrmodel import create_z_grid, calculate_weights_3d, rrmodel
+from ..backends.numba.rrmodel_grad import rrmodel_grad
 from ..backends.jax.rrmodel import rr_simple as jax_model
 
 __all__ = ['RoadRunnerModel']
@@ -88,10 +89,10 @@ class RoadRunnerModel(TransitModel):
             self._model = jax.jit(jax_model)
         elif backend == "numba":
             if return_grad:
-                self._model = numba.njit(rr_simple_and_grad, parallel=parallel)
+                self._model = numba.njit(rrmodel_grad, parallel=parallel)
 
             else:
-                self._model = numba.njit(rr_simple, parallel=parallel)
+                self._model = numba.njit(rrmodel, parallel=parallel)
         else:
             raise ValueError(f"Unknown backend: {backend}")
 
@@ -198,6 +199,8 @@ class RoadRunnerModel(TransitModel):
 
         npv = 1 if isscalar(p) else p.size
         ldc = atleast_1d(ldc)
+
+        k, t0, p, a, i, e, w = _normalize_parameter_shapes(k, t0, p, a, i, e, w, self.npb, self.ntc, self.nor)
 
         if isinstance(self.ldmodel, LDModel):
             ldp, ldg, ldi = self.ldmodel(self.mu, ldc)

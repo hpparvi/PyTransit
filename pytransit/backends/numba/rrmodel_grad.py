@@ -6,9 +6,9 @@ from .ccintersection import ccia_and_grad
 from .rrmodel import calculate_weights_2d, interpolate_mean_limb_darkening_and_grad, interpolate_mean_limb_darkening
 
 
-def rr_simple_and_grad(times: ndarray, k: float, t0: float, p: float, a: float, i: float, e: float, w: float,
-                       nsamples: ndarray, exptimes: ndarray, ldp: ndarray, ldg: ndarray, ldi: float, dldi: ndarray,
-                       weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray):
+def rrmodel_grad(times: ndarray, k: float, t0: float, p: float, a: float, i: float, e: float, w: float,
+                 nsamples: ndarray, exptimes: ndarray, ldp: ndarray, ldg: ndarray, ldi: float, dldi: ndarray,
+                 weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray):
     """Simplified RoadRunner model with analytical gradients for a single homogeneous light curve.
 
     Parameters
