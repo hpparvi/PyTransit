@@ -39,7 +39,7 @@ def _udmodel_grad(t, k, cf, dcf, flux, dflux):
             dflux[i+1] -= dadz * dz[i] / pi
 
 
-def udmodel_grad(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes, npv, npb, nep):
+def udmodel_grad(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes, npb, nep):
     """Evaluate the uniform-disk transit model and gradient over an array of times.
 
     Computes both the relative flux deficit and its analytical gradient
@@ -75,8 +75,6 @@ def udmodel_grad(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exp
         Number of supersamples per light curve.
     exptimes : ndarray
         Exposure time per light curve.
-    npv : int
-        Number of parameter vectors.
     npb : int
         Number of passbands.
     nep : int
@@ -90,6 +88,8 @@ def udmodel_grad(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exp
         Gradient array with shape (npv, npt, 7), where the last axis
         corresponds to derivatives w.r.t. [k, t0, p, a, i, e, w].
     """
+
+    npv = k.shape[0]
     npt = times.size
     flux = zeros((npv, npt))
     dflux = zeros((npv, npt, 7))
@@ -104,7 +104,7 @@ def udmodel_grad(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exp
         bt1 -= 0.003
         bt4 += 0.003
 
-        for ipt in range(npt):
+        for ipt in prange(npt):
             ilc = lcids[ipt]
             ipb = pbids[ilc]
 

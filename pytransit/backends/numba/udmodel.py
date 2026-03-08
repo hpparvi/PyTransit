@@ -1,7 +1,7 @@
 from meepmeep.backends.numba.ts2d import pd_t15c, solve_xy_p5
 from meepmeep.backends.numba.ts2d.position import bounding_box
 
-from numba import njit
+from numba import njit, prange
 from numpy import pi, zeros
 
 from ._utils import _folded_time
@@ -33,7 +33,7 @@ def _udmodel(t, k, cf, flux):
         flux[0] -= is_area / pi
 
 
-def udmodel(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes, npv, npb, nep):
+def udmodel(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes, npb, nep):
     """Evaluate the uniform-disk transit model over an array of times.
 
     Computes the relative flux deficit caused by a planet transiting a
@@ -65,6 +65,7 @@ def udmodel(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes
         Relative flux deficit for each time stamp.
     """
 
+    npv = k.shape[0]
     npt = times.size   # Number of points
     flux = zeros((npv, npt))
 
@@ -77,7 +78,7 @@ def udmodel(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes
         bt1 -= 0.003
         bt4 += 0.003
 
-        for ipt in range(npt):
+        for ipt in prange(npt):
             ilc = lcids[ipt]
             ipb = pbids[ilc]
 

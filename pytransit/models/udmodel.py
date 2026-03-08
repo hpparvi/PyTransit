@@ -20,10 +20,11 @@ class UniformDiskModel(TransitModel):
             else:
                 self._model = numba.njit(nbmodel, parallel=self.parallel)
         elif self.backend == 'jax':
+            vmap_axes = (None, 0, 0, 0, 0, 0, 0, 0, None, None, None, None, None, None, None)
             if self.return_grad:
-                self._model = jax.jit(jaxmodel_grad, static_argnums=(13, 14))
+                self._model = jax.jit(jax.vmap(jaxmodel_grad, in_axes=vmap_axes), static_argnums=(13, 14))
             else:
-                self._model = jax.jit(jaxmodel, static_argnums=(13, 14))
+                self._model = jax.jit(jax.vmap(jaxmodel, in_axes=vmap_axes), static_argnums=(13, 14))
 
     def evaluate(self,
                  k: float | ndarray,
@@ -33,37 +34,13 @@ class UniformDiskModel(TransitModel):
                  i: float | ndarray,
                  e: float | ndarray = 0.0,
                  w: float | ndarray = 0.0,
-                 ldp: ndarray | None = None) -> ndarray | tuple[ndarray, ndarray]:
-        npv = _npv_from_k(k, self.npb)
-        k, t0, p, a, i, e, w = _normalize_parameter_shapes(k, t0, p, a, i, e, w, self.npb, self.ntc, self.nor)
+                 ldp: ndarray | None = None) -> ndarray | tuple[ndarray, ndarray] | jax.Array | tuple[jax.Array, jax.Array]:
 
-        if self.backend == 'jax':
-            fluxes = []
-            dfluxes = []
-            for ipv in range(npv):
-                result = self._model(self.times,
-                                     k[ipv], t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv],
-                                     self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
-                                     self.npb, self.nor)
-                if self.return_grad:
-                    fluxes.append(result[0])
-                    dfluxes.append(result[1])
-                else:
-                    fluxes.append(result)
-            flux = jnp.stack(fluxes)
-            if self.return_grad:
-                return squeeze(flux), squeeze(jnp.stack(dfluxes))
-            else:
-                return squeeze(flux)
-        else:
-            flux = self._model(self.times,
-                               k, t0, p, a, i, e, w,
-                               self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
-                               npv, self.npb, self.nor)
-            if self.return_grad:
-                return squeeze(flux[0]), squeeze(flux[1])
-            else:
-                return squeeze(flux)
+        k, t0, p, a, i, e, w = _normalize_parameter_shapes(k, t0, p, a, i, e, w, self.npb, self.ntc, self.nor)
+        result = self._model(self.times, k, t0, p, a, i, e, w,
+                             self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes, self.npb, self.nor)
+        sq = jnp.squeeze if self.backend == 'jax' else squeeze
+        return (sq(result[0]), sq(result[1])) if self.return_grad else sq(result)
 
     def get_callable(self):
         if self.backend == 'jax':
