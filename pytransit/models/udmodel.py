@@ -27,14 +27,8 @@ class UniformDiskModel(TransitModel):
                 self._model = jax.jit(jax.vmap(jaxmodel, in_axes=vmap_axes), static_argnums=(13, 14))
 
     def evaluate(self,
-                 k: float | ndarray,
-                 t0: float | ndarray,
-                 p: float | ndarray,
-                 a: float | ndarray,
-                 i: float | ndarray,
-                 e: float | ndarray = 0.0,
-                 w: float | ndarray = 0.0,
-                 ldp: ndarray | None = None) -> ndarray | tuple[ndarray, ndarray] | jax.Array | tuple[jax.Array, jax.Array]:
+                 k: PType, t0: PType, p: PType, a: PType, i: PType, e: PType = 0.0, w: PType = 0.0,
+                 ldp: ArrayLike | None = None) -> ndarray | tuple[ndarray, ndarray] | jax.Array | tuple[jax.Array, jax.Array]:
 
         k, t0, p, a, i, e, w = _normalize_parameter_shapes(k, t0, p, a, i, e, w, self.npb, self.ntc, self.nor)
         result = self._model(self.times, k, t0, p, a, i, e, w,
