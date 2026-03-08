@@ -29,6 +29,7 @@
 from typing import Tuple, Callable, Union, List, Literal
 
 import jax
+import jax.numpy as jnp
 import numba
 from numpy import ndarray, linspace, isscalar, atleast_1d, sqrt, pi, zeros, repeat, floating, squeeze
 from numpy.typing import NDArray, ArrayLike
@@ -87,11 +88,22 @@ class RoadRunnerModel(TransitModel):
         super().__init__(backend, return_grad, parallel, n_threads)
 
         if backend == "jax":
-            self._model = jax.jit(jax_model)
+            # vmap over npv dimension: k, t0, p, a, i, e, w are per-PV (axis 0),
+            # lcids/pbids/epids/nsamples/exptimes/weights/etc are shared (None),
+            # ldp and ldi are per-PV (axis 0), ldg/dldi/ze unused but passed as None.
+            vmap_axes = (None,                          # times
+                         0, 0, 0, 0, 0, 0, 0,          # k, t0, p, a, i, e, w
+                         None, None, None, None, None,  # lcids, pbids, epids, nsamples, exptimes
+                         0,                             # ldp
+                         None,                          # ldg
+                         0,                             # ldi
+                         None,                          # dldi
+                         None, None, None, None, None, None,  # weights, dk, kmin, kmax, dg, ze
+                         None, None, None)              # npb, nep, max_ns
+            self._model = jax.jit(jax.vmap(jax_model, in_axes=vmap_axes), static_argnums=(23, 24, 25))
         elif backend == "numba":
             if return_grad:
                 self._model = numba.njit(rrmodel_grad, parallel=parallel)
-
             else:
                 self._model = numba.njit(rrmodel, parallel=parallel)
         else:
@@ -229,13 +241,19 @@ class RoadRunnerModel(TransitModel):
             ldi = repeat(ldi, npv, axis=0)
 
         dldi = evaluate_ldig(self.ldigmean, ldc) if self.return_grad else None
-        result = self._model(self.times, k, t0, p, a, i, e, w,
-                           self.lcids, self.pbids, self.epids,
-                           self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
-                           self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
-                           self.npb, self.nor)
 
-        if self.return_grad:
-            return squeeze(result[0]), squeeze(result[1])
+        if self.backend == "jax":
+            result = self._model(self.times, k, t0, p, a, i, e, w,
+                               self.lcids, self.pbids, self.epids,
+                               self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
+                               self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
+                               self.npb, self.nor, int(self.nsamples.max()))
         else:
-            return squeeze(result)
+            result = self._model(self.times, k, t0, p, a, i, e, w,
+                               self.lcids, self.pbids, self.epids,
+                               self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
+                               self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
+                               self.npb, self.nor)
+
+        sq = jnp.squeeze if self.backend == 'jax' else squeeze
+        return (sq(result[0]), sq(result[1])) if self.return_grad else sq(result)
