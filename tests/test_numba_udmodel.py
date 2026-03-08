@@ -67,7 +67,7 @@ def _call_udmodel(times, k, t0=T0, p=P, a=A, inc=I, e=E, w=W):
     return udmodel_jit(times, params['k'], params['t0'], params['p'], params['a'],
                        params['i'], params['e'], params['w'],
                        lcids, pbids, epids, nsamples, exptimes,
-                       1, 1, 1, 1)
+                       1, 1)
 
 
 class TestUdmodel:

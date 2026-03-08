@@ -279,9 +279,156 @@ class TestFluxMatchesNumba:
         nsamples = np.ones(1, dtype=np.int32)
         exptimes = np.zeros(1, dtype=np.float64)
         flux_nb = nb_jit(times, k_nb, t0_nb, p_nb, a_nb, i_nb, e_nb, w_nb,
-                         lcids, pbids, epids, nsamples, exptimes, 1, 1, 1)
+                         lcids, pbids, epids, nsamples, exptimes, 1, 1)
 
         # JAX call (1D params, no npv dimension)
         flux_jax = np.asarray(_call_udmodel(jnp.array(times), k=k, inc=inc))
 
         np.testing.assert_allclose(flux_jax, flux_nb[0], atol=1e-10)
+
+
+class TestValueAndGrad:
+    """Verify jax.value_and_grad works through the custom JVP.
+
+    Key pattern: call jax_udmodel directly (not via an inner jax.jit) inside the
+    chi2 closure, then wrap the whole thing with jax.jit(jax.value_and_grad(...)).
+    Nesting jax.jit inside value_and_grad breaks custom_jvp's nondiff_argnums
+    because the outer jit turns nondiff array args into tracers.
+    """
+
+    def test_chi2_value_and_grad_single_param(self):
+        """jax.value_and_grad of a chi2 function w.r.t. k should return finite results."""
+        times = jnp.array(TIMES)
+        npt = times.size
+        lcids = jnp.zeros(npt, dtype=jnp.int32)
+        pbids = jnp.zeros(1, dtype=jnp.int32)
+        epids = jnp.zeros(1, dtype=jnp.int32)
+        nsamples = jnp.ones(1, dtype=jnp.int32)
+        exptimes = jnp.zeros(1, dtype=jnp.float64)
+
+        # Synthetic observations at k=0.1
+        k_true = jnp.array([0.1])
+        flux_true = jax_udmodel(times, k_true,
+                                jnp.array([T0]), jnp.array([P]), jnp.array([A]),
+                                jnp.array([I]), jnp.array([E]), jnp.array([W]),
+                                lcids, pbids, epids, nsamples, exptimes, 1, 1)
+        fobs = flux_true + 0.001 * jax.random.normal(jax.random.PRNGKey(42), flux_true.shape)
+
+        def chi2(k):
+            flux = jax_udmodel(times, k,
+                               jnp.array([T0]), jnp.array([P]), jnp.array([A]),
+                               jnp.array([I]), jnp.array([E]), jnp.array([W]),
+                               lcids, pbids, epids, nsamples, exptimes, 1, 1)
+            return jnp.sum((fobs - flux) ** 2)
+
+        jchi2 = jax.jit(jax.value_and_grad(chi2))
+        value, grad = jchi2(jnp.array([0.1]))
+
+        assert jnp.isfinite(value)
+        assert value.shape == ()
+        assert grad.shape == (1,)
+        assert jnp.all(jnp.isfinite(grad))
+
+    def test_chi2_grad_is_nonzero_away_from_truth(self):
+        """Gradient should be nonzero when k differs from true value."""
+        times = jnp.array(TIMES)
+        npt = times.size
+        lcids = jnp.zeros(npt, dtype=jnp.int32)
+        pbids = jnp.zeros(1, dtype=jnp.int32)
+        epids = jnp.zeros(1, dtype=jnp.int32)
+        nsamples = jnp.ones(1, dtype=jnp.int32)
+        exptimes = jnp.zeros(1, dtype=jnp.float64)
+
+        # Noiseless observations at k=0.1
+        k_true = jnp.array([0.1])
+        fobs = jax_udmodel(times, k_true,
+                           jnp.array([T0]), jnp.array([P]), jnp.array([A]),
+                           jnp.array([I]), jnp.array([E]), jnp.array([W]),
+                           lcids, pbids, epids, nsamples, exptimes, 1, 1)
+
+        def chi2(k):
+            flux = jax_udmodel(times, k,
+                               jnp.array([T0]), jnp.array([P]), jnp.array([A]),
+                               jnp.array([I]), jnp.array([E]), jnp.array([W]),
+                               lcids, pbids, epids, nsamples, exptimes, 1, 1)
+            return jnp.sum((fobs - flux) ** 2)
+
+        jchi2 = jax.jit(jax.value_and_grad(chi2))
+
+        # At the true k, chi2 should be ~0 and gradient ~0
+        val_true, grad_true = jchi2(k_true)
+        np.testing.assert_allclose(float(val_true), 0.0, atol=1e-20)
+        np.testing.assert_allclose(float(grad_true[0]), 0.0, atol=1e-10)
+
+        # At a wrong k, gradient should be nonzero
+        val_wrong, grad_wrong = jchi2(jnp.array([0.15]))
+        assert float(val_wrong) > 0.0
+        assert float(jnp.abs(grad_wrong[0])) > 1e-6
+
+    def test_chi2_grad_matches_finite_diff(self):
+        """Gradient from value_and_grad should match finite differences."""
+        times = jnp.array(TIMES)
+        npt = times.size
+        lcids = jnp.zeros(npt, dtype=jnp.int32)
+        pbids = jnp.zeros(1, dtype=jnp.int32)
+        epids = jnp.zeros(1, dtype=jnp.int32)
+        nsamples = jnp.ones(1, dtype=jnp.int32)
+        exptimes = jnp.zeros(1, dtype=jnp.float64)
+
+        fobs = jax_udmodel(times, jnp.array([0.1]),
+                           jnp.array([T0]), jnp.array([P]), jnp.array([A]),
+                           jnp.array([I]), jnp.array([E]), jnp.array([W]),
+                           lcids, pbids, epids, nsamples, exptimes, 1, 1)
+
+        def chi2(k):
+            flux = jax_udmodel(times, k,
+                               jnp.array([T0]), jnp.array([P]), jnp.array([A]),
+                               jnp.array([I]), jnp.array([E]), jnp.array([W]),
+                               lcids, pbids, epids, nsamples, exptimes, 1, 1)
+            return jnp.sum((fobs - flux) ** 2)
+
+        k_test = jnp.array([0.12])
+        _, grad = jax.jit(jax.value_and_grad(chi2))(k_test)
+
+        # Finite difference
+        eps = 1e-6
+        chi2_plus = chi2(k_test + eps)
+        chi2_minus = chi2(k_test - eps)
+        grad_fd = (chi2_plus - chi2_minus) / (2 * eps)
+
+        np.testing.assert_allclose(float(grad[0]), float(grad_fd), rtol=1e-4)
+
+    def test_multi_epoch_chi2(self):
+        """value_and_grad should work with multiple epochs and supersampling."""
+        times = jnp.linspace(-0.5, 0.5, 500)
+        times_all = jnp.concatenate([times, times + P])
+        npt = times_all.size
+        lcids = jnp.concatenate([jnp.zeros(500, dtype=jnp.int32),
+                                 jnp.ones(500, dtype=jnp.int32)])
+        pbids = jnp.zeros(2, dtype=jnp.int32)
+        epids = jnp.array([0, 1], dtype=jnp.int32)
+        nsamples = jnp.array([1, 10], dtype=jnp.int32)
+        exptimes = jnp.array([0.0, 0.05])
+        nep = 2
+
+        fobs = jax_udmodel(times_all, jnp.array([0.1]),
+                           jnp.array([T0, T0]), jnp.array([P, P]),
+                           jnp.array([A, A]), jnp.array([I, I]),
+                           jnp.array([E, E]), jnp.array([W, W]),
+                           lcids, pbids, epids, nsamples, exptimes, 1, nep)
+
+        def chi2(k):
+            flux = jax_udmodel(times_all, k,
+                               jnp.array([T0, T0]), jnp.array([P, P]),
+                               jnp.array([A, A]), jnp.array([I, I]),
+                               jnp.array([E, E]), jnp.array([W, W]),
+                               lcids, pbids, epids, nsamples, exptimes, 1, nep)
+            return jnp.sum((fobs - flux) ** 2)
+
+        jchi2 = jax.jit(jax.value_and_grad(chi2))
+        value, grad = jchi2(jnp.array([0.12]))
+
+        assert jnp.isfinite(value)
+        assert float(value) > 0.0
+        assert jnp.all(jnp.isfinite(grad))
+        assert float(jnp.abs(grad[0])) > 1e-6

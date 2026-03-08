@@ -54,7 +54,7 @@ def _call_udmodel_grad(times, k, t0=T0, p=P, a=A, inc=I, e=E, w=W):
     return udmodel_grad_jit(times, params['k'], params['t0'], params['p'], params['a'],
                             params['i'], params['e'], params['w'],
                             lcids, pbids, epids, nsamples, exptimes,
-                            1, 1, 1, 1)
+                            1, 1)
 
 
 def _call_udmodel(times, k, t0=T0, p=P, a=A, inc=I, e=E, w=W):
@@ -69,7 +69,7 @@ def _call_udmodel(times, k, t0=T0, p=P, a=A, inc=I, e=E, w=W):
     return udmodel_jit(times, params['k'], params['t0'], params['p'], params['a'],
                        params['i'], params['e'], params['w'],
                        lcids, pbids, epids, nsamples, exptimes,
-                       1, 1, 1, 1)
+                       1, 1)
 
 
 def _finite_diff_grad(times, param_name, param_idx, eps, k=0.1, t0=T0, p=P, a=A, inc=I, e=E, w=W):
