@@ -1,9 +1,10 @@
 from meepmeep.backends.numba.ts2d import solve_xy_p5, pd_t15c
 from meepmeep.backends.numba.ts2d.position import bounding_box
-from numba import njit
+from numba import njit, prange
 from numpy import ndarray, zeros, sqrt, linspace, nan, floor, isnan, full, dot, any
 
 from .ccintersection import ccia
+from ._utils import _folded_time
 
 
 @njit
@@ -125,58 +126,123 @@ def interpolate_mean_limb_darkening_and_grad(g, dg, lda):
     return value, dvalue
 
 
-def rrmodel(times: ndarray, k: float, t0: float, p: float, a: float, i: float, e: float, w: float,
-            nsamples: ndarray, exptimes: ndarray, ldp: ndarray, ldg: ndarray, ldi: float, dldi: ndarray,
-            weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray):
-    """Simplified RoadRunner model for a single homogeneous light curve."""
+def rrmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
+            lcids: ndarray, pbids: ndarray, epids: ndarray, nsamples: ndarray, exptimes: ndarray,
+            ldp: ndarray, ldg: ndarray, ldi: ndarray, dldi: ndarray,
+            weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray,
+            npb: int, nep: int):
+    """RoadRunner transit model supporting heterogeneous light curves.
 
+    Parameters
+    ----------
+    times : ndarray
+        Observation times, shape (npt,).
+    k : ndarray
+        Radius ratio, shape (npv, npb).
+    t0 : ndarray
+        Mid-transit time, shape (npv, ntc).
+    p : ndarray
+        Orbital period, shape (npv, nep).
+    a : ndarray
+        Semi-major axis in stellar radii, shape (npv, nep).
+    i : ndarray
+        Orbital inclination [rad], shape (npv, nep).
+    e : ndarray
+        Eccentricity, shape (npv, nep).
+    w : ndarray
+        Argument of periastron [rad], shape (npv, nep).
+    lcids : ndarray
+        Light curve index for each time stamp.
+    pbids : ndarray
+        Passband index for each light curve.
+    epids : ndarray
+        Epoch index for each light curve.
+    nsamples : ndarray
+        Number of supersamples per light curve.
+    exptimes : ndarray
+        Exposure time per light curve.
+    ldp : ndarray
+        Limb darkening profiles, shape (npv, npb, nmu).
+    ldg : ndarray
+        LD profile derivatives (unused in forward model).
+    ldi : ndarray
+        Disk-integrated intensity, shape (npv, npb).
+    dldi : ndarray
+        Derivative of ldi (unused in forward model).
+    weights : ndarray
+        3D weight table, shape (nk, ng, nmu).
+    dk : float
+        k step size in weight table.
+    kmin : float
+        Minimum k in weight table.
+    kmax : float
+        Maximum k in weight table.
+    dg : float
+        Grazing parameter step size.
+    z_edges : ndarray
+        Radial zone edges for weight computation.
+    npb : int
+        Number of passbands.
+    nep : int
+        Number of epochs.
+
+    Returns
+    -------
+    flux : ndarray, shape (npv, npt)
+        Model flux.
+    """
+    npv = k.shape[0]
     npt = times.size
     ng = weights.shape[1]
 
-    ldm = zeros(ng)  # Limb darkening means
-    xyc = zeros((2, 5))  # Taylor series coefficients for the (x, y) position
+    flux = zeros((npv, npt))
 
-    if isnan(a) or (a <= 1.0) or (e < 0.0) or any(isnan(ldp[0])):
-        return full(npt, nan)
+    for ipv in range(npv):
+        if isnan(a[ipv, 0]) or (a[ipv, 0] <= 1.0) or (e[ipv, 0] < 0.0) or any(isnan(ldp[ipv, 0])):
+            flux[ipv, :] = nan
+            continue
 
-    # ----------------------------------#
-    # Calculate the limb darkening mean #
-    # ----------------------------------#
-    if kmin <= k <= kmax:
-        ik = int(floor((k - kmin) / dk))
-        ak = (k - kmin - ik * dk) / dk
-        ldm[:] = (1.0 - ak) * dot(weights[ik], ldp[0,0]) + ak * dot(weights[ik + 1], ldp[0,0])
-    else:
-        _, _, wg = calculate_weights_2d(k, z_edges, ng)
-        ldm[:] = dot(wg, ldp[0,0])
+        # Pre-compute LD means per passband
+        ldm_all = zeros((npb, ng))
+        for ipb in range(npb):
+            kv = k[ipv, ipb]
+            if kmin <= kv <= kmax:
+                ik = int(floor((kv - kmin) / dk))
+                ak = (kv - kmin - ik * dk) / dk
+                ldm_all[ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb]) + ak * dot(weights[ik + 1], ldp[ipv, ipb])
+            else:
+                _, _, wg = calculate_weights_2d(kv, z_edges, ng)
+                ldm_all[ipb, :] = dot(wg, ldp[ipv, ipb])
 
-    # -----------------------------------------------------#
-    # Calculate the Taylor series expansions for the orbit #
-    # -----------------------------------------------------#
-    xyc[:, :] = solve_xy_p5(0.0, p, a, i, e, w)
+        # Pre-compute orbital coefficients per epoch
+        xyc = zeros((nep, 2, 5))
+        for iep in range(nep):
+            xyc[iep, :, :] = solve_xy_p5(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
 
-    # ---------------------------#
-    # Calculate the bounding box #
-    # ---------------------------#
-    bt1, bt4 = bounding_box(k, xyc)
-    bt1 -= 0.003 + exptimes[0]
-    bt4 += 0.003 + exptimes[0]
+        # Bounding box (using first epoch)
+        bt1, bt4 = bounding_box(k[ipv, 0], xyc[0])
+        bt1 -= 0.003
+        bt4 += 0.003
 
-    # --------------------------#
-    # Calculate the light curve #
-    # --------------------------#
-    flux = zeros(npt)
-    for ipt in range(npt):
-        epoch = floor((times[ipt] - t0 + 0.5 * p) / p)
-        tc = times[ipt] - (t0 + epoch * p)
-        if not (bt1 <= tc <= bt4):
-            flux[ipt] = 1.0
-        else:
-            for isample in range(1, nsamples[0] + 1):
-                time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
-                z = pd_t15c(tc + time_offset, xyc)
-                iplanet = interpolate_mean_limb_darkening(z / (1.0 + k), dg, ldm)
-                aplanet = ccia(1.0, k, z)
-                flux[ipt] += (ldi[0,0] - iplanet * aplanet) / ldi[0,0]
-            flux[ipt] /= nsamples[0]
+        # Calculate the light curve
+        for ipt in prange(npt):
+            ilc = lcids[ipt]
+            ipb = pbids[ilc]
+            itc = epids[ilc]
+            if nep > 1:
+                iep = epids[ilc]
+            else:
+                iep = 0
+
+            t = _folded_time(times[ipt], t0[ipv, itc], p[ipv, iep])
+            if not ((bt1 - exptimes[ilc]) <= t <= (bt4 + exptimes[ilc])):
+                flux[ipv, ipt] = 1.0
+            else:
+                for isample in range(1, nsamples[ilc] + 1):
+                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                    z = pd_t15c(t + time_offset, xyc[iep])
+                    iplanet = interpolate_mean_limb_darkening(z / (1.0 + k[ipv, ipb]), dg, ldm_all[ipb])
+                    aplanet = ccia(1.0, k[ipv, ipb], z)
+                    flux[ipv, ipt] += (ldi[ipv, ipb] - iplanet * aplanet) / ldi[ipv, ipb]
+                flux[ipv, ipt] /= nsamples[ilc]
     return flux

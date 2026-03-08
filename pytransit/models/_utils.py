@@ -1,7 +1,11 @@
 import numpy as np
 from numba import types
 from numba.core.extending import overload
-from numpy import asarray, atleast_2d, full
+from numpy import asarray, atleast_2d, full, floating
+from numpy.typing import ArrayLike, NDArray
+
+
+PType = float | floating | NDArray[floating]
 
 
 def _normalize_parameter_shape(p, npv, nd2):

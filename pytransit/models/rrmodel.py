@@ -30,10 +30,11 @@ from typing import Tuple, Callable, Union, List, Literal
 
 import jax
 import numba
-from numpy import ndarray, linspace, isscalar, atleast_1d, sqrt, pi, zeros
+from numpy import ndarray, linspace, isscalar, atleast_1d, sqrt, pi, zeros, repeat, floating, squeeze
+from numpy.typing import NDArray, ArrayLike
 from scipy.integrate import trapezoid
 
-from ._utils import _normalize_parameter_shapes
+from ._utils import _normalize_parameter_shapes, _npv_from_k, PType
 from .ldmodel import LDModel
 from .transitmodel import TransitModel
 from ..backends.numba.limb_darkening import *
@@ -56,7 +57,7 @@ class RoadRunnerModel(TransitModel):
 
     def __init__(self, backend: Literal["numba", "jax"] = "numba", return_grad: bool = False,
                  parallel: bool = False, n_threads: int | None = None,
-                 ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
+                 ldmodel: str | Callable | tuple[Callable, Callable] = 'quadratic',
                  precompute_weights: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
                  nzin: int = 20, nzlimb: int = 20, zcut: float = 0.7, ng: int = 100,
                  small_planet_limit: float = 0.05, **kwargs):
@@ -151,7 +152,7 @@ class RoadRunnerModel(TransitModel):
     def _init_model(self):
         pass
 
-    def init_integration(self, nzin, nzlimb, zcut, ng, nk):
+    def init_integration(self, nzin: int, nzlimb: int, zcut: float, ng: int, nk: int):
         self.nk = nk
         self.ng = ng
         self.nzin = nzin
@@ -161,17 +162,14 @@ class RoadRunnerModel(TransitModel):
         self.mu = sqrt(1 - self.zm ** 2)
         self.dk, self.dg, self.weights = calculate_weights_3d(nk, self.klims[0], self.klims[1], self.ze, ng)
 
-    def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
-                 t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
-                 i: Union[float, ndarray], e: Union[float, ndarray] = 0.0, w: Union[float, ndarray] = 0.0) -> ndarray | tuple[ndarray, ndarray]:
+    def evaluate(self, k: PType, t0: PType, p: PType, a: PType, i: PType, e: PType = 0.0, w: PType = 0.0,
+                 ldc: ArrayLike | None = None) -> NDArray | tuple[NDArray, NDArray]:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
         Parameters
         ----------
         k
             Radius ratio(s) either as a single float, 1D vector, or 2D array.
-        ldc
-            Limb darkening coefficients as a 1D or 2D array.
         t0
             Transit center(s) as a float or a 1D vector.
         p
@@ -180,10 +178,12 @@ class RoadRunnerModel(TransitModel):
             Orbital semi-major axis (axes) divided by the stellar radius as a float or a 1D vector.
         i
             Orbital inclination(s) as a float or a 1D vector.
-        e : optional
+        e
             Orbital eccentricity as a float or a 1D vector.
-        w : optional
+        w
             Argument of periastron as a float or a 1D vector.
+        ldc
+            Limb darkening coefficients as a 1D or 2D array.
 
         Notes
         -----
@@ -193,14 +193,16 @@ class RoadRunnerModel(TransitModel):
 
         Returns
         -------
-        ndarray
-            Modelled flux either as a 1D or 2D ndarray.
+        NDArray | tuple[NDArray, NDArray]
+            Flux either as a 1D or 2D ndarray, and, optionally, the gradient of the flux with respect to the parameters.
         """
 
-        npv = 1 if isscalar(p) else p.size
+        if ldc is None:
+            raise ValueError("Limb darkening coefficients must be provided.")
         ldc = atleast_1d(ldc)
 
         k, t0, p, a, i, e, w = _normalize_parameter_shapes(k, t0, p, a, i, e, w, self.npb, self.ntc, self.nor)
+        npv = _npv_from_k(k, self.npb)
 
         if isinstance(self.ldmodel, LDModel):
             ldp, ldg, ldi = self.ldmodel(self.mu, ldc)
@@ -221,13 +223,19 @@ class RoadRunnerModel(TransitModel):
                     for ipb in range(self.npb):
                         ldi[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv, ipb], self._ldz)
 
+        if ldp.shape[0] < npv:
+            ldp = repeat(ldp, npv, axis=0)
+        if ldi.shape[0] < npv:
+            ldi = repeat(ldi, npv, axis=0)
+
+        dldi = evaluate_ldig(self.ldigmean, ldc) if self.return_grad else None
+        result = self._model(self.times, k, t0, p, a, i, e, w,
+                           self.lcids, self.pbids, self.epids,
+                           self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
+                           self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
+                           self.npb, self.nor)
+
         if self.return_grad:
-            dldi = evaluate_ldig(self.ldigmean, ldc)
-            return self._model(self.times, k, t0, p, a, i, e, w,
-                                      self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
-                                      self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
+            return squeeze(result[0]), squeeze(result[1])
         else:
-            dldi = None
-            return self._model(self.times, k, t0, p, a, i, e, w,
-                               self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
-                               self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
+            return squeeze(result)
