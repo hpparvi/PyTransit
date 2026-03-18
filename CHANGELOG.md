@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.6.19] - 2026-03-18
+
+### Changed
+
+- Changed NumPy version requirement to >= 2.0.
+
 ## [2.6.18] - 2026-01-28
 
 ### Changed

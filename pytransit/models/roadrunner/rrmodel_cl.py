@@ -23,7 +23,7 @@ import warnings
 from pyopencl import CompilerWarning
 
 from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, \
-    concatenate, empty, linspace, diff, trapz
+    concatenate, empty, linspace, diff, trapezoid
 from ..ldmodel import LDModel
 
 from .common import create_z_grid
@@ -344,7 +344,7 @@ class RoadRunnerModelCL(TransitModel):
                 ldpi = evaluate_ld(self.ldmodel, self._ldmu, ldc)
                 for ipv in range(self.npv):
                     for ipb in range(self.npb):
-                        istar[ipv, ipb] = 2 * pi * trapz(self._ldz * ldpi[ipv,ipb], self._ldz)
+                        istar[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv,ipb], self._ldz)
 
         # Copy the limb darkening profiles and their integrals to the GPU
         cl.enqueue_copy(self.queue, self._b_ldp, ldp.astype('float32'))

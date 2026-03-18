@@ -15,7 +15,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from typing import Tuple
-from numpy import linspace, trapz, sqrt, ndarray, zeros, pi
+from numpy import linspace, trapezoid, sqrt, ndarray, zeros, pi
 
 
 class LDModel:
@@ -35,5 +35,5 @@ class LDModel:
         ldi = zeros((npv, npb))
         for ipv in range(npv):
             for ipb in range(npb):
-                ldi[ipv,ipb] = 2. * pi * trapz(self._int_z * self._evaluate(self._int_mu, x), self._int_z)
+                ldi[ipv,ipb] = 2. * pi * trapezoid(self._int_z * self._evaluate(self._int_mu, x), self._int_z)
         return ldi

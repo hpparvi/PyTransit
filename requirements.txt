@@ -1,5 +1,5 @@
 arviz
-numpy
+numpy >= 2.0.0
 scipy
 pandas
 xarray
