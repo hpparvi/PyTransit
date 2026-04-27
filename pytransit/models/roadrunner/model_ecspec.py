@@ -2,7 +2,7 @@ from math import fabs, floor
 
 from meepmeep.utils import d_from_pkaiews, eclipse_phase
 from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
-from numpy import zeros, ndarray, isnan, nan, floor, fabs, pi
+from numpy import zeros, ndarray, isnan, nan, pi
 
 from .common import circle_circle_intersection_area_kite as ccia
 

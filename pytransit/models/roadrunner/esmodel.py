@@ -29,6 +29,7 @@
 from typing import Union, List, Optional
 
 from numpy import ndarray, atleast_1d
+from numba import njit
 
 from ..transitmodel import TransitModel
 from .model_ecspec import esmodel
