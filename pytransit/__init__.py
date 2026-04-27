@@ -59,7 +59,7 @@ from .models.general import GeneralModel
 from .models.osmodel import OblateStarModel
 from .models.gdmodel import GravityDarkenedModel
 
-from .models import RoadRunnerModel, OblatePlanetModel, TransmissionSpectroscopyModel
+from .models import RoadRunnerModel, OblatePlanetModel, TransmissionSpectroscopyModel, EclipseSpectroscopyModel, ESModel
 
 TSModel = TransmissionSpectroscopyModel
 OPModel = OblatePlanetModel

@@ -14,11 +14,13 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from .transitmodel import TransitModel
+from .transitmodel import TransitModel  # noqa
 from .roadrunner.rrmodel import RoadRunnerModel
 from .roadrunner.opmodel import OblatePlanetModel
 from .roadrunner.tsmodel import TransmissionSpectroscopyModel
+from .roadrunner.esmodel import EclipseSpectroscopyModel
 
 RRModel = RoadRunnerModel
 OPModel = OblatePlanetModel
 TSModel = TransmissionSpectroscopyModel
+ESModel = EclipseSpectroscopyModel
