@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.7.0] - 2026-04-27
+
+### Added
+
+- Added a new EclipseSpectroscopyModel to model eclipse spectroscopy.
+
 ## [2.6.19] - 2026-03-18
 
 ### Changed
