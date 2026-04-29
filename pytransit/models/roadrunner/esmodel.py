@@ -46,7 +46,7 @@ class EclipseSpectroscopyModel(TransitModel):
 
     def evaluate(self, f: ndarray, k: Union[float, ndarray], t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = 0.0,
-                 w: Union[float, ndarray] = 0.0) -> ndarray:
+                 w: Union[float, ndarray] = 0.0, rstar: Union[float, ndarray] = 1.0) -> ndarray:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
         Parameters
@@ -67,6 +67,9 @@ class EclipseSpectroscopyModel(TransitModel):
             Orbital eccentricity as a float or a 1D vector.
         w : optional
             Argument of periastron as a float or a 1D vector.
+        rstar : optional
+            Stellar radius in solar radii, used to compute the light travel time
+            correction between transit and secondary eclipse. Defaults to 1.0.
 
         Notes
         -----
@@ -79,10 +82,12 @@ class EclipseSpectroscopyModel(TransitModel):
         ndarray
             Modelled flux either as a 3D ndarray.
         """
-        k, t0, p, a, i, e, w = map(atleast_1d, (k, t0, p, a, i, e, w))
-        return self.model(self.time, k, t0, p, a, i, e, w, f, self.nsamples[0], self.exptimes[0])
+        k, t0, p, a, i, e, w, rstar = map(atleast_1d, (k, t0, p, a, i, e, w, rstar))
+        if rstar.size == 1 and k.size > 1:
+            rstar = rstar.repeat(k.size)
+        return self.model(self.time, k, t0, p, a, i, e, w, rstar, f, self.nsamples[0], self.exptimes[0])
 
     def __call__(self, f: ndarray, k: Union[float, ndarray], t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = 0.0,
-                 w: Union[float, ndarray] = 0.0) -> ndarray:
-        return self.evaluate(f, k, t0, p, a, i, e, w)
+                 w: Union[float, ndarray] = 0.0, rstar: Union[float, ndarray] = 1.0) -> ndarray:
+        return self.evaluate(f, k, t0, p, a, i, e, w, rstar)

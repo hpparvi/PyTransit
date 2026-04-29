@@ -1,6 +1,7 @@
 from math import fabs, floor
 
 from meepmeep.utils import d_from_pkaiews, eclipse_phase
+from meepmeep.newton import eclipse_light_travel_time
 from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
 from numpy import zeros, ndarray, isnan, nan, pi
 
@@ -10,7 +11,7 @@ __all__ = ['esmodel']
 
 
 def esmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
-            fratio: ndarray, nsamples: int, exptime: float) -> ndarray:
+            rstar: ndarray, fratio: ndarray, nsamples: int, exptime: float) -> ndarray:
     if k.ndim != 1:
         raise ValueError(" The radius ratio must be given as an 1D array with shape (npv)")
 
@@ -34,7 +35,8 @@ def esmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
         # -----------------------------------------------------#
         eclipse_shift = eclipse_phase(p[ipv], i[ipv], e[ipv], w[ipv])
         xyc[:, :] = solve_xy_p5s(eclipse_shift, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        te = t0[ipv] + eclipse_shift
+        ltt = eclipse_light_travel_time(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], rstar[ipv])
+        te = t0[ipv] + eclipse_shift + ltt
 
         # --------------------------------#
         # Calculate the half-window width #
