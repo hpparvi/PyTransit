@@ -1,8 +1,7 @@
-from meepmeep.tsorbit import bounding_box
 from numba import njit, prange
 from numpy import zeros, dot, ndarray, isnan, nan, full, floor
 
-from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
+from meepmeep.xy.position import solve_xy_p5s, pd_t15sc, bounding_box
 from meepmeep.utils import d_from_pkaiews
 
 from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
@@ -82,7 +81,7 @@ def rr_full_serial(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarr
         # -----------------------------#
         # Calculate the bounding boxes #
         # -----------------------------#
-        bt1, bt4 = bounding_box(ks[ipv, 0], xyc)
+        bt1, bt4 = bounding_box(ks[ipv, 0], xyc[ipv])
         bbs[ipv, :, 0] = bt1
         bbs[ipv, :, 1] = bt4
         for ilc in range(nlc):
@@ -178,7 +177,7 @@ def rr_full_parallel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: nda
         # -----------------------------#
         # Calculate the bounding boxes #
         # -----------------------------#
-        bt1, bt4 = bounding_box(ks[ipv, 0], xyc)
+        bt1, bt4 = bounding_box(ks[ipv, 0], xyc[ipv])
         bbs[ipv, :, 0] = bt1
         bbs[ipv, :, 1] = bt4
         for ilc in range(nlc):

@@ -1,12 +1,11 @@
 from meepmeep import eclipse_light_travel_time
-from meepmeep.tsorbit import bounding_box
 from meepmeep.utils import eclipse_phase
 
 from numba import njit, prange
 from numpy import zeros, isnan, nan, full, floor, pi
 from numpy.typing import NDArray
 
-from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
+from meepmeep.xy.position import solve_xy_p5s, pd_t15sc, bounding_box
 
 from .common import circle_circle_intersection_area_kite as ccia
 
