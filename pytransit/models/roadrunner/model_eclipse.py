@@ -46,7 +46,7 @@ def eclipse_model(times: NDArray, k: NDArray, t0: NDArray, p: NDArray, a: NDArra
         # -----------------------------#
         # Calculate the bounding boxes #
         # -----------------------------#
-        bt1, bt4 = bounding_box(k[ipv], xyc[ipv])
+        bt4, bt1 = bounding_box(k[ipv], xyc[ipv])
         bbs[ipv, :, 0] = bt1
         bbs[ipv, :, 1] = bt4
         for ilc in range(nlc):
