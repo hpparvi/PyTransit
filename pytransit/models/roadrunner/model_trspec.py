@@ -1,9 +1,10 @@
 from math import fabs, floor
-from numba import njit, prange, get_num_threads, set_num_threads
-from numpy import zeros, dot, ndarray, isnan, full, nan, mean, floor, fabs, max
 
-from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
-from meepmeep.utils import d_from_pkaiews
+from meepmeep.backends.numba.taylor.position2d import d2dc
+from meepmeep.backends.numba.taylor.solve2d import solve2d
+from meepmeep.backends.numba.utils import d_from_pkaiews
+from numba import njit, prange, get_num_threads, set_num_threads
+from numpy import zeros, dot, ndarray, isnan, nan, mean, floor, fabs, max
 
 from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
 from .common import circle_circle_intersection_area_kite as ccia
@@ -59,7 +60,7 @@ def tsmodel_serial(times: ndarray,
         # -----------------------------------------------------#
         # Calculate the Taylor series expansions for the orbit #
         # -----------------------------------------------------#
-        xyc[:, :] = solve_xy_p5s(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        xyc[:, :] = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
 
         # --------------------------------#
         # Calculate the half-window width #
@@ -78,7 +79,7 @@ def tsmodel_serial(times: ndarray,
             else:
                 for isample in range(1, nsamples[0] + 1):
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
-                    z = pd_t15sc(tc + time_offset, xyc)
+                    z = d2dc(tc + time_offset, xyc)
                     ap0, kappa = ccia(1.0, kmean, z)
                     dadk = 2.0*kmean*kappa
                     if z <= 1.0 - kmax:
@@ -148,7 +149,7 @@ def tsmodel_parallel(times: ndarray,
         # -----------------------------------------------------#
         # Calculate the Taylor series expansions for the orbit #
         # -----------------------------------------------------#
-        xyc[:, :] = solve_xy_p5s(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        xyc[:, :] = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
 
         # --------------------------------#
         # Calculate the half-window width #
@@ -167,7 +168,7 @@ def tsmodel_parallel(times: ndarray,
             else:
                 for isample in range(1, nsamples[0] + 1):
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
-                    z = pd_t15sc(tc + time_offset, xyc)
+                    z = d2dc(tc + time_offset, xyc)
                     ap0, kappa = ccia(1.0, kmean, z)
                     dadk = 2.0*kmean*kappa
                     for ipb in range(npb):
