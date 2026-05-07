@@ -16,8 +16,7 @@
 
 from typing import Union
 
-from dask.array import atleast_1d
-from numpy import squeeze, zeros
+from numpy import squeeze, zeros, atleast_1d, atleast_2d
 from numpy.typing import NDArray
 from .roadrunner.model_eclipse import eclipse_model
 from .transitmodel import TransitModel
@@ -33,7 +32,7 @@ class EclipseModel(TransitModel):
         super().__init__()
 
     def evaluate(self, k: npfloat, t0: npfloat, p: npfloat, a: npfloat, i: npfloat, e: npfloat = None, w: npfloat = None,
-                 rstar: npfloat = 1.0, copy: bool = True) -> NDArray:
+                 rstar: float = 1.0, copy: bool = True) -> NDArray:
         """Evaluates a multiplicative secondary eclipse model for a set of scalar or vector parameters.
 
         Parameters
@@ -61,12 +60,11 @@ class EclipseModel(TransitModel):
         """
 
         k = atleast_1d(k)
-        t0 = atleast_1d(t0)
+        t0 = atleast_2d(t0).reshape([k.size, -1])
         p = atleast_1d(p)
         a = atleast_1d(a)
         i = atleast_1d(i)
-        rstar = atleast_1d(rstar)
         e = zeros(1) if e is None else atleast_1d(e)
         w = zeros(1) if w is None else atleast_1d(w)
 
-        return squeeze(eclipse_model(self.time, k, t0, p, a, i, e, w, rstar, self.lcids, self.pbids, self.nsamples, self.exptimes))
+        return squeeze(eclipse_model(self.time, k, t0, p, a, i, e, w, rstar, self.nlc, self.lcids, self.pbids, self.nsamples, self.exptimes))

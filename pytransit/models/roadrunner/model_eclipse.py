@@ -11,7 +11,7 @@ from .common import circle_circle_intersection_area_kite as ccia
 
 
 def eclipse_model(times: NDArray, k: NDArray, t0: NDArray, p: NDArray, a: NDArray, i: NDArray, e: NDArray, w: NDArray,
-                  rstar: NDArray, nlc: int, lcids: NDArray, epids: NDArray, nsamples: int | NDArray,
+                  rstar: float, nlc: int, lcids: NDArray, epids: NDArray, nsamples: int | NDArray,
                   exptimes: int | NDArray):
 
     npv = k.shape[0]
@@ -41,7 +41,7 @@ def eclipse_model(times: NDArray, k: NDArray, t0: NDArray, p: NDArray, a: NDArra
         # ------------------------------------------------------#
         eclipse_shifts[ipv] = eclipse_phase(p[ipv], i[ipv], e[ipv], w[ipv])
         xyc[ipv, :, :] = solve_xy_p5s(eclipse_shifts[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        ltts[ipv] = eclipse_light_travel_time(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], rstar[ipv])
+        ltts[ipv] = eclipse_light_travel_time(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], rstar)
 
         # -----------------------------#
         # Calculate the bounding boxes #
