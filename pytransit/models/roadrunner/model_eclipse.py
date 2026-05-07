@@ -1,11 +1,11 @@
 from meepmeep import eclipse_light_travel_time
-from meepmeep.utils import eclipse_phase
-
+from meepmeep.backends.numba.taylor.position2d import d2dc
+from meepmeep.backends.numba.taylor.solve2d import solve2d
+from meepmeep.backends.numba.taylor.util2d import bounding_box
+from meepmeep.backends.numba.utils import eclipse_phase
 from numba import njit, prange
 from numpy import zeros, isnan, nan, full, floor, pi
 from numpy.typing import NDArray
-
-from meepmeep.xy.position import solve_xy_p5s, pd_t15sc, bounding_box
 
 from .common import circle_circle_intersection_area_kite as ccia
 
@@ -41,7 +41,7 @@ def eclipse_model(times: NDArray, k: NDArray, t0: NDArray, p: NDArray, a: NDArra
         # Calculate the Taylor series expansions for the orbits #
         # ------------------------------------------------------#
         eclipse_shifts[ipv] = eclipse_phase(p[ipv], i[ipv], e[ipv], w[ipv])
-        xyc[ipv, :, :] = solve_xy_p5s(eclipse_shifts[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        xyc[ipv, :, :] = solve2d(eclipse_shifts[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
         ltts[ipv] = eclipse_light_travel_time(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], rstar)
 
         # -----------------------------#
@@ -77,7 +77,7 @@ def eclipse_model(times: NDArray, k: NDArray, t0: NDArray, p: NDArray, a: NDArra
         else:
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = pd_t15sc(tc + time_offset, xyc[ipv])
+                z = d2dc(tc + time_offset, xyc[ipv])
                 flux[ipv, ipt] += pi * k[ipv] ** 2 - ccia(1.0, k[ipv], z)[0]
             flux[ipv, ipt] /= nsamples[ilc]
     return flux
