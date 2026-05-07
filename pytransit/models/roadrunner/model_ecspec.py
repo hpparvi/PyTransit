@@ -1,8 +1,9 @@
 from math import fabs, floor
 
-from meepmeep.utils import d_from_pkaiews, eclipse_phase
-from meepmeep.newton import eclipse_light_travel_time
-from meepmeep.xy.position import solve_xy_p5s, pd_t15sc
+from meepmeep.backends.numba.newton.newton import eclipse_light_travel_time
+from meepmeep.backends.numba.taylor.position2d import d2dc
+from meepmeep.backends.numba.taylor.solve2d import solve2d
+from meepmeep.backends.numba.utils import d_from_pkaiews, eclipse_phase
 from numpy import zeros, ndarray, isnan, nan, pi
 
 from .common import circle_circle_intersection_area_kite as ccia
@@ -34,7 +35,7 @@ def esmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
         # Calculate the Taylor series expansions for the orbit #
         # -----------------------------------------------------#
         eclipse_shift = eclipse_phase(p[ipv], i[ipv], e[ipv], w[ipv])
-        xyc[:, :] = solve_xy_p5s(eclipse_shift, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        xyc[:, :] = solve2d(eclipse_shift, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
         ltt = eclipse_light_travel_time(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], rstar[ipv])
         te = t0[ipv] + eclipse_shift + ltt
 
@@ -55,7 +56,7 @@ def esmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
             else:
                 for isample in range(1, nsamples + 1):
                     time_offset = exptime * ((isample - 0.5) / nsamples - 0.5)
-                    z = pd_t15sc(tc + time_offset, xyc)
+                    z = d2dc(tc + time_offset, xyc)
                     flux[ipv, :, ipt] += 1.0 - (fratio[ipv, :] * ccia(1.0, k[ipv], z)[0] / pi) / (
                                 1.0 + fratio[ipv, :] * k[ipv] ** 2)
                 flux[ipv, :, ipt] /= nsamples
