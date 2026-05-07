@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.7.1] - 2026-05-07
+
+### Added
+
+- Added pytransit.models.new_eclise_model.EclipseModel to model secondary eclipses. 
+
 ## [2.7.0] - 2026-04-27
 
 ### Added

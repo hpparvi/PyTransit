@@ -10,6 +10,7 @@ from meepmeep.xy.position import solve_xy_p5s, pd_t15sc, bounding_box
 from .common import circle_circle_intersection_area_kite as ccia
 
 
+@njit(parallel=False, fastmath=False)
 def eclipse_model(times: NDArray, k: NDArray, t0: NDArray, p: NDArray, a: NDArray, i: NDArray, e: NDArray, w: NDArray,
                   rstar: float, nlc: int, lcids: NDArray, epids: NDArray, nsamples: int | NDArray,
                   exptimes: int | NDArray):
