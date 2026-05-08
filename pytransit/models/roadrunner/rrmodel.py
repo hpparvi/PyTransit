@@ -29,8 +29,8 @@
 from typing import Tuple, Callable, Union, List, Optional
 from warnings import warn
 
-from numba import get_num_threads
-from numpy import ndarray, linspace, isscalar, unique, atleast_1d
+from numba import get_num_threads, njit
+from numpy import ndarray, linspace, isscalar, unique, atleast_1d, squeeze, atleast_2d
 from scipy.integrate import trapezoid
 
 from ..ldmodel import LDModel
@@ -38,7 +38,8 @@ from ..numba.ldmodels import *
 from ..transitmodel import TransitModel
 
 from .common import create_z_grid, calculate_weights_3d
-from .model import rrmodel
+from .model_full import rr_full
+from .model_simple import rr_simple
 
 __all__ = ['RoadRunnerModel']
 
@@ -99,7 +100,9 @@ class RoadRunnerModel(TransitModel):
             self.nthreads: int = nthreads
             self.parallel = self.nthreads > 1
 
-        self.splimit: float = small_planet_limit
+        self.full_model = njit(rr_full, parallel=self.parallel, cache=True)
+
+        self.splimit: float | None = small_planet_limit
 
         # Set up the limb darkening model
         # --------------------------------
@@ -223,8 +226,13 @@ class RoadRunnerModel(TransitModel):
                     for ipb in range(self.npb):
                         istar[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv, ipb], self._ldz)
 
-        flux = rrmodel(self.time, k, t0, p, a, i, e, w, self.parallel,
-                       self.nlc, self.npb, self.nep, self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
-                       ldp, istar, self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
+        k, t0, p, a, i, e, w = (atleast_2d(k), atleast_2d(t0), atleast_1d(p), atleast_1d(a),
+                                atleast_1d(i), atleast_1d(e), atleast_1d(w))
 
-        return flux
+        if self.nlc > 1 or k.shape[0] > 1:
+            return squeeze(self.full_model(self.time, k, t0, p, a, i, e, w, self.nlc, self.npb, self.nep,
+                                   self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
+                                   ldp, istar, self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze))
+        else:
+            return rr_simple(self.time, k[0, 0], t0[0, 0], p[0], a[0], i[0], e[0], w[0], self.parallel, self.nsamples[0], self.exptimes[0],
+                             ldp[0, 0, :], istar[0, 0], self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
