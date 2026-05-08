@@ -50,7 +50,9 @@ This module implements the qpower2 transit model by Maxted & Gill (A&A, 622, A33
 from numpy import any, sqrt, pi, arccos, ones_like, atleast_2d, zeros, atleast_1d, nan, copysign, fmax, floor
 from numba import njit, prange
 
-from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st, t14
+from meepmeep.backends.numba.taylor.solve2d import solve2d
+from meepmeep.backends.numba.taylor.position2d import d2dc
+from meepmeep.backends.numba.taylor.util2d import bounding_box
 
 
 @njit(fastmath=True)
@@ -111,13 +113,15 @@ def qpower2_model_v(t, k, ldc, t0, p, a, i, e, w, lcids, pbids, nsamples, exptim
     npt = t.size
     flux = zeros((npv, npt))
     for ipv in prange(npv):
-        y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        half_window_width = 0.025 + 0.5 * t14(k[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
+        c = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        bt1, bt4 = bounding_box(k[ipv, 0], c)
+        bt1 -= 0.025
+        bt4 += 0.025
 
         for j in range(npt):
             epoch = floor((t[j] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
             tc = t[j] - (t0[ipv] + epoch * p[ipv])
-            if abs(tc) > half_window_width:
+            if not (bt1 <= tc <= bt4):
                 flux[ipv, j] = 1.0
             else:
                 ilc = lcids[j]
@@ -130,7 +134,7 @@ def qpower2_model_v(t, k, ldc, t0, p, a, i, e, w, lcids, pbids, nsamples, exptim
 
                 for isample in range(1, nsamples[ilc] + 1):
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                    z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+                    z = d2dc(tc + time_offset, c)
                     if z > 1.0 + _k:
                         flux[ipv, j] += 1.
                     else:
@@ -145,14 +149,16 @@ def qpower2_model_s(t, k, ldc, t0, p, a, i, e, w, lcids, pbids, nsamples, exptim
     ldc = atleast_1d(ldc)
     npt = t.size
 
-    y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
-    half_window_width = 0.025 + 0.5 * t14(k[0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
+    c = solve2d(0.0, p, a, i, e, w)
+    bt1, bt4 = bounding_box(k[0], c)
+    bt1 -= 0.025
+    bt4 += 0.025
 
     flux = zeros(npt)
     for j in range(npt):
         epoch = floor((t[j] - t0 + 0.5 * p) / p)
         tc = t[j] - (t0 + epoch * p)
-        if abs(tc) > half_window_width:
+        if not (bt1 <= tc <= bt4):
             flux[j] = 1.0
         else:
             ilc = lcids[j]
@@ -161,7 +167,7 @@ def qpower2_model_s(t, k, ldc, t0, p, a, i, e, w, lcids, pbids, nsamples, exptim
 
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+                z = d2dc(tc + time_offset, c)
                 if z > 1.0 + _k:
                     flux[j] += 1.
                 else:

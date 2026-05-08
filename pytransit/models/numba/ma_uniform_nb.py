@@ -45,11 +45,10 @@ from numba import njit, prange
 from numpy import pi, sqrt, arccos, abs, zeros_like, sign, sin, cos, abs, atleast_2d, zeros, atleast_1d, isnan, inf, \
     nan, copysign, fmax, floor
 
-from meepmeep.xy.position import pd_t15sc, solve_xy_p5s, xyd_t15s
-from meepmeep.xy.derivatives import pd_with_derivatives_s, xy_derivative_coeffs, pd_derivatives_s
-
-from ...orbits import d_from_pkaiews
-from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st, vajs_from_paiew_eclipse, t14
+from meepmeep.backends.numba.taylor.solve2d import solve2d
+from meepmeep.backends.numba.taylor.position2d import d2dc
+from meepmeep.backends.numba.taylor.util2d import bounding_box
+from meepmeep.backends.numba.utils import eclipse_phase
 
 TWO_PI = 2.0 * pi
 HALF_PI = 0.5 * pi
@@ -202,17 +201,20 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
             continue
 
         if zsign >= 0:
-            y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
             et = 0.0
-            half_window_width = 0.025 + 0.5 * t14(k[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
+            c = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+            bt1, bt4 = bounding_box(k[ipv, 0], c)
         else:
-            et, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew_eclipse(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-            half_window_width = 0.025 - 0.5 * t14(k[ipv, 0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
+            et = eclipse_phase(p[ipv], i[ipv], e[ipv], w[ipv])
+            c = solve2d(et, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+            bt4, bt1 = bounding_box(k[ipv, 0], c)
+        bt1 -= 0.025
+        bt4 += 0.025
 
         for j in range(npt):
             epoch = floor((t[j] - t0[ipv] - et + 0.5 * p[ipv]) / p[ipv])
             tc = t[j] - (t0[ipv] + et + epoch * p[ipv])
-            if abs(tc) > half_window_width:
+            if not (bt1 <= tc <= bt4):
                 flux[ipv, j] = 1.0
             else:
                 ilc = lcids[j]
@@ -225,7 +227,7 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
 
                 for isample in range(1, nsamples[ilc] + 1):
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                    z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+                    z = d2dc(tc + time_offset, c)
                     if z > 1.0 + _k:
                         flux[ipv, j] += 1.
                     else:
@@ -245,17 +247,20 @@ def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
         return flux
 
     if zsign >= 0:
-        y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
         et = 0.0
-        half_window_width = 0.025 + 0.5 * t14(k[0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
+        c = solve2d(0.0, p, a, i, e, w)
+        bt1, bt4 = bounding_box(k[0], c)
     else:
-        et, y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew_eclipse(p, a, i, e, w)
-        half_window_width = 0.025 - 0.5 * t14(k[0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
+        et = eclipse_phase(p, i, e, w)
+        c = solve2d(et, p, a, i, e, w)
+        bt4, bt1 = bounding_box(k[0], c)
+    bt1 -= 0.025
+    bt4 += 0.025
 
     for j in range(npt):
         epoch = floor((t[j] - t0 - et + 0.5 * p) / p)
         tc = t[j] - (t0 + et + epoch * p)
-        if abs(tc) > half_window_width:
+        if not (bt1 <= tc <= bt4):
             flux[j] = 1.0
         else:
             ilc = lcids[j]
@@ -264,7 +269,7 @@ def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
 
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+                z = d2dc(tc + time_offset, c)
                 if z > 1.0 + _k:
                     flux[j] += 1.
                 else:

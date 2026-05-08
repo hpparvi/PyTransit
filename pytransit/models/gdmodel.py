@@ -30,8 +30,10 @@ from .numba.gdmodel import create_star_xy, create_planet_xy, map_osm, xy_taylor_
     luminosity_v2, planck, create_star_luminosity
 from ..contamination.filter import Filter, DeltaFilter
 from ..stars import read_bt_settl_table, read_husser2013_table
+from meepmeep.backends.numba.taylor.solve2d import solve2d
+from meepmeep.backends.numba.taylor.util2d import find_contact_point
+
 from ..orbits import as_from_rhop, i_from_baew
-from ..orbits.taylor_z import vajs_from_paiew, find_contact_point
 from ..utils.octasphere import octasphere
 
 
@@ -214,15 +216,15 @@ class GravityDarkenedModel(TransitModel):
 
         # Plot the orbit
         # --------------
-        y0, vx, vy, ax_, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, inc, e, w)
-        c1 = find_contact_point(k, 1, y0, vx, vy, ax_, ay, jx, jy, sx, sy)
-        c4 = find_contact_point(k, 4, y0, vx, vy, ax_, ay, jx, jy, sx, sy)
+        cf = solve2d(0.0, p, a, inc, e, w)
+        c1 = find_contact_point(k, 1, cf)
+        c4 = find_contact_point(k, 4, cf)
         time = linspace(2 * c1, 2 * c4, 100)
 
-        ox, oy = xy_taylor_vt(time, alpha, y0, vx, vy, ax_, ay, jx, jy, sx, sy)
+        ox, oy = xy_taylor_vt(time, alpha, cf)
         ax.plot(ox, oy, 'k')
 
-        pxy = xy_taylor_vt(array([0.0]), alpha, y0, vx, vy, ax_, ay, jx, jy, sx, sy)
+        pxy = xy_taylor_vt(array([0.0]), alpha, cf)
         ax.add_artist(Circle(pxy, k, zorder=10, fc='k'))
 
         # Plot the info
@@ -314,7 +316,7 @@ class GravityDarkenedModel(TransitModel):
         st, sx, sy = create_star_xy(res)
         fstar = create_star_luminosity(res, sx, sy, mstar, self.rstar, ostar, tpole, gpole, f,
                                        sphi, cphi, beta, ldc, self._flux_table, self._teff0, self._dteff, self.accurate_mu)
-        px, py = xy_taylor_vt(self.time - t0, l, *vajs_from_paiew(p, a, i, e, w))
+        px, py = xy_taylor_vt(self.time - t0, l, solve2d(0.0, p, a, i, e, w))
 
         if plot:
             fig, ax = subplots()

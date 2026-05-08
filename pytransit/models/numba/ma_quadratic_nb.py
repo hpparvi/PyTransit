@@ -45,7 +45,9 @@ from numba import njit, prange
 from numpy import pi, sqrt, arccos, abs, log, zeros, linspace, array, atleast_2d, floor, inf, isnan, atleast_1d, ndarray, nan, copysign, \
     fmax, any
 
-from ...orbits.taylor_z import vajs_from_paiew, z_taylor_st, t14
+from meepmeep.backends.numba.taylor.solve2d import solve2d
+from meepmeep.backends.numba.taylor.position2d import d2dc
+from meepmeep.backends.numba.taylor.util2d import bounding_box
 
 HALF_PI = 0.5 * pi
 FOUR_PI = 4.0 * pi
@@ -555,8 +557,10 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
             flux[ipv, :] = inf
             continue
 
-        y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        half_window_width = 0.025 + 0.5 * t14(k[ipv,0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
+        c = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        bt1, bt4 = bounding_box(k[ipv, 0], c)
+        bt1 -= 0.025
+        bt4 += 0.025
 
         for j in range(npt):
             ilc = lcids[j]
@@ -565,7 +569,7 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
             epoch = floor((t[j] - t0[ipv, iep] + 0.5 * p[ipv]) / p[ipv])
             tc = t[j] - (t0[ipv, iep] + epoch * p[ipv])
 
-            if abs(tc) > half_window_width:
+            if not (bt1 <= tc <= bt4):
                 flux[ipv, j] = 1.0
             else:
                 ipb = pbids[ilc]
@@ -581,7 +585,7 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
                 else:
                     for isample in range(1, nsamples[ilc] + 1):
                         time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                        z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+                        z = d2dc(tc + time_offset, c)
                         if z > 1.0 + _k:
                             flux[ipv, j] += 1.
                         else:
@@ -607,8 +611,10 @@ def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
     if epids.max() != t0.size - 1:
         raise ValueError("The number of transit centers must equal to the number of individual epoch IDs.")
 
-    y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
-    half_window_width = 0.025 + 0.5 * t14(k[0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
+    c = solve2d(0.0, p, a, i, e, w)
+    bt1, bt4 = bounding_box(k[0], c)
+    bt1 -= 0.025
+    bt4 += 0.025
 
     npt = t.size
     flux = zeros(npt)
@@ -623,7 +629,7 @@ def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
 
         epoch = floor((t[j] - t0[iep] + 0.5 * p) / p)
         tc = t[j] - (t0[iep] + epoch * p)
-        if abs(tc) > half_window_width:
+        if not (bt1 <= tc <= bt4):
             flux[j] = 1.0
         else:
             ipb = pbids[ilc]
@@ -640,7 +646,7 @@ def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
             else:
                 for isample in range(1, nsamples[ilc] + 1):
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                    z = z_taylor_st(tc + time_offset, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+                    z = d2dc(tc + time_offset, c)
                     if z > 1.0 + _k:
                         flux[j] += 1.
                     else:

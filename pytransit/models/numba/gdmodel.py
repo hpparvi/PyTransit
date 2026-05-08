@@ -19,8 +19,10 @@ from scipy.constants import G, k, h, c
 from numpy import exp, pi, sqrt, zeros, sin, cos, nan, inf, linspace, meshgrid, floor, isfinite, fmax, isnan, nanmean, \
     arange, zeros_like, atleast_2d, array, cross, sign
 
+from meepmeep.backends.numba.taylor.solve2d import solve2d
+from meepmeep.backends.numba.taylor.util2d import find_contact_point, bounding_box
+
 from ..roadrunner.common import circle_circle_intersection_area
-from ...orbits.taylor_z import vajs_from_paiew, find_contact_point, t14
 
 d2sec = 24.*60.*60.
 
@@ -397,18 +399,18 @@ def mean_luminosity_under_planet(x, y, mstar, rstar, ostar, tpole, gpole, f, sph
 
 
 @njit
-def calculate_luminosity_interpolation_table(res, k, xp, yp, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy,
+def calculate_luminosity_interpolation_table(res, k, xp, yp, sa, ca, c,
                                              mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc,
                                              ftable, t0, dt, accurate_mu):
-    t1 = find_contact_point(k, 1, y0, vx, vy, ax, ay, jx, jy, sx, sy)
-    t4 = find_contact_point(k, 4, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+    t1 = find_contact_point(k, 1, c)
+    t4 = find_contact_point(k, 4, c)
     times = linspace(t1, t4, res)
 
     npb = ftable.shape[0]
     lt = zeros((npb, res))
     for ipb in range(npb):
         for i in range(lt.shape[1]):
-            x, y = xy_taylor_st(times[i], sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+            x, y = xy_taylor_st(times[i], sa, ca, c)
             xs = x + k * xp
             ys = y + k * yp
             lt[ipb, i] = mean_luminosity_under_planet(xs, ys, mstar, rstar, ostar, tpole, gpole, f, sphi, cphi, beta, ldc,
@@ -436,12 +438,9 @@ def calculate_luminosity_interpolation_table(res, k, xp, yp, sa, ca, y0, vx, vy,
 
 
 @njit(fastmath=True)
-def xy_taylor_st(t, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy):
-    t2 = t*t
-    t3 = t2*t
-    t4 = t3*t
-    px =      vx*t + 0.5*ax*t2 + jx*t3/6.0 + sx*t4/24.
-    py = y0 + vy*t + 0.5*ay*t2 + jy*t3/6.0 + sy*t4/24.
+def xy_taylor_st(t, sa, ca, c):
+    px = c[0, 0] + t*(c[0, 1] + t*(c[0, 2] + t*(c[0, 3] + t*c[0, 4])))
+    py = c[1, 0] + t*(c[1, 1] + t*(c[1, 2] + t*(c[1, 3] + t*c[1, 4])))
 
     x = ca*px - sa*py
     y = ca*py + sa*px
@@ -450,18 +449,15 @@ def xy_taylor_st(t, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy):
 
 
 @njit(fastmath=True)
-def xy_taylor_vt(ts, a, y0, vx, vy, ax, ay, jx, jy, sx, sy):
+def xy_taylor_vt(ts, a, c):
     npt = ts.size
     x, y = zeros(npt), zeros(npt)
     ca, sa = cos(a), sin(a)
 
     for i in range(npt):
         t = ts[i]
-        t2 = t*t
-        t3 = t2*t
-        t4 = t3*t
-        px =      vx*t + 0.5*ax*t2 + jx*t3/6.0 + sx*t4/24.
-        py = y0 + vy*t + 0.5*ay*t2 + jy*t3/6.0 + sy*t4/24.
+        px = c[0, 0] + t*(c[0, 1] + t*(c[0, 2] + t*(c[0, 3] + t*c[0, 4])))
+        py = c[1, 0] + t*(c[1, 1] + t*(c[1, 2] + t*(c[1, 3] + t*c[1, 4])))
 
         x[i] = ca*px - sa*py
         y[i] = ca*py + sa*px
@@ -470,7 +466,7 @@ def xy_taylor_vt(ts, a, y0, vx, vy, ax, ay, jx, jy, sx, sy):
 
 
 @njit
-def find_contact_point_2d(k: float, point: int, az, feff, y0, vx, vy, ax, ay, jx, jy, sx, sy):
+def find_contact_point_2d(k: float, point: int, az, feff, c):
     if point == 1 or point == 2 or point == 12:
         s = -1.0
     else:
@@ -483,14 +479,16 @@ def find_contact_point_2d(k: float, point: int, az, feff, y0, vx, vy, ax, ay, jx
     else:
         zt = 1.0
 
+    vx = c[0, 1]
+
     t0 = 0.0
     t2 = s * 2.0 / vx
     t1 = 0.5 * t2
 
     sa, ca = sin(az), cos(az)
 
-    x0, y0 = xy_taylor_st(t0, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
-    x1, y1 = xy_taylor_st(t1, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+    x0, y0 = xy_taylor_st(t0, sa, ca, c)
+    x1, y1 = xy_taylor_st(t1, sa, ca, c)
     z0 = sqrt(x0 ** 2 + (y0 / (1 - feff)) ** 2) - zt
     z1 = sqrt(x1 ** 2 + (y1 / (1 - feff)) ** 2) - zt
 
@@ -499,12 +497,12 @@ def find_contact_point_2d(k: float, point: int, az, feff, y0, vx, vy, ax, ay, jx
         if z0 * z1 < 0.0:
             t1, t2 = 0.5 * (t0 + t1), t1
             z2 = z1
-            x1, y1 = xy_taylor_st(t1, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+            x1, y1 = xy_taylor_st(t1, sa, ca, c)
             z1 = sqrt(x1 ** 2 + (y1 / (1 - feff)) ** 2) - zt
         else:
             t0, t1 = t1, 0.5 * (t1 + t2)
             z0 = z1
-            x1, y1 = xy_taylor_st(t1, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+            x1, y1 = xy_taylor_st(t1, sa, ca, c)
             z1 = sqrt(x1 ** 2 + (y1 / (1 - feff)) ** 2) - zt
         i += 1
     return t1
@@ -516,16 +514,17 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
                    f, feff, sphi, cphi, beta, ftable, teff0, dteff,
                    tres, ts, xs, ys, xp, yp,
                    lcids, pbids, nsamples, exptimes, npb, accurate_mu):
-    y0, vx, vy, ax, ay, jx, jy, sx, sy = vajs_from_paiew(p, a, i, e, w)
+    c = solve2d(0.0, p, a, i, e, w)
     ldc = atleast_2d(ldc)
 
     sa, ca = sin(aa), cos(aa)
-    half_window_width = 0.025 + 0.5 * t14(k[0], y0, vx, vy, ax, ay, jx, jy, sx, sy)
+    bt1, bt4 = bounding_box(k[0], c)
+    bt1 -= 0.025
+    bt4 += 0.025
 
     npt = t.size
     flux = zeros(npt)
-    tp, lp = calculate_luminosity_interpolation_table(tres, k[0], xp, yp, sa, ca,
-                                                      y0, vx, vy, ax, ay, jx, jy, sx, sy,
+    tp, lp = calculate_luminosity_interpolation_table(tres, k[0], xp, yp, sa, ca, c,
                                                       mstar, rstar, ostar, tpole, gpole, f,
                                                       sphi, cphi, beta, ldc, ftable, teff0, dteff, accurate_mu)
     dtp = tp[1] - tp[0]
@@ -541,7 +540,7 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
     for j in range(npt):
         epoch = floor((t[j] - t0 + 0.5*p)/p)
         tc = t[j] - (t0 + epoch*p)
-        if abs(tc) > half_window_width:
+        if not (bt1 <= tc <= bt4):
             flux[j] = 1.0
         else:
             ilc = lcids[j]
@@ -570,7 +569,7 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
                         at = (to - tp[it]) / dtp
                     ml = (1.0 - at) * lp[ipb, it] + at * lp[ipb, it + 1]
 
-                    x, y = xy_taylor_st(to, sa, ca, y0, vx, vy, ax, ay, jx, jy, sx, sy)
+                    x, y = xy_taylor_st(to, sa, ca, c)
 
                     b = sqrt(x**2 + (y / (1. - feff))**2)
                     ia = circle_circle_intersection_area(1., _k, b)

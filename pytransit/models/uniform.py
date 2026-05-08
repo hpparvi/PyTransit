@@ -1,11 +1,10 @@
-from math import nan, isfinite
 from typing import Union, Optional, Tuple
 
 from numba import njit
-from numpy import ndarray, squeeze, zeros, asarray, isscalar, atleast_1d, ones_like, arctan2, array, sqrt
+from numpy import ndarray, squeeze, zeros, asarray, atleast_1d, ones_like, arctan2, array, sqrt
 
-from meepmeep.xy.par_fitting import coeffs as coeffs_fit
-from meepmeep.xy.par_direct import coeffs as coeffs_dir
+from meepmeep.backends.numba.taylor.solve2d import solve2d
+from meepmeep.backends.numba.utils import as_from_rhop, i_from_baew
 
 from .numba.udmodel import uniform_model_v
 from .transitmodel import TransitModel
@@ -17,10 +16,43 @@ sov = Union[float, ndarray]
 
 
 @njit
+def _coeffs_dir(phase, p, a, i, e, w):
+    p = atleast_1d(asarray(p))
+    a = atleast_1d(asarray(a))
+    i = atleast_1d(asarray(i))
+    e = atleast_1d(asarray(e))
+    w = atleast_1d(asarray(w))
+    nor = p.size
+    cfs = zeros((nor, 2, 5))
+    for j in range(nor):
+        cfs[j] = solve2d(phase, p[j], a[j], i[j], e[j], w[j])
+    return cfs
+
+
+@njit
+def _coeffs_fit(phase, p, rho, b, secw, sesw):
+    p = atleast_1d(asarray(p))
+    rho = atleast_1d(asarray(rho))
+    b = atleast_1d(asarray(b))
+    secw = atleast_1d(asarray(secw))
+    sesw = atleast_1d(asarray(sesw))
+    nor = p.size
+    cfs = zeros((nor, 2, 5))
+    for j in range(nor):
+        a = as_from_rhop(rho[j], p[j])
+        e = secw[j]**2 + sesw[j]**2
+        w = arctan2(sesw[j], secw[j])
+        i = i_from_baew(b[j], a, e, w)
+        cfs[j] = solve2d(phase, p[j], a, i, e, w)
+    return cfs
+
+
+@njit
 def umdir(time, k, t0, p, a, i, e, w, derivatives, lcids, pbids, epids, nsamples, exptimes):
     k = atleast_1d(array(k))
     dkdp = ones_like(k)
-    cfs, dcfs = coeffs_dir(0.0, p, a, i, e, w, derivatives)
+    cfs = _coeffs_dir(0.0, p, a, i, e, w)
+    dcfs = zeros((cfs.shape[0], 6, 2, 5))
     flux, dflux = uniform_model_v(time, k, t0, p, dkdp, cfs, dcfs, derivatives,
                                   lcids, pbids, epids, nsamples, exptimes)
     return flux, dflux
@@ -30,7 +62,8 @@ def umdir(time, k, t0, p, a, i, e, w, derivatives, lcids, pbids, epids, nsamples
 def umfit(time, k2, t0, p, rho, b, secw, sesw, derivatives, lcids, pbids, epids, nsamples, exptimes):
     k = sqrt(k2)
     dkdp = 0.5/k
-    cfs, dcfs = coeffs_fit(0.0, p, rho, b, secw, sesw, derivatives)
+    cfs = _coeffs_fit(0.0, p, rho, b, secw, sesw)
+    dcfs = zeros((cfs.shape[0], 6, 2, 5))
     flux, dflux = uniform_model_v(time, k, t0, p, dkdp, cfs, dcfs, derivatives,
                                   lcids, pbids, epids, nsamples, exptimes)
     return flux, dflux
@@ -79,6 +112,9 @@ class UniformDiskModel(TransitModel):
         Normalized flux
         """
 
+        if return_derivatives:
+            raise NotImplementedError("Derivative computation is not supported under the mm1 backend.")
+
         e = 0. if e is None else e
         w = 0. if w is None else w
 
@@ -118,6 +154,9 @@ class UniformDiskModel(TransitModel):
         -------
         Normalized flux
         """
+
+        if return_derivatives:
+            raise NotImplementedError("Derivative computation is not supported under the mm1 backend.")
 
         secw = 0. if secw is None else secw
         sesw = 0. if sesw is None else sesw
