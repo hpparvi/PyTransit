@@ -3,7 +3,8 @@ from math import fabs, floor
 from meepmeep.backends.numba.newton.newton import eclipse_light_travel_time
 from meepmeep.backends.numba.taylor.position2d import d2dc
 from meepmeep.backends.numba.taylor.solve2d import solve2d
-from meepmeep.backends.numba.utils import d_from_pkaiews, eclipse_phase
+from meepmeep.backends.numba.taylor.util2d import bounding_box
+from meepmeep.backends.numba.utils import eclipse_phase
 from numpy import zeros, ndarray, isnan, nan, pi
 
 from .common import circle_circle_intersection_area_kite as ccia
@@ -39,11 +40,12 @@ def esmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
         ltt = eclipse_light_travel_time(p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], rstar[ipv])
         te = t0[ipv] + eclipse_shift + ltt
 
-        # --------------------------------#
-        # Calculate the half-window width #
-        # --------------------------------#
-        hww = 0.5 * d_from_pkaiews(p[ipv], k[ipv], a[ipv], i[ipv], e[ipv], w[ipv], -1, 14)
-        hww = 0.0015 + exptime + hww
+        # ---------------------------#
+        # Calculate the bounding box #
+        # ---------------------------#
+        bt4, bt1 = bounding_box(k[ipv], xyc)
+        bt1 -= 0.0015 + exptime
+        bt4 += 0.0015 + exptime
 
         # --------------------------#
         # Calculate the light curve #
@@ -51,7 +53,7 @@ def esmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
         for ipt in range(npt):
             epoch = floor((times[ipt] - te + 0.5 * p[ipv]) / p[ipv])
             tc = times[ipt] - (te + epoch * p[ipv])
-            if fabs(tc) > hww:
+            if not (bt1 <= tc <= bt4):
                 flux[ipv, :, ipt] = 1.0
             else:
                 for isample in range(1, nsamples + 1):

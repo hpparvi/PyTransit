@@ -2,7 +2,7 @@ from math import fabs, floor, sqrt
 
 from meepmeep.backends.numba.taylor.position2d import p2dc
 from meepmeep.backends.numba.taylor.solve2d import solve2d
-from meepmeep.backends.numba.utils import d_from_pkaiews
+from meepmeep.backends.numba.taylor.util2d import bounding_box
 from numba import njit, prange
 from numpy import zeros, dot, ndarray, isnan, nan, full, squeeze, atleast_2d, atleast_1d
 
@@ -71,7 +71,7 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
     pv_is_good = full(npv, True)
     ldm = zeros((npv, npb, ng))  # Limb darkening means
     xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
-    hwws = zeros((npv, npb))     # Half-window widths [d]
+    bbs = zeros((npv, nlc, 2))   # Bounding boxes per (pv, lc)
 
     exs = zeros((npv, npl, 2))   # Ellipse model scanline x-coordinates
     eys = zeros((npv, npl))      # Elilpse model scanline y-coordinates
@@ -99,12 +99,15 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
         # ------------------------------------------------------#
         xyc[ipv, :, :] = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
 
-        # ---------------------------------#
-        # Calculate the half-window widths #
-        # ---------------------------------#
-        hww = 0.5 * d_from_pkaiews(p[ipv], ks[ipv, 0], a[ipv], i[ipv], e[ipv], w[ipv], 1, 14)
+        # -----------------------------#
+        # Calculate the bounding boxes #
+        # -----------------------------#
+        bt1, bt4 = bounding_box(ks[ipv, 0], xyc[ipv])
+        bbs[ipv, :, 0] = bt1
+        bbs[ipv, :, 1] = bt4
         for ilc in range(nlc):
-            hwws[ipv, ilc] = 0.0015 + _exptimes[ilc] + hww
+            bbs[ipv, ilc, 0] -= 0.0015 + _exptimes[ilc]
+            bbs[ipv, ilc, 1] += 0.0015 + _exptimes[ilc]
 
         # ----------------------------------
         # Create the ellipse (x, y) points #
@@ -131,7 +134,7 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
 
         epoch = floor((times[ipt] - t0[ipv, iep] + 0.5 * p[ipv]) / p[ipv])
         tc = times[ipt] - (t0[ipv, iep] + epoch * p[ipv])
-        if fabs(tc) > hwws[ipv, ilc]:
+        if not (bbs[ipv, ilc, 0] <= tc <= bbs[ipv, ilc, 1]):
             flux[ipv, ipt] = 1.0
         else:
             for isample in range(1, nsamples[ilc] + 1):

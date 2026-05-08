@@ -2,7 +2,7 @@ from math import fabs, floor
 
 from meepmeep.backends.numba.taylor.position2d import d2dc
 from meepmeep.backends.numba.taylor.solve2d import solve2d
-from meepmeep.backends.numba.utils import d_from_pkaiews
+from meepmeep.backends.numba.taylor.util2d import bounding_box
 from numba import njit, prange, get_num_threads, set_num_threads
 from numpy import zeros, dot, ndarray, isnan, nan, mean, floor, fabs, max
 
@@ -62,11 +62,12 @@ def tsmodel_serial(times: ndarray,
         # -----------------------------------------------------#
         xyc[:, :] = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
 
-        # --------------------------------#
-        # Calculate the half-window width #
-        # --------------------------------#
-        hww = 0.5 * d_from_pkaiews(p[ipv], kmean, a[ipv], i[ipv], e[ipv], w[ipv], 1, 14)
-        hww = 0.0015 + exptimes[0] + hww
+        # ---------------------------#
+        # Calculate the bounding box #
+        # ---------------------------#
+        bt1, bt4 = bounding_box(kmean, xyc)
+        bt1 -= 0.0015 + exptimes[0]
+        bt4 += 0.0015 + exptimes[0]
 
         # --------------------------#
         # Calculate the light curve #
@@ -74,7 +75,7 @@ def tsmodel_serial(times: ndarray,
         for ipt in range(npt):
             epoch = floor((times[ipt] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
             tc = times[ipt] - (t0[ipv] + epoch * p[ipv])
-            if fabs(tc) > hww:
+            if not (bt1 <= tc <= bt4):
                 flux[ipv, :, ipt] = 1.0
             else:
                 for isample in range(1, nsamples[0] + 1):
@@ -151,11 +152,12 @@ def tsmodel_parallel(times: ndarray,
         # -----------------------------------------------------#
         xyc[:, :] = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
 
-        # --------------------------------#
-        # Calculate the half-window width #
-        # --------------------------------#
-        hww = 0.5 * d_from_pkaiews(p[ipv], kmean, a[ipv], i[ipv], e[ipv], w[ipv], 1, 14)
-        hww = 0.0015 + exptimes[0] + hww
+        # ---------------------------#
+        # Calculate the bounding box #
+        # ---------------------------#
+        bt1, bt4 = bounding_box(kmean, xyc)
+        bt1 -= 0.0015 + exptimes[0]
+        bt4 += 0.0015 + exptimes[0]
 
         # --------------------------#
         # Calculate the light curve #
@@ -163,7 +165,7 @@ def tsmodel_parallel(times: ndarray,
         for ipt in prange(npt):
             epoch = floor((times[ipt] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
             tc = times[ipt] - (t0[ipv] + epoch * p[ipv])
-            if fabs(tc) > hww:
+            if not (bt1 <= tc <= bt4):
                 flux[ipv, :, ipt] = 1.0
             else:
                 for isample in range(1, nsamples[0] + 1):
