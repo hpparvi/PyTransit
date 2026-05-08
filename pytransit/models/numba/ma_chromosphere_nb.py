@@ -213,35 +213,3 @@ def chromosphere_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptim
                 flux[j] += chromosphere_z_s(z, _k)
         flux[j] /= nsamples[ilc]
     return flux
-
-@njit(parallel=True, fastmath=True)
-def chromosphere_model_pv(t, pvp, lcids, pbids, nsamples, exptimes, es, ms, tae):
-    pvp = atleast_2d(pvp)
-    npv = pvp.shape[0]
-    npt = t.size
-    nk = pvp.shape[1] - 6
-
-    flux = zeros((npv, npt))
-    for j in prange(npt):
-        for ipv in range(npv):
-            t0, p, a, i, e, w = pvp[ipv,nk:]
-            ilc = lcids[j]
-            ipb = pbids[ilc]
-
-            if nk == 1:
-                k = pvp[ipv, 0]
-            else:
-                if ipb < nk:
-                    k = pvp[ipv, ipb]
-                else:
-                    k = nan
-
-            for isample in range(1,nsamples[ilc]+1):
-                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = z_ip_s(t[j]+time_offset, t0, p, a, i, e, w, es, ms, tae)
-                if z > 1.0+k:
-                    flux[ipv, j] += 1.
-                else:
-                    flux[ipv, j] += chromosphere_z_s(z, k)
-            flux[ipv, j] /= nsamples[ilc]
-    return flux
