@@ -30,7 +30,7 @@ from typing import Union, Optional, List
 
 from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, inf, isscalar
 
-from .numba.ma_quadratic_nb import quadratic_model_pv, calculate_interpolation_tables, quadratic_model_v, quadratic_model_s
+from .numba.ma_quadratic_nb import calculate_interpolation_tables, quadratic_model_v, quadratic_model_s
 from .transitmodel import TransitModel
 
 __all__ = ['QuadraticModel']
@@ -191,39 +191,6 @@ class QuadraticModel(TransitModel):
                                  self.ed, self.ld, self.le, self.kt, self.zt, self.interpolate)
         return squeeze(flux)
 
-    def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
-        """Evaluate the transit model for a 2D parameter array.
-
-        Parameters
-        ----------
-        pvp: ndarray
-            Parameter array with a shape `(npv, npar)` where `npv` is the number of parameter vectors, and each row
-            contains a set of parameters `[k, t0, p, a, i, e, w]`. The radius ratios can also be given per passband,
-            in which case the row should be structured as `[k_0, k_1, k_2, ..., k_npb, t0, p, a, b, e, w]`.
-        ldc: ndarray
-            Limb darkening coefficient array with shape `(npv, 2*npb)`, where `npv` is the number of parameter vectors
-            and `npb` is the number of passbands.
-
-        Notes
-        -----
-        This version of the `evaluate` method is optimized for calculating several models in parallel, such as when
-        using *emcee* for MCMC sampling.
-
-        Returns
-        -------
-        ndarray
-            Modelled flux either as a 1D or 2D ndarray.
-        """
-
-        ldc = asarray(ldc)
-        pvp = asarray(pvp)
-
-        if self.time is None:
-            raise ValueError("Need to set the data before calling the transit model.")
-
-        flux = quadratic_model_pv(self.time, pvp, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes,
-                                  self.npb, self.ed, self.ld, self.le, self.kt, self.zt, self.interpolate)
-        return squeeze(flux)
 
     def to_opencl(self):
         """Creates an OpenCL clone (`QuadraticModelCL`) of the transit model.

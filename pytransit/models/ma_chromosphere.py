@@ -17,7 +17,7 @@ from typing import Union
 
 from numpy import ndarray, array, squeeze, asarray, zeros, isscalar
 
-from .numba.ma_chromosphere_nb import chromosphere_model_pv, chromosphere_model_v, chromosphere_model_s
+from .numba.ma_chromosphere_nb import chromosphere_model_v, chromosphere_model_s
 from .transitmodel import TransitModel
 
 __all__ = ['ChromosphereModel']
@@ -120,27 +120,3 @@ class ChromosphereModel(TransitModel):
                                self._es, self._ms, self._tae)
         return squeeze(flux)
 
-    def evaluate_pv(self, pvp: ndarray) -> ndarray:
-        """Evaluate the transit model for a 2D parameter array.
-
-         Parameters
-         ----------
-         pvp
-             Parameter array with a shape `(npv, npar)` where `npv` is the number of parameter vectors, and each row
-             contains a set of parameters `[k, t0, p, a, i, e, w]`. The radius ratios can also be given per passband,
-             in which case the row should be structured as `[k_0, k_1, k_2, ..., k_npb, t0, p, a, i, e, w]`.
-
-         Notes
-         -----
-         This version of the `evaluate` method is optimized for calculating several models in parallel, such as when
-         using *emcee* for MCMC sampling.
-
-         Returns
-         -------
-         ndarray
-             Modelled flux either as a 1D or 2D ndarray.
-         """
-        assert self.time is not None, "Need to set the data before calling the transit model."
-        flux = chromosphere_model_pv(self.time, pvp, self.lcids, self.pbids, self.nsamples, self.exptimes, self._es,
-                                self._ms, self._tae)
-        return squeeze(flux)

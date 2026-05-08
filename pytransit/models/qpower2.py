@@ -36,7 +36,7 @@ from typing import Union, Optional
 
 from numpy import squeeze, ndarray, array, asarray, zeros, isscalar
 
-from .numba.qpower2_nb import qpower2_model_pv, qpower2_model_s, qpower2_model_v
+from .numba.qpower2_nb import qpower2_model_s, qpower2_model_v
 from .transitmodel import TransitModel
 
 __all__ = ['QPower2Model']
@@ -141,28 +141,3 @@ class QPower2Model(TransitModel):
         k = asarray(k)
         flux = qpower2_model_s(self.time, k, ldc, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes)
         return squeeze(flux)
-
-    def evaluate_pv(self, pvp: ndarray, ldc: ndarray) -> ndarray:
-        """Evaluate the transit model for a 2D parameter array.
-
-          Parameters
-          ----------
-          pvp
-              Parameter array with a shape `(npv, npar)` where `npv` is the number of parameter vectors, and each row
-              contains a set of parameters `[k, t0, p, a, i, e, w]`. The radius ratios can also be given per passband,
-              in which case the row should be structured as `[k_0, k_1, k_2, ..., k_npb, t0, p, a, i, e, w]`.
-
-          Notes
-          -----
-          This version of the `evaluate` method is optimized for calculating several models in parallel, such as when
-          using *emcee* for MCMC sampling.
-
-          Returns
-          -------
-          ndarray
-              Modelled flux either as a 1D or 2D ndarray.
-          """
-        assert self.time is not None, "Need to set the data before calling the transit model."
-        flux = qpower2_model_pv(self.time, pvp, ldc, self.lcids, self.pbids, self.nsamples, self.exptimes)
-        return squeeze(flux)
-
