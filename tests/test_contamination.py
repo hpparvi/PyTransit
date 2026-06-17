@@ -14,19 +14,15 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import unittest
-from math import pi
-from numpy import array, copysign, inf, errstate
+from numpy import inf, errstate
 from numpy.testing import assert_almost_equal
 
 from pytransit.contamination import true_radius_ratio, apparent_radius_ratio
 
 
-class TestContamination(unittest.TestCase):
-    """Test the routines to calculate the normalized projected distance (z) assuming zero eccentricity.
+class TestContamination:
+    """Test the routines to calculate the true and apparent radius ratios under contamination.
     """
-    def setUp(self):
-        pass
 
     def test_true_radius_ratio(self):
         assert_almost_equal(true_radius_ratio(0.1, 0.0), 0.1)
@@ -37,7 +33,3 @@ class TestContamination(unittest.TestCase):
         assert_almost_equal(apparent_radius_ratio(0.1, 0.0), 0.1)
         with errstate(divide='ignore'):
             assert_almost_equal(apparent_radius_ratio(0.1, 1.0), 0.0)
-
-
-if __name__ == '__main__':
-    unittest.main()

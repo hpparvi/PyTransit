@@ -14,57 +14,56 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import unittest
 from numpy import array
 from numpy.testing import assert_almost_equal
 
 from pytransit.models.numba.ma_uniform_nb import uniform_z_s, uniform_z_v
 
-class TestUniformModelNB(unittest.TestCase):
+K = 0.1
+D = K ** 2
+Z_EDGE = array([-0.0, 0.0, K, 1.0 - K, 1.0, 1.0 + K])
+F_EDGE = array([1.0, 1 - D, 1 - D, 1 - D, 0.9951061298, 1.0])
 
-    def setUp(self) -> None:
-        self.k = k = 0.1
-        self.d = d = self.k**2
-        self.z_edge = array([-0.0, 0.0, k, 1.0-k, 1.0, 1.0+k])
-        self.f_edge = array([1.0, 1-d, 1-d, 1-d, 0.9951061298, 1.0])
+
+class TestUniformModelNB:
 
     def test_uniform_z_s_basic_cases(self):
         # Primary transit
         # ---------------
-        assert_almost_equal(uniform_z_s(        -2.0, self.k, 1.0), 1.0)
-        assert_almost_equal(uniform_z_s(         2.0, self.k, 1.0), 1.0)
-        assert_almost_equal(uniform_z_s(         0.1, self.k, 1.0), 1.0-self.d)
-        assert_almost_equal(uniform_z_s(         0.3, self.k, 1.0), 1.0-self.d)
-        assert_almost_equal(uniform_z_s(        -0.1, self.k, 1.0), 1.0)
-        assert_almost_equal(uniform_z_s(        -0.3, self.k, 1.0), 1.0)
+        assert_almost_equal(uniform_z_s(-2.0, K, 1.0), 1.0)
+        assert_almost_equal(uniform_z_s( 2.0, K, 1.0), 1.0)
+        assert_almost_equal(uniform_z_s( 0.1, K, 1.0), 1.0 - D)
+        assert_almost_equal(uniform_z_s( 0.3, K, 1.0), 1.0 - D)
+        assert_almost_equal(uniform_z_s(-0.1, K, 1.0), 1.0)
+        assert_almost_equal(uniform_z_s(-0.3, K, 1.0), 1.0)
 
         # Secondary eclipse
         # -----------------
-        assert_almost_equal(uniform_z_s(        -2.0, self.k, -1.0), 1.0)
-        assert_almost_equal(uniform_z_s(         2.0, self.k, -1.0), 1.0)
-        assert_almost_equal(uniform_z_s(         0.1, self.k, -1.0), 1.0)
-        assert_almost_equal(uniform_z_s(         0.3, self.k, -1.0), 1.0)
-        assert_almost_equal(uniform_z_s(        -0.1, self.k, -1.0), 1.0-self.d)
-        assert_almost_equal(uniform_z_s(        -0.3, self.k, -1.0), 1.0-self.d)
+        assert_almost_equal(uniform_z_s(-2.0, K, -1.0), 1.0)
+        assert_almost_equal(uniform_z_s( 2.0, K, -1.0), 1.0)
+        assert_almost_equal(uniform_z_s( 0.1, K, -1.0), 1.0)
+        assert_almost_equal(uniform_z_s( 0.3, K, -1.0), 1.0)
+        assert_almost_equal(uniform_z_s(-0.1, K, -1.0), 1.0 - D)
+        assert_almost_equal(uniform_z_s(-0.3, K, -1.0), 1.0 - D)
 
     def test_uniform_z_s_edge_cases(self):
         # Standard edge cases, primary transit
         # ------------------------------------
-        assert_almost_equal(uniform_z_s(        -0.0, self.k, 1.0), 1.0)
-        assert_almost_equal(uniform_z_s(         0.0, self.k, 1.0), 1.0-self.d)
-        assert_almost_equal(uniform_z_s(      self.k, self.k, 1.0), 1.0-self.d)
-        assert_almost_equal(uniform_z_s(1.0 - self.k, self.k, 1.0), 1.0-self.d)
-        assert_almost_equal(uniform_z_s(         1.0, self.k, 1.0), 0.9951061298)
-        assert_almost_equal(uniform_z_s(1.0 + self.k, self.k, 1.0), 1.0)
+        assert_almost_equal(uniform_z_s(   -0.0, K, 1.0), 1.0)
+        assert_almost_equal(uniform_z_s(    0.0, K, 1.0), 1.0 - D)
+        assert_almost_equal(uniform_z_s(      K, K, 1.0), 1.0 - D)
+        assert_almost_equal(uniform_z_s(1.0 - K, K, 1.0), 1.0 - D)
+        assert_almost_equal(uniform_z_s(    1.0, K, 1.0), 0.9951061298)
+        assert_almost_equal(uniform_z_s(1.0 + K, K, 1.0), 1.0)
 
         # Standard edge cases, secondary eclipse
         # --------------------------------------
-        assert_almost_equal(uniform_z_s(         -0.0, self.k, -1.0), 1.0-self.d)
-        assert_almost_equal(uniform_z_s(          0.0, self.k, -1.0), 1.0)
-        assert_almost_equal(uniform_z_s(      -self.k, self.k, -1.0), 1.0-self.d)
-        assert_almost_equal(uniform_z_s( self.k - 1.0, self.k, -1.0), 1.0-self.d)
-        assert_almost_equal(uniform_z_s(         -1.0, self.k, -1.0), 0.9951061298)
-        assert_almost_equal(uniform_z_s(-1.0 - self.k, self.k, -1.0), 1.0)
+        assert_almost_equal(uniform_z_s(    -0.0, K, -1.0), 1.0 - D)
+        assert_almost_equal(uniform_z_s(     0.0, K, -1.0), 1.0)
+        assert_almost_equal(uniform_z_s(      -K, K, -1.0), 1.0 - D)
+        assert_almost_equal(uniform_z_s( K - 1.0, K, -1.0), 1.0 - D)
+        assert_almost_equal(uniform_z_s(    -1.0, K, -1.0), 0.9951061298)
+        assert_almost_equal(uniform_z_s(-1.0 - K, K, -1.0), 1.0)
 
         # Radius ratio larger or equal to unity
         # -------------------------------------
@@ -76,12 +75,8 @@ class TestUniformModelNB(unittest.TestCase):
     def test_uniform_z_v_edge_cases(self):
         # Standard edge cases, primary transit
         # ------------------------------------
-        assert_almost_equal(uniform_z_v(self.z_edge, self.k, 1.0), self.f_edge)
+        assert_almost_equal(uniform_z_v(Z_EDGE, K, 1.0), F_EDGE)
 
         # Standard edge cases, secondary eclipse
         # --------------------------------------
-        assert_almost_equal(uniform_z_v(-self.z_edge, self.k, -1.0), self.f_edge)
-
-
-if __name__ == '__main__':
-    unittest.main()
+        assert_almost_equal(uniform_z_v(-Z_EDGE, K, -1.0), F_EDGE)
