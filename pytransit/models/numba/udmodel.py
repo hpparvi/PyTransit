@@ -3,9 +3,7 @@ from math import isnan
 from numba import njit
 from numpy import zeros, floor, nan, pi, atleast_1d, asarray
 
-from meepmeep.backends.numba.taylor.solve2d import solve2d
-from meepmeep.backends.numba.taylor.position2d import pd2d
-from meepmeep.backends.numba.taylor.util2d import bounding_box
+from meepmeep.backends.numba.point2d import solve2d, sep_c, bounding_box
 
 from ..roadrunner.common import circle_circle_intersection_area_kite as ccia
 
@@ -57,7 +55,7 @@ def uniform_model_simple(times, k, t0, p, a, i, e, w, with_derivatives):
         if not (bt1 <= t <= bt4):
             flux[j] = 1.0
         else:
-            x, y, d = pd2d(t, cf)
+            d = sep_c(t, cf)
             if d <= 1.0 + k:
                 is_area, _ = ccia(1.0, k, d)
                 flux[j] += 1.0 - is_area / pi
@@ -99,7 +97,7 @@ def uniform_model_v(times, k, t0, p, dkdp, cfs, dcfs, with_derivatives,
 
         for isample in range(1, ns + 1):
             time_offset = exptime * ((isample - 0.5) / ns - 0.5)
-            x, y, d = pd2d(t + time_offset, cfs[ior])
+            d = sep_c(t + time_offset, cfs[ior])
             if d <= 1.0 + _k:
                 is_area, _ = ccia(1.0, _k, d)
                 flux[j] += 1.0 - is_area / pi

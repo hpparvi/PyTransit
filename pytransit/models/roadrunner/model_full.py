@@ -1,6 +1,4 @@
-from meepmeep.backends.numba.taylor.position2d import d2dc
-from meepmeep.backends.numba.taylor.solve2d import solve2d
-from meepmeep.backends.numba.taylor.util2d import bounding_box
+from meepmeep.backends.numba.point2d import sep_c, solve2d, bounding_box
 from numba import njit, prange
 from numpy import zeros, dot, ndarray, isnan, nan, full, floor
 
@@ -94,7 +92,7 @@ def rr_full(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
         else:
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = d2dc(tc + time_offset, xyc[ipv])
+                z = sep_c(tc + time_offset, xyc[ipv])
                 iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + ks[ipv, ipb]), dg, ldm[ipv, ipb])
                 aplanet = ccia(1.0, ks[ipv, ipb], z)[0]
                 flux[ipv, ipt] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]

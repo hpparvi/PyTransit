@@ -19,8 +19,7 @@ from scipy.constants import G, k, h, c
 from numpy import exp, pi, sqrt, zeros, sin, cos, nan, inf, linspace, meshgrid, floor, isfinite, fmax, isnan, nanmean, \
     arange, zeros_like, atleast_2d, array, cross, sign
 
-from meepmeep.backends.numba.taylor.solve2d import solve2d
-from meepmeep.backends.numba.taylor.util2d import find_contact_point, bounding_box
+from meepmeep.backends.numba.point2d import solve2d, find_contact_point, bounding_box
 
 from ..roadrunner.common import circle_circle_intersection_area
 

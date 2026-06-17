@@ -30,8 +30,7 @@ from .numba.gdmodel import create_star_xy, create_planet_xy, map_osm, xy_taylor_
     luminosity_v2, planck, create_star_luminosity
 from ..contamination.filter import Filter, DeltaFilter
 from ..stars import read_bt_settl_table, read_husser2013_table
-from meepmeep.backends.numba.taylor.solve2d import solve2d
-from meepmeep.backends.numba.taylor.util2d import find_contact_point
+from meepmeep.backends.numba.point2d import solve2d, find_contact_point
 
 from ..orbits import as_from_rhop, i_from_baew
 from ..utils.octasphere import octasphere

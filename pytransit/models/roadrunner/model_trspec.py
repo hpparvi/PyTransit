@@ -1,8 +1,6 @@
 from math import fabs, floor
 
-from meepmeep.backends.numba.taylor.position2d import d2dc
-from meepmeep.backends.numba.taylor.solve2d import solve2d
-from meepmeep.backends.numba.taylor.util2d import bounding_box
+from meepmeep.backends.numba.point2d import sep_c, solve2d, bounding_box
 from numba import njit, prange, get_num_threads, set_num_threads
 from numpy import zeros, dot, ndarray, isnan, nan, mean, floor, fabs, max
 
@@ -80,7 +78,7 @@ def tsmodel_serial(times: ndarray,
             else:
                 for isample in range(1, nsamples[0] + 1):
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
-                    z = d2dc(tc + time_offset, xyc)
+                    z = sep_c(tc + time_offset, xyc)
                     ap0, kappa = ccia(1.0, kmean, z)
                     dadk = 2.0*kmean*kappa
                     if z <= 1.0 - kmax:
@@ -170,7 +168,7 @@ def tsmodel_parallel(times: ndarray,
             else:
                 for isample in range(1, nsamples[0] + 1):
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
-                    z = d2dc(tc + time_offset, xyc)
+                    z = sep_c(tc + time_offset, xyc)
                     ap0, kappa = ccia(1.0, kmean, z)
                     dadk = 2.0*kmean*kappa
                     for ipb in range(npb):

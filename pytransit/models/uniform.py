@@ -3,7 +3,7 @@ from typing import Union, Optional, Tuple
 from numba import njit
 from numpy import ndarray, squeeze, zeros, asarray, atleast_1d, ones_like, arctan2, array, sqrt
 
-from meepmeep.backends.numba.taylor.solve2d import solve2d
+from meepmeep.backends.numba.point2d import solve2d
 from meepmeep.backends.numba.utils import as_from_rhop, i_from_baew
 
 from .numba.udmodel import uniform_model_v

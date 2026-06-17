@@ -50,9 +50,7 @@ This module implements the qpower2 transit model by Maxted & Gill (A&A, 622, A33
 from numpy import any, sqrt, pi, arccos, ones_like, atleast_2d, zeros, atleast_1d, nan, copysign, fmax, floor
 from numba import njit, prange
 
-from meepmeep.backends.numba.taylor.solve2d import solve2d
-from meepmeep.backends.numba.taylor.position2d import d2dc
-from meepmeep.backends.numba.taylor.util2d import bounding_box
+from meepmeep.backends.numba.point2d import solve2d, sep_c, bounding_box
 
 
 @njit(fastmath=True)
@@ -134,7 +132,7 @@ def qpower2_model_v(t, k, ldc, t0, p, a, i, e, w, lcids, pbids, nsamples, exptim
 
                 for isample in range(1, nsamples[ilc] + 1):
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                    z = d2dc(tc + time_offset, c)
+                    z = sep_c(tc + time_offset, c)
                     if z > 1.0 + _k:
                         flux[ipv, j] += 1.
                     else:
@@ -167,7 +165,7 @@ def qpower2_model_s(t, k, ldc, t0, p, a, i, e, w, lcids, pbids, nsamples, exptim
 
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = d2dc(tc + time_offset, c)
+                z = sep_c(tc + time_offset, c)
                 if z > 1.0 + _k:
                     flux[j] += 1.
                 else:

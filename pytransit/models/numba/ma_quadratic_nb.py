@@ -45,9 +45,7 @@ from numba import njit, prange
 from numpy import pi, sqrt, arccos, abs, log, zeros, linspace, array, atleast_2d, floor, inf, isnan, atleast_1d, ndarray, nan, copysign, \
     fmax, any
 
-from meepmeep.backends.numba.taylor.solve2d import solve2d
-from meepmeep.backends.numba.taylor.position2d import d2dc
-from meepmeep.backends.numba.taylor.util2d import bounding_box
+from meepmeep.backends.numba.point2d import solve2d, sep_c, bounding_box
 
 HALF_PI = 0.5 * pi
 FOUR_PI = 4.0 * pi
@@ -585,7 +583,7 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
                 else:
                     for isample in range(1, nsamples[ilc] + 1):
                         time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                        z = d2dc(tc + time_offset, c)
+                        z = sep_c(tc + time_offset, c)
                         if z > 1.0 + _k:
                             flux[ipv, j] += 1.
                         else:
@@ -646,7 +644,7 @@ def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
             else:
                 for isample in range(1, nsamples[ilc] + 1):
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                    z = d2dc(tc + time_offset, c)
+                    z = sep_c(tc + time_offset, c)
                     if z > 1.0 + _k:
                         flux[j] += 1.
                     else:
