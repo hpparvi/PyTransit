@@ -205,7 +205,7 @@ def uniform_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
         else:
             et = eclipse_time_offset(p[ipv], i[ipv], e[ipv], w[ipv])
             c = solve2d(et, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-            bt4, bt1 = bounding_box(k[ipv, 0], c)
+            bt1, bt4 = bounding_box(k[ipv, 0], c)
         bt1 -= 0.025
         bt4 += 0.025
 
@@ -251,7 +251,7 @@ def uniform_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, z
     else:
         et = eclipse_time_offset(p, i, e, w)
         c = solve2d(et, p, a, i, e, w)
-        bt4, bt1 = bounding_box(k[0], c)
+        bt1, bt4 = bounding_box(k[0], c)
     bt1 -= 0.025
     bt4 += 0.025
 

@@ -41,7 +41,7 @@ def esmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
         # ---------------------------#
         # Calculate the bounding box #
         # ---------------------------#
-        bt4, bt1 = bounding_box(k[ipv], xyc)
+        bt1, bt4 = bounding_box(k[ipv], xyc)
         bt1 -= 0.0015 + exptime
         bt4 += 0.0015 + exptime
 
