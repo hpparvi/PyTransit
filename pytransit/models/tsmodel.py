@@ -15,6 +15,8 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Union, List, Literal, Callable, Tuple
 
+import jax
+import jax.numpy as jnp
 import numba
 from numpy import ndarray, linspace, isscalar, atleast_1d, atleast_2d, sqrt, pi, zeros, array
 from scipy.integrate import trapezoid
@@ -24,8 +26,9 @@ from .transitmodel import TransitModel
 from ..backends.numba.limb_darkening import *
 from ..backends.numba.limb_darkening.uniform import ldd_uniform
 from ..backends.numba.tsmodel import tsmodel
-from pytransit.backends.numba.tsmodel_grad import tsmodel_and_grad
+from pytransit.backends.numba.tsmodel_grad import tsmodel_grad
 from ..backends.numba.rrmodel import create_z_grid, calculate_weights_3d
+from ..backends.jax.tsmodel import tsmodel as jax_tsmodel
 
 __all__ = ['TransmissionSpectroscopyModel']
 
@@ -93,14 +96,21 @@ class TransmissionSpectroscopyModel(TransitModel):
         super().__init__(backend, return_grad, parallel, n_threads)
 
         if backend == "jax":
-            raise NotImplementedError("JAX backend not yet implemented for TransmissionSpectroscopyModel")
+            vmap_axes = (None,                                # times
+                         0, 0, 0, 0, 0, 0, 0,                # k, t0, p, a, i, e, w
+                         None, None,                          # nsamples, exptimes
+                         0,                                   # ldp
+                         0,                                   # istar
+                         None, None, None, None, None, None,  # weights, dk, kmin, kmax, dg, ze
+                         None, None)                          # npb, max_ns
+            self._model = jax.jit(jax.vmap(jax_tsmodel, in_axes=vmap_axes), static_argnums=(18, 19))
         elif backend == "numba":
             needs_rejit = parallel or fastmath
             if needs_rejit:
-                fn = tsmodel_and_grad.py_func if return_grad else tsmodel.py_func
+                fn = tsmodel_grad.py_func if return_grad else tsmodel.py_func
                 self._model = numba.njit(fn, parallel=parallel, fastmath=fastmath)
             else:
-                self._model = tsmodel_and_grad if return_grad else tsmodel
+                self._model = tsmodel_grad if return_grad else tsmodel
         else:
             raise ValueError(f"Unknown backend: {backend}")
 
@@ -239,7 +249,14 @@ class TransmissionSpectroscopyModel(TransitModel):
         else:
             dk, dg, weights = None, None, None
 
-        if self.return_grad:
+        if self.backend == "jax":
+            result = self._model(self.times, k, t0, p, a, i, e, w,
+                                 self.nsamples[0], self.exptimes[0],
+                                 ldp, istar,
+                                 self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
+                                 npb, int(self.nsamples.max()))
+            return jnp.squeeze(result)
+        elif self.return_grad:
             ldg = evaluate_ldg(self.ldgrad, self.mu, ldc)
             distar = evaluate_distar(self.ldigmean, ldc)
             return self._model(self.times, k, t0, p, a, i, e, w,
