@@ -13,7 +13,7 @@ import pytest
 from math import radians, pi
 
 from numba import njit
-from meepmeep.backends.numba.ts2d import solve_xy_p5, solve_xy_p5_d
+from meepmeep.numba2d import solve2d, solve2d_d
 from pytransit.backends.numba.udmodel import _udmodel, udmodel
 from pytransit.backends.numba.udmodel_grad import _udmodel_grad, udmodel_grad
 
@@ -111,7 +111,7 @@ class TestUdmodelGradKernel:
     def test_mid_transit_depth(self, k):
         """At mid-transit with near-zero impact parameter, deficit ~ -k^2."""
         inc = radians(89.99)
-        cf, dcf = solve_xy_p5_d(0.0, P, A, inc, E, W)
+        cf, dcf = solve2d_d(0.0, P, A, inc, E, W)
         flux = np.zeros(1)
         dflux = np.zeros(7)
         _udmodel_grad(0.0, k, cf, dcf, flux, dflux)
@@ -120,7 +120,7 @@ class TestUdmodelGradKernel:
     @pytest.mark.parametrize("k", [0.01, 0.1])
     def test_out_of_transit_is_zero(self, k):
         """Far from transit, flux and all gradients should remain zero."""
-        cf, dcf = solve_xy_p5_d(0.0, P, A, I, E, W)
+        cf, dcf = solve2d_d(0.0, P, A, I, E, W)
         flux = np.zeros(1)
         dflux = np.zeros(7)
         _udmodel_grad(0.5, k, cf, dcf, flux, dflux)
@@ -130,7 +130,7 @@ class TestUdmodelGradKernel:
     def test_partial_overlap(self):
         """During ingress/egress, deficit should be between -k^2 and 0."""
         k = 0.1
-        cf, dcf = solve_xy_p5_d(0.0, P, A, I, E, W)
+        cf, dcf = solve2d_d(0.0, P, A, I, E, W)
         for t in np.linspace(0.02, 0.10, 50):
             flux = np.zeros(1)
             dflux = np.zeros(7)
@@ -144,7 +144,7 @@ class TestUdmodelGradKernel:
         """dk gradient at mid-transit: analytical d(-k^2)/dk = -2k."""
         k = 0.1
         inc = radians(89.99)
-        cf, dcf = solve_xy_p5_d(0.0, P, A, inc, E, W)
+        cf, dcf = solve2d_d(0.0, P, A, inc, E, W)
 
         # Analytical gradient from _udmodel_grad
         flux = np.zeros(1)
@@ -164,7 +164,7 @@ class TestUdmodelGradKernel:
 
     def test_gradient_shape(self):
         """dflux has 7 elements [k, t0, p, a, i, e, w]."""
-        cf, dcf = solve_xy_p5_d(0.0, P, A, I, E, W)
+        cf, dcf = solve2d_d(0.0, P, A, I, E, W)
         flux = np.zeros(1)
         dflux = np.zeros(7)
         _udmodel_grad(0.0, 0.1, cf, dcf, flux, dflux)

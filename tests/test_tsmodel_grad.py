@@ -1,4 +1,4 @@
-"""Tests for tsmodel_and_grad: forward values and analytical gradients vs finite differences."""
+"""Tests for tsmodel_grad: forward values and analytical gradients vs finite differences."""
 
 import unittest
 import numpy as np
@@ -6,11 +6,11 @@ from numpy import zeros, sqrt, pi, linspace, array
 
 from pytransit.backends.numba.rrmodel import create_z_grid, calculate_weights_3d
 from pytransit.backends.numba.limb_darkening.quadratic import ld_quadratic, ldd_quadratic, ldi_quadratic, ldig_quadratic
-from pytransit.backends.numba.tsmodel_grad import tsmodel_and_grad
+from pytransit.backends.numba.tsmodel_grad import tsmodel_grad
 
 
 def setup_ld_inputs(mu, ldc_2d, nk, klims, ze, ng):
-    """Build ldp, ldg, istar, distar arrays for tsmodel_and_grad."""
+    """Build ldp, ldg, istar, distar arrays for tsmodel_grad."""
     npv, npb, nldc = ldc_2d.shape
     nmu = mu.size
 
@@ -69,8 +69,8 @@ class TestTSModelAndGrad(unittest.TestCase):
             setup_ld_inputs(self.mu, self.ldc, self.nk, self.klims, ze, self.ng)
 
     def _call(self, k=None, t0=None, p=None, a=None, inc=None, e=None, w=None):
-        """Call tsmodel_and_grad with fixed LD inputs."""
-        return tsmodel_and_grad(
+        """Call tsmodel_grad with fixed LD inputs."""
+        return tsmodel_grad(
             self.times,
             k if k is not None else self.k_vals.copy(),
             t0 if t0 is not None else self.t0.copy(),
@@ -85,10 +85,10 @@ class TestTSModelAndGrad(unittest.TestCase):
         )
 
     def _call_with_ldc(self, ldc):
-        """Call tsmodel_and_grad recomputing LD for given coefficients."""
+        """Call tsmodel_grad recomputing LD for given coefficients."""
         ldp, ldg, istar, distar, dk, dg, wts = \
             setup_ld_inputs(self.mu, ldc, self.nk, self.klims, self.ze, self.ng)
-        return tsmodel_and_grad(
+        return tsmodel_grad(
             self.times, self.k_vals.copy(), self.t0.copy(), self.p.copy(),
             self.a.copy(), self.inc.copy(), self.e.copy(), self.w.copy(),
             self.nsamples, self.exptimes,
@@ -199,7 +199,7 @@ class TestTSModelAndGrad(unittest.TestCase):
             self.mu, ldc, self.nk, self.klims, self.ze, self.ng)
 
         def call_1b(k_val):
-            return tsmodel_and_grad(
+            return tsmodel_grad(
                 self.times, array([[k_val]]), self.t0, self.p, self.a, self.inc, self.e, self.w,
                 self.nsamples, self.exptimes, ldp, ldg, istar, distar,
                 wts, dk, self.klims[0], self.klims[1], self.ng, dg, self.ze)

@@ -1,5 +1,4 @@
-from meepmeep.backends.numba.ts2d import solve_xy_p5, pd_t15c
-from meepmeep.backends.numba.ts2d.position import bounding_box
+from meepmeep.numba2d import solve2d, sep_c, bounding_box
 from numba import njit, prange
 from numpy import ndarray, zeros, sqrt, linspace, nan, floor, isnan, full, dot, any
 
@@ -217,7 +216,7 @@ def rrmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
         # Pre-compute orbital coefficients per epoch
         xyc = zeros((nep, 2, 5))
         for iep in range(nep):
-            xyc[iep, :, :] = solve_xy_p5(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
+            xyc[iep, :, :] = solve2d(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
 
         # Bounding box (using first epoch)
         bt1, bt4 = bounding_box(k[ipv, 0], xyc[0])
@@ -240,7 +239,7 @@ def rrmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
             else:
                 for isample in range(1, nsamples[ilc] + 1):
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                    z = pd_t15c(t + time_offset, xyc[iep])
+                    z = sep_c(t + time_offset, xyc[iep])
                     iplanet = interpolate_mean_limb_darkening(z / (1.0 + k[ipv, ipb]), dg, ldm_all[ipb])
                     aplanet = ccia(1.0, k[ipv, ipb], z)
                     flux[ipv, ipt] += (ldi[ipv, ipb] - iplanet * aplanet) / ldi[ipv, ipb]

@@ -1,5 +1,4 @@
-from meepmeep.backends.numba.ts2d import solve_xy_p5_d, pd_t15c_d
-from meepmeep.backends.numba.ts2d.position import bounding_box
+from meepmeep.numba2d import solve2d_d, sep_cd, bounding_box
 from numba import prange, njit
 from numpy import zeros, nan, fabs, pi
 
@@ -29,13 +28,15 @@ def _udmodel_grad(t, k, cf, dcf, flux, dflux):
     dflux : ndarray
         Output array for flux gradients (modified in-place).
     """
-    z, dz = pd_t15c_d(t, cf, dcf)
+    z, dz = sep_cd(t, cf, dcf)
     if z <= 1.0 + k:
         is_area, (dadk, dadz) = ccia_and_grad(1.0, k, z)
         flux[0] -= is_area / pi
         dflux[0] -= dadk / pi
-        dflux[1] += dadz * dz[0] / pi
-        for i in range(1, 6):
+        # dz is now the 7-element (tc, p, a, i, e, w, lan) gradient from sep_cd;
+        # slot 0 is the proper transit-centre derivative, so all six orbital
+        # terms share the same sign (lan, slot 6, is unused here).
+        for i in range(6):
             dflux[i+1] -= dadz * dz[i] / pi
 
 
@@ -96,9 +97,9 @@ def udmodel_grad(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exp
 
     for ipv in range(npv):
         xyc = zeros((nep, 2, 5))
-        dxyc = zeros((nep, 6, 2, 5))
+        dxyc = zeros((nep, 7, 2, 5))
         for iep in range(nep):
-            xyc[iep], dxyc[iep] = solve_xy_p5_d(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
+            xyc[iep], dxyc[iep] = solve2d_d(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
 
         bt1, bt4 = bounding_box(k[ipv, 0], xyc[0])
         bt1 -= 0.003

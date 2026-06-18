@@ -1,5 +1,4 @@
-from meepmeep.backends.numba.ts2d import solve_xy_p5_d, pd_t15c_d
-from meepmeep.backends.numba.ts2d.position import bounding_box
+from meepmeep.numba2d import solve2d_d, sep_cd, bounding_box
 from numba import prange
 from numpy import ndarray, isnan, any, full, nan, zeros, floor, dot
 
@@ -119,9 +118,9 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
 
         # Pre-compute orbital coefficients and derivatives per epoch
         xyc = zeros((nep, 2, 5))
-        dxyc = zeros((nep, 6, 2, 5))
+        dxyc = zeros((nep, 7, 2, 5))
         for iep in range(nep):
-            xyc[iep], dxyc[iep] = solve_xy_p5_d(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
+            xyc[iep], dxyc[iep] = solve2d_d(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
 
         # Bounding box (using first epoch)
         bt1, bt4 = bounding_box(k[ipv, 0], xyc[0])
@@ -149,7 +148,7 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
                     t_eval = t + time_offset
 
-                    z, dz = pd_t15c_d(t_eval, xyc[iep], dxyc[iep])
+                    z, dz = sep_cd(t_eval, xyc[iep], dxyc[iep])
                     aplanet, (dadk, dadz) = ccia_and_grad(1.0, kpb, z)
                     g = z / (1.0 + kpb)
                     iplanet, dIp_dg = interpolate_mean_limb_darkening_and_grad(g, dg, ldm_all[ipb])
@@ -163,11 +162,11 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
                     dIp_dk = dIp_dg * (-z / (1.0 + kpb) ** 2)
                     dflux[ipv, ipt, 0] += -(dIp_dk * aplanet + iplanet * dadk) / ldi_pb
 
-                    # --- t0 derivative ---
-                    dflux[ipv, ipt, 1] += (dIp_dz * aplanet + iplanet * dadz) * dz[0] / ldi_pb
-
-                    # --- p, a, i, e, w derivatives (indices 1..5 in dz) ---
-                    for ip in range(1, 6):
+                    # --- t0, p, a, i, e, w derivatives ---
+                    # dz is now the 7-element (tc, p, a, i, e, w, lan) gradient from
+                    # sep_cd; slot 0 is the proper transit-centre derivative, so all
+                    # six orbital terms share the same sign (lan, slot 6, is unused).
+                    for ip in range(6):
                         dflux[ipv, ipt, ip + 1] += -(dIp_dz * aplanet + iplanet * dadz) * dz[ip] / ldi_pb
 
                     # --- LD coefficient derivatives ---

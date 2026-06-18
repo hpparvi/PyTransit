@@ -1,5 +1,4 @@
-from meepmeep.backends.numba.ts2d import solve_xy_p5_d, pd_t15c_d
-from meepmeep.backends.numba.ts2d.position import bounding_box
+from meepmeep.numba2d import solve2d_d, sep_cd, bounding_box
 from numba import njit, prange
 from numpy import ndarray, zeros, isnan, nan, mean, floor, dot
 from pytransit.backends.numba.ccintersection import ccia_and_grad
@@ -116,7 +115,7 @@ def tsmodel_grad(times: ndarray,
         # -----------------------------------------------------#
         # Calculate the Taylor series expansions for the orbit #
         # -----------------------------------------------------#
-        cf, dcf = solve_xy_p5_d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        cf, dcf = solve2d_d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
 
         # --------------------------------#
         # Calculate the half-window width #
@@ -138,7 +137,7 @@ def tsmodel_grad(times: ndarray,
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
                     t_eval = tc + time_offset
 
-                    z, dz = pd_t15c_d(t_eval, cf, dcf)
+                    z, dz = sep_cd(t_eval, cf, dcf)
 
                     if z <= 1.0 - kmax_band:
                         # -------------------------------------------------#
@@ -163,10 +162,11 @@ def tsmodel_grad(times: ndarray,
                             daeff_dz = dadz_mean * afac[ipb]
                             dfdz = (dIp_dz * aeff + iplanet * daeff_dz) * inv_is * inv_nsamples
 
-                            # t0 derivative: dz/dt0 = -dz[0]
-                            dflux[ipv, ipb, ipt, 1] += dfdz * dz[0]
-                            # p, a, i, e, w derivatives
-                            for ip in range(1, 6):
+                            # t0, p, a, i, e, w derivatives. dz is now the 7-element
+                            # (tc, p, a, i, e, w, lan) gradient from sep_cd; slot 0 is
+                            # the proper transit-centre derivative, so all six orbital
+                            # terms share the same sign (lan, slot 6, is unused).
+                            for ip in range(6):
                                 dflux[ipv, ipb, ipt, ip + 1] += -dfdz * dz[ip]
 
                             # LD coefficient derivatives
@@ -194,10 +194,9 @@ def tsmodel_grad(times: ndarray,
                             dIp_dz = dIp_dg / (1.0 + kb)
                             dfdz = (dIp_dz * aplanet + iplanet * dadz) * inv_is * inv_nsamples
 
-                            # t0 derivative
-                            dflux[ipv, ipb, ipt, 1] += dfdz * dz[0]
-                            # p, a, i, e, w derivatives
-                            for ip in range(1, 6):
+                            # t0, p, a, i, e, w derivatives (see note above; dz is the
+                            # 7-element sep_cd gradient, slot 6 = lan is unused).
+                            for ip in range(6):
                                 dflux[ipv, ipb, ipt, ip + 1] += -dfdz * dz[ip]
 
                             # LD coefficient derivatives

@@ -10,7 +10,7 @@ import pytest
 from math import radians, pi
 
 from numba import njit
-from meepmeep.backends.numba.ts2d import solve_xy_p5
+from meepmeep.numba2d import solve2d
 from pytransit.backends.numba.udmodel import _udmodel, udmodel
 
 udmodel_jit = njit(udmodel)
@@ -77,7 +77,7 @@ class TestUdmodel:
     def test_mid_transit_depth(self, k):
         """At mid-transit with near-zero impact parameter, deficit ≈ -k²."""
         inc = radians(89.99)
-        cf = solve_xy_p5(0.0, P, A, inc, E, W)
+        cf = solve2d(0.0, P, A, inc, E, W)
         flux = np.zeros(1)
         _udmodel(0.0, k, cf, flux)
         np.testing.assert_allclose(flux[0], -k**2, atol=1e-6)
@@ -85,7 +85,7 @@ class TestUdmodel:
     @pytest.mark.parametrize("k", [0.01, 0.1])
     def test_out_of_transit_is_zero(self, k):
         """Far from transit, flux deficit should remain zero."""
-        cf = solve_xy_p5(0.0, P, A, I, E, W)
+        cf = solve2d(0.0, P, A, I, E, W)
         flux = np.zeros(1)
         _udmodel(0.5, k, cf, flux)
         np.testing.assert_allclose(flux[0], 0.0, atol=1e-12)
@@ -93,7 +93,7 @@ class TestUdmodel:
     def test_partial_overlap(self):
         """During ingress/egress, deficit should be between -k² and 0."""
         k = 0.1
-        cf = solve_xy_p5(0.0, P, A, I, E, W)
+        cf = solve2d(0.0, P, A, I, E, W)
         # Find a time near the limb by evaluating several points
         for t in np.linspace(0.02, 0.10, 50):
             flux = np.zeros(1)

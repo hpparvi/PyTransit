@@ -1,5 +1,4 @@
-from meepmeep.backends.numba.ts2d import solve_xy_p5, pd_t15c
-from meepmeep.backends.numba.ts2d.position import bounding_box
+from meepmeep.numba2d import solve2d, sep_c, bounding_box
 from numba import njit, prange
 from numpy import ndarray, zeros, nan, floor, isnan, dot, mean
 
@@ -63,7 +62,7 @@ def tsmodel(times: ndarray,
         # -----------------------------------------------------#
         # Calculate the Taylor series expansions for the orbit #
         # -----------------------------------------------------#
-        xyc[:, :] = solve_xy_p5(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        xyc[:, :] = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
 
         # --------------------------------#
         # Calculate the half-window width #
@@ -83,7 +82,7 @@ def tsmodel(times: ndarray,
             else:
                 for isample in range(1, nsamples[0] + 1):
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
-                    z = pd_t15c(tc + time_offset, xyc)
+                    z = sep_c(tc + time_offset, xyc)
                     ap0, k0 = ccia_and_k0(1.0, kmean, z)
                     dadk = 2.0*kmean*k0
                     if z <= 1.0 - kmax:

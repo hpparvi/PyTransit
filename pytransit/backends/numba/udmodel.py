@@ -1,5 +1,4 @@
-from meepmeep.backends.numba.ts2d import pd_t15c, solve_xy_p5
-from meepmeep.backends.numba.ts2d.position import bounding_box
+from meepmeep.numba2d import sep_c, solve2d, bounding_box
 
 from numba import njit, prange
 from numpy import pi, zeros
@@ -27,7 +26,7 @@ def _udmodel(t, k, cf, flux):
     flux : ndarray
         Output array for the flux value (modified in-place).
     """
-    z = pd_t15c(t, cf)
+    z = sep_c(t, cf)
     if z <= 1.0 + k:
         is_area = ccia(1.0, k, z)
         flux[0] -= is_area / pi
@@ -72,7 +71,7 @@ def udmodel(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exptimes
     for ipv in range(npv):
         xyc = zeros((nep, 2, 5))
         for iep in range(nep):
-            xyc[iep, :, :] = solve_xy_p5(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
+            xyc[iep, :, :] = solve2d(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
 
         bt1, bt4 = bounding_box(k[ipv, 0], xyc[0])
         bt1 -= 0.003
