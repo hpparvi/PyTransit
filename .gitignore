@@ -8,6 +8,8 @@
 *pdf
 .DS_Store
 
+.coverage
+
 .ipynb_checkpoints
 PyTransit.egg-info
 build
@@ -16,3 +18,5 @@ dist
 
 .idea/*
 notebooks
+
+htmlcov
