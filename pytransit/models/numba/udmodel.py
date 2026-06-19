@@ -1,7 +1,7 @@
 from math import isnan
 
 from numba import njit
-from numpy import zeros, floor, nan, pi, atleast_1d, asarray
+from numpy import zeros, floor, nan, pi, atleast_1d, asarray, sqrt
 
 from meepmeep.backends.numba.point2d import solve2d, sep_c, bounding_box
 
