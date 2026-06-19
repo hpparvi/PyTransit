@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.8.0] - 2026-06-19
+
+### Changed
+
+- Changed to use MeepMeep 1.0.0.
+
 ## [2.7.1] - 2026-05-07
 
 ### Added
