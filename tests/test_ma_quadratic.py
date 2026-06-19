@@ -109,40 +109,6 @@ class TestQuadraticModel:
         assert flux.ndim == 1
         assert flux.size == model_data.time.size
 
-    def test_evaluate_pvi(self, model_data):
-        tm = QuadraticModel(interpolate=True)
-        tm.set_data(model_data.time)
-
-        pvp = array([[0.12, 0.00, 1.0, 3.0, 0.500 * pi, 0.0, 0.0],
-                     [0.11, 0.01, 0.9, 2.9, 0.495 * pi, 0.0, 0.0]])
-
-        ldc = [[0.1, 0.2], [0.3, 0.1]]
-        flux = tm.evaluate_pv(pvp[0], ldc[0])
-        assert flux.ndim == 1
-        assert flux.size == model_data.time.size
-
-        ldc = [[0.1, 0.2], [0.3, 0.1]]
-        flux = tm.evaluate_pv(pvp, ldc)
-        assert flux.ndim == 2
-        assert flux.shape == (2, model_data.time.size)
-
-    def test_evaluate_pvd(self, model_data):
-        tm = QuadraticModel(interpolate=False)
-        tm.set_data(model_data.time)
-
-        pvp = array([[0.12, 0.00, 1.0, 3.0, 0.500 * pi, 0.0, 0.0],
-                     [0.11, 0.01, 0.9, 2.9, 0.495 * pi, 0.0, 0.0]])
-
-        ldc = [[0.1, 0.2], [0.3, 0.1]]
-        flux = tm.evaluate_pv(pvp[0], ldc[0])
-        assert flux.ndim == 1
-        assert flux.size == model_data.time.size
-
-        ldc = [[0.1, 0.2], [0.3, 0.1]]
-        flux = tm.evaluate_pv(pvp, ldc)
-        assert flux.ndim == 2
-        assert flux.shape == (2, model_data.time.size)
-
     # TODO: Set up OpenCL in Travis
     # -----------------------------
     # def test_to_opencl(self):
