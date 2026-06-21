@@ -1,4 +1,4 @@
-from math import pi, sqrt, gamma
+from math import pi
 
 from numba import njit
 from numpy import zeros, log
@@ -11,7 +11,7 @@ def ld_power_2(mu, pv):
 
 @njit
 def ldi_power_2(mu, pv):
-    return 2 * pi * sqrt(pi) * pv[0] * gamma(0.5*pv[1] + 1.0) / (2*gamma(0.5*(pv[1]+3.0))) - pv[0] + 1
+    return 2 * pi * (0.5 - 0.5 * pv[0] + pv[0] / (pv[1] + 2.0))
 
 
 @njit(fastmath=True)
