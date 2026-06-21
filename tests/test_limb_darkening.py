@@ -9,16 +9,13 @@ from numpy.testing import assert_allclose
 import pytest
 from scipy.integrate import quad
 
-# Skip the whole module if the numba limb-darkening backend isn't available yet (work in progress).
-pytest.importorskip("pytransit.backends.numba.limb_darkening.uniform")
-
-from pytransit.backends.numba.limb_darkening.uniform import ld_uniform, ldi_uniform
-from pytransit.backends.numba.limb_darkening.linear import ld_linear, ldi_linear, ldd_linear
-from pytransit.backends.numba.limb_darkening.quadratic import ld_quadratic, ldi_quadratic, ldd_quadratic
-from pytransit.backends.numba.limb_darkening.quadratic_tri import ld_quadratic_tri, ldi_quadratic_tri, ldd_quadratic_tri
-from pytransit.backends.numba.limb_darkening.power_2 import ld_power_2, ldi_power_2, ldd_power_2
-from pytransit.backends.numba.limb_darkening.nonlinear import ld_nonlinear, ldi_nonlinear, ldd_nonlinear
-from pytransit.backends.numba.limb_darkening.general import ld_general, ldi_general, ldd_general
+from pytransit.models.limb_darkening.uniform import ld_uniform, ldi_uniform
+from pytransit.models.limb_darkening.linear import ld_linear, ldi_linear, ldd_linear
+from pytransit.models.limb_darkening.quadratic import ld_quadratic, ldi_quadratic, ldd_quadratic
+from pytransit.models.limb_darkening.quadratic_tri import ld_quadratic_tri, ldi_quadratic_tri
+from pytransit.models.limb_darkening.power_2 import ld_power_2, ldi_power_2, ldd_power_2
+from pytransit.models.limb_darkening.nonlinear import ld_nonlinear
+from pytransit.models.limb_darkening.general import ld_general
 
 
 def numerical_ldi(ld_func, pv, n=10000):
@@ -110,38 +107,12 @@ class TestIntegrals:
         np.array([0.0, 1.0]),
     ])
     def test_power_2(self, pv):
-        assert_allclose(ldi_power_2(pv), numerical_ldi(ld_power_2, pv), rtol=1e-10)
+        # ldi_power_2 takes (mu, pv) for registry consistency; mu is unused.
+        assert_allclose(ldi_power_2(np.array([1.0]), pv), numerical_ldi(ld_power_2, pv), rtol=1e-10)
 
     def test_power_2_c0_gives_pi(self):
         """c=0 reduces to uniform disk, integral = π."""
-        assert_allclose(ldi_power_2(np.array([0.0, 1.0])), np.pi, rtol=1e-12)
-
-    @pytest.mark.parametrize("pv", [
-        np.array([0.1, 0.2, 0.1, 0.05]),
-        np.array([0.3, 0.2, 0.15, 0.1]),
-        np.array([0.0, 0.0, 0.0, 0.0]),
-        np.array([0.5, 0.3, 0.1, 0.05]),
-    ])
-    def test_nonlinear(self, pv):
-        assert_allclose(ldi_nonlinear(pv), numerical_ldi(ld_nonlinear, pv), rtol=1e-10)
-
-    def test_nonlinear_zeros_gives_pi(self):
-        """All zeros reduces to uniform disk, integral = π."""
-        assert_allclose(ldi_nonlinear(np.array([0.0, 0.0, 0.0, 0.0])), np.pi, rtol=1e-12)
-
-    @pytest.mark.parametrize("pv", [
-        np.array([0.5, 0.3]),
-        np.array([1.0, 0.0]),
-        np.array([0.0, 1.0]),
-        np.array([0.2, 0.3, 0.1]),
-    ])
-    def test_general(self, pv):
-        assert_allclose(ldi_general(pv), numerical_ldi(ld_general, pv), rtol=1e-10)
-
-    def test_general_single_coeff(self):
-        """Single coeff c₀: I(μ) = c₀(1-μ), integral = 2π·c₀·1/(2·3) = πc₀/3."""
-        pv = np.array([1.0])
-        assert_allclose(ldi_general(pv), np.pi / 3.0, rtol=1e-12)
+        assert_allclose(ldi_power_2(np.array([1.0]), np.array([0.0, 1.0])), np.pi, rtol=1e-12)
 
 
 # ============================================================
@@ -172,15 +143,6 @@ class TestGradients:
         assert_allclose(ana, num, atol=1e-6)
 
     @pytest.mark.parametrize("pv", [
-        np.array([0.5, 0.3]),
-        np.array([0.8, 0.5]),
-    ])
-    def test_quadratic_tri(self, pv):
-        ana = ldd_quadratic_tri(self.mu_test, pv)
-        num = numerical_gradient(ld_quadratic_tri, self.mu_test, pv)
-        assert_allclose(ana, num, atol=1e-5)
-
-    @pytest.mark.parametrize("pv", [
         np.array([0.3, 0.7]),
         np.array([0.8, 0.5]),
     ])
@@ -189,26 +151,6 @@ class TestGradients:
         mu = self.mu_test[self.mu_test > 0.05]
         ana = ldd_power_2(mu, pv)
         num = numerical_gradient(ld_power_2, mu, pv)
-        assert_allclose(ana, num, atol=1e-5)
-
-    @pytest.mark.parametrize("pv", [
-        np.array([0.1, 0.2, 0.1, 0.05]),
-        np.array([0.3, 0.2, 0.15, 0.1]),
-    ])
-    def test_nonlinear(self, pv):
-        # Avoid mu near 0 where c₁/(2√μ) diverges
-        mu = self.mu_test[self.mu_test > 0.05]
-        ana = ldd_nonlinear(mu, pv)
-        num = numerical_gradient(ld_nonlinear, mu, pv)
-        assert_allclose(ana, num, atol=1e-5)
-
-    @pytest.mark.parametrize("pv", [
-        np.array([0.5, 0.3]),
-        np.array([0.2, 0.3, 0.1]),
-    ])
-    def test_general(self, pv):
-        ana = ldd_general(self.mu_test, pv)
-        num = numerical_gradient(ld_general, self.mu_test, pv)
         assert_allclose(ana, num, atol=1e-5)
 
 

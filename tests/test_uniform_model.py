@@ -79,17 +79,19 @@ class TestUniformModel:
         assert flux.ndim == 1
         assert flux.size == model_data.time.size
 
-    def test_evaluate_pv(self, model_data):
+    def test_evaluate_population(self, model_data):
+        # Evaluate a population of parameter sets simultaneously through the
+        # vectorised evaluate() (which replaced the removed evaluate_pv()). The
+        # vector branch is selected because the orbital parameters are arrays.
         tm = UniformModel()
         tm.set_data(model_data.time)
 
-        pvp = array([[0.12, 0.00, 1.0, 3.0, 0.500 * pi, 0.0, 0.0],
-                     [0.11, 0.01, 0.9, 2.9, 0.495 * pi, 0.0, 0.0]])
+        k  = array([0.12, 0.11])
+        t0 = array([0.00, 0.01])
+        p  = array([1.0, 0.9])
+        a  = array([3.0, 2.9])
+        i  = array([0.500 * pi, 0.495 * pi])
 
-        flux = tm.evaluate_pv(pvp[0])
-        assert flux.ndim == 1
-        assert flux.size == model_data.time.size
-
-        flux = tm.evaluate_pv(pvp)
+        flux = tm.evaluate(k, t0, p, a, i)
         assert flux.ndim == 2
         assert flux.shape == (2, model_data.time.size)
