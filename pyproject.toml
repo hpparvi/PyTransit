@@ -33,7 +33,7 @@ version = {attr = "pytransit.__version__"}
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["pytransit"]
+include = ["pytransit*"]
 namespaces = true
 
 [tool.pytest.ini_options]
