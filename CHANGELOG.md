@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.1] - 2026-06-21
+
+### Changed
+
+- Fixed broken tests.
+
+
 ## [2.8.0] - 2026-06-19
 
 ### Changed
