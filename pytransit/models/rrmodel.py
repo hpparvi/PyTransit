@@ -31,11 +31,12 @@ from typing import Tuple, Callable, Union, List, Literal
 import jax
 import jax.numpy as jnp
 import numba
-from numpy import ndarray, linspace, isscalar, atleast_1d, sqrt, pi, zeros, repeat, floating, squeeze
+from numpy import (ndarray, linspace, isscalar, atleast_1d, sqrt, pi, zeros, repeat, floating, squeeze,
+                   arange, isnan, concatenate, asarray, nan)
 from numpy.typing import NDArray, ArrayLike
 from scipy.integrate import trapezoid
 
-from ._utils import _normalize_parameter_shapes, _npv_from_k, PType
+from ._utils import _normalize_parameter_shapes, _npv_from_k, _param_is_expanded, PType
 from .ldmodel import LDModel
 from .transitmodel import TransitModel
 from ..backends.numba.limb_darkening import *
@@ -88,6 +89,8 @@ class RoadRunnerModel(TransitModel):
         super().__init__(backend, return_grad, parallel, n_threads)
 
         if backend == "jax":
+            if return_grad:
+                raise NotImplementedError("Gradient computation is not implemented for the JAX backend.")
             # vmap over npv dimension: k, t0, p, a, i, e, w are per-PV (axis 0),
             # lcids/pbids/epids/nsamples/exptimes/weights/etc are shared (None),
             # ldp and ldi are per-PV (axis 0), ldg/dldi/ze unused but passed as None.
@@ -206,15 +209,23 @@ class RoadRunnerModel(TransitModel):
         Returns
         -------
         NDArray | tuple[NDArray, NDArray]
-            Flux either as a 1D or 2D ndarray, and, optionally, the gradient of the flux with respect to the parameters.
+            Flux either as a 1D or 2D ndarray, and, optionally, the gradient of the flux with respect to the
+            parameters. When ``return_grad`` is set, the gradient columns match the parameters as passed, in the
+            order ``[k, t0, p, a, i, e, w, ldc]``: a parameter given as a scalar contributes a single shared
+            column, while a passband-dependent radius ratio or an epoch-dependent transit centre / orbital
+            parameter is expanded into one column per passband or epoch. Each data point's derivative is non-zero
+            only in the column of its own passband (``k``, ``ldc``) or epoch (``t0``, ``p``, ``a``, ``i``, ``e``,
+            ``w``).
         """
 
         if ldc is None:
             raise ValueError("Limb darkening coefficients must be provided.")
         ldc = atleast_1d(ldc)
 
+        # Keep the originals so the gradient can be laid out to match the input arity.
+        orig_params = (k, t0, p, a, i, e, w)
+        npv = _npv_from_k(asarray(k), self.npb)
         k, t0, p, a, i, e, w = _normalize_parameter_shapes(k, t0, p, a, i, e, w, self.npb, self.ntc, self.nor)
-        npv = _npv_from_k(k, self.npb)
 
         if isinstance(self.ldmodel, LDModel):
             ldp, ldg, ldi = self.ldmodel(self.mu, ldc)
@@ -222,7 +233,8 @@ class RoadRunnerModel(TransitModel):
             ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
 
             if self.return_grad:
-                ldg = self.ldgrad(self.mu, atleast_1d(ldc))
+                # Per-passband LD profile derivatives, shape (npv, npb, 1+nldc, nmu).
+                ldg = evaluate_ldg(self.ldgrad, self.mu, ldc)
             else:
                 ldg = None
 
@@ -240,7 +252,15 @@ class RoadRunnerModel(TransitModel):
         if ldi.shape[0] < npv:
             ldi = repeat(ldi, npv, axis=0)
 
-        dldi = evaluate_ldig(self.ldigmean, ldc) if self.return_grad else None
+        if self.return_grad:
+            # Per-passband integrated-intensity derivatives, shape (npv, npb, nldc).
+            dldi = evaluate_distar(self.ldigmean, ldc)
+            if ldg.shape[0] < npv:
+                ldg = repeat(ldg, npv, axis=0)
+            if dldi.shape[0] < npv:
+                dldi = repeat(dldi, npv, axis=0)
+        else:
+            dldi = None
 
         if self.backend == "jax":
             result = self._model(self.times, k, t0, p, a, i, e, w,
@@ -255,5 +275,50 @@ class RoadRunnerModel(TransitModel):
                                self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
                                self.npb, self.nor)
 
-        sq = jnp.squeeze if self.backend == 'jax' else squeeze
-        return (sq(result[0]), sq(result[1])) if self.return_grad else sq(result)
+        if not self.return_grad:
+            return jnp.squeeze(result) if self.backend == 'jax' else squeeze(result)
+
+        flux, dflux_compact = result[0], result[1]
+        dflux = self._expand_gradient(dflux_compact, flux, npv, orig_params)
+        return squeeze(flux), squeeze(dflux)
+
+    def _expand_gradient(self, dflux_compact: ndarray, flux: ndarray, npv: int,
+                         orig_params: tuple) -> ndarray:
+        """Scatter the compact per-point gradient into a per-input-parameter Jacobian.
+
+        The Numba kernel returns a compact gradient with shape ``(npv, npt, 7 + npb*nldc)``
+        whose first seven columns hold, for each data point, the derivative w.r.t. its own
+        passband's ``k`` and its own epoch's ``t0, p, a, i, e, w``. This expands those columns
+        to match how the parameters were passed to :meth:`evaluate`: a parameter shared across
+        passbands/epochs keeps a single column, while a passband- or epoch-dependent parameter
+        is scattered into one column per passband (``k``) or epoch (``t0`` and the orbital
+        parameters), with each point's derivative landing only in its own column. The LD block
+        (``npb*nldc`` columns) is already per-passband and is appended unchanged. The output
+        column order is ``[k, t0, p, a, i, e, w, ldc]``.
+        """
+        npt = self.npt
+        pb_pt = self.pbids[self.lcids]   # passband index per data point
+        ep_pt = self.epids[self.lcids]   # epoch index per data point
+
+        def block(ccol, nd2, idx, expanded):
+            col = dflux_compact[:, :, ccol]              # (npv, npt)
+            if not expanded:
+                return col[:, :, None]                   # shared -> single column
+            out = zeros((npv, npt, nd2))
+            out[:, arange(npt), idx] = col               # scatter to own passband/epoch
+            return out
+
+        k, t0, p, a, i, e, w = orig_params
+        blocks = [
+            block(0, self.npb, pb_pt, _param_is_expanded(k,  npv, self.npb)),   # k
+            block(1, self.ntc, ep_pt, _param_is_expanded(t0, npv, self.ntc)),   # t0
+            block(2, self.nor, ep_pt, _param_is_expanded(p,  npv, self.nor)),   # p
+            block(3, self.nor, ep_pt, _param_is_expanded(a,  npv, self.nor)),   # a
+            block(4, self.nor, ep_pt, _param_is_expanded(i,  npv, self.nor)),   # i
+            block(5, self.nor, ep_pt, _param_is_expanded(e,  npv, self.nor)),   # e
+            block(6, self.nor, ep_pt, _param_is_expanded(w,  npv, self.nor)),   # w
+            dflux_compact[:, :, 7:],                                            # ldc block
+        ]
+        dflux = concatenate(blocks, axis=2)
+        dflux[isnan(flux)] = nan                         # propagate invalid-PV NaNs
+        return dflux

@@ -45,12 +45,12 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
     ldp : ndarray
         Limb darkening profiles, shape (npv, npb, nmu).
     ldg : ndarray
-        LD profile and its derivatives, shape (1+nldc, nmu).
+        Per-passband LD profile and its derivatives, shape (npv, npb, 1+nldc, nmu).
         Row 0: dI/dmu, rows 1..: dI/dc_j.
     ldi : ndarray
         Disk-integrated intensity, shape (npv, npb).
     dldi : ndarray
-        Derivative of ldi w.r.t. each LD coefficient, shape (nldc,).
+        Derivative of ldi w.r.t. each LD coefficient, shape (npv, npb, nldc).
     weights : ndarray
         3D weight table, shape (nk, ng, nmu).
     dk : float
@@ -72,16 +72,19 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
     -------
     flux : ndarray, shape (npv, npt)
         Model flux.
-    dflux : ndarray, shape (npv, npt, 7 + nldc)
-        Derivatives w.r.t. [k, t0, p, a, i, e, w, c_0, c_1, ...].
+    dflux : ndarray, shape (npv, npt, 7 + npb*nldc)
+        Derivatives w.r.t. [k, t0, p, a, i, e, w] followed by one nldc-wide
+        block of LD-coefficient derivatives per passband. The LD derivatives of
+        a data point are non-zero only within its own passband's block; the
+        derivative of coefficient j of passband ipb sits at slot 7 + ipb*nldc + j.
     """
     npv = k.shape[0]
     npt = times.size
     ng = weights.shape[1]
-    nldc = ldg.shape[0] - 1
+    nldc = ldg.shape[2] - 1
 
     flux = zeros((npv, npt))
-    dflux = zeros((npv, npt, 7 + nldc))
+    dflux = zeros((npv, npt, 7 + npb * nldc))
 
     for ipv in range(npv):
         if isnan(a[ipv, 0]) or (a[ipv, 0] <= 1.0) or (e[ipv, 0] < 0.0) or any(isnan(ldp[ipv, 0])):
@@ -89,32 +92,24 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
             dflux[ipv, :, :] = nan
             continue
 
-        ldi_val = ldi[ipv, 0]
-
-        # Pre-compute LD means per passband
+        # Pre-compute LD means and their LD-coefficient derivatives per passband.
+        # Each passband uses its own radius ratio and limb darkening profile, so
+        # dldm_dc[ipb, j] = dot(W(k_ipb), dI_ipb/dc_j).
         ldm_all = zeros((npb, ng))
+        dldm_dc = zeros((npb, nldc, ng))
         for ipb in range(npb):
             kv = k[ipv, ipb]
             if kmin <= kv <= kmax:
                 ik = int(floor((kv - kmin) / dk))
                 ak = (kv - kmin - ik * dk) / dk
                 ldm_all[ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb]) + ak * dot(weights[ik + 1], ldp[ipv, ipb])
+                for j in range(nldc):
+                    dldm_dc[ipb, j, :] = (1.0 - ak) * dot(weights[ik], ldg[ipv, ipb, j + 1]) + ak * dot(weights[ik + 1], ldg[ipv, ipb, j + 1])
             else:
                 _, _, wg = calculate_weights_2d(kv, z_edges, ng)
                 ldm_all[ipb, :] = dot(wg, ldp[ipv, ipb])
-
-        # LD coefficient derivatives: dldm_dc[j] = dot(W, ldg[j+1])
-        dldm_dc = zeros((nldc, ng))
-        kv = k[ipv, 0]
-        if kmin <= kv <= kmax:
-            ik = int(floor((kv - kmin) / dk))
-            ak = (kv - kmin - ik * dk) / dk
-            for j in range(nldc):
-                dldm_dc[j, :] = (1.0 - ak) * dot(weights[ik], ldg[j + 1]) + ak * dot(weights[ik + 1], ldg[j + 1])
-        else:
-            _, _, wg = calculate_weights_2d(kv, z_edges, ng)
-            for j in range(nldc):
-                dldm_dc[j, :] = dot(wg, ldg[j + 1])
+                for j in range(nldc):
+                    dldm_dc[ipb, j, :] = dot(wg, ldg[ipv, ipb, j + 1])
 
         # Pre-compute orbital coefficients and derivatives per epoch
         xyc = zeros((nep, 2, 5))
@@ -169,17 +164,17 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
                     for ip in range(6):
                         dflux[ipv, ipt, ip + 1] += -(dIp_dz * aplanet + iplanet * dadz) * dz[ip] / ldi_pb
 
-                    # --- LD coefficient derivatives ---
+                    # --- LD coefficient derivatives (only this point's passband) ---
                     for j in range(nldc):
-                        dIp_dcj = interpolate_mean_limb_darkening(g, dg, dldm_dc[j])
-                        dflux[ipv, ipt, 7 + j] += -aplanet * dIp_dcj / ldi_pb
+                        dIp_dcj = interpolate_mean_limb_darkening(g, dg, dldm_dc[ipb, j])
+                        dflux[ipv, ipt, 7 + ipb * nldc + j] += -aplanet * dIp_dcj / ldi_pb
 
                 flux[ipv, ipt] /= nsamples[ilc]
-                for ip in range(7 + nldc):
+                for ip in range(7 + npb * nldc):
                     dflux[ipv, ipt, ip] /= nsamples[ilc]
 
-                # Add the dldi contribution for LD coefficients
+                # Add the dldi contribution for this passband's LD coefficients
                 for j in range(nldc):
-                    dflux[ipv, ipt, 7 + j] += (1.0 - flux[ipv, ipt]) * dldi[j] / ldi_val
+                    dflux[ipv, ipt, 7 + ipb * nldc + j] += (1.0 - flux[ipv, ipt]) * dldi[ipv, ipb, j] / ldi_pb
 
     return flux, dflux

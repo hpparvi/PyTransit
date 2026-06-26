@@ -97,6 +97,25 @@ def _npv_from_k_ovld(k, npb):
         return impl
 
 
+def _param_is_expanded(orig, npv, nd2):
+    """Whether a parameter was supplied with one value per expansion-axis element.
+
+    Mirrors `_normalize_parameter_shape`: a scalar, or a 1D per-parameter-vector
+    array of length ``npv``, is shared along the expansion axis (and collapses to
+    a single gradient column), whereas a length-``nd2`` 1D array (with ``npv == 1``)
+    or an ``(npv, nd2)`` 2D array provides a distinct value per axis element (and
+    expands to ``nd2`` gradient columns).
+    """
+    if nd2 <= 1:
+        return False
+    o = asarray(orig)
+    if o.ndim == 0:
+        return False
+    if o.ndim == 1:
+        return o.size == nd2 and npv == 1
+    return o.shape[1] == nd2
+
+
 def _normalize_parameter_shapes(k, t0, p, a, i, e, w, npb, ntc, nor):
     k = asarray(k)
     npv = _npv_from_k(k, npb)

@@ -87,6 +87,11 @@ def evaluate_ldig(ldig, pvo):
     gradient : ndarray
         Gradient of the integrated intensity with respect to the limb
         darkening coefficients.
+
+    Notes
+    -----
+    This returns the gradient for the first parameter set and passband only.
+    Use :func:`evaluate_distar` to obtain per-passband gradients.
     """
     if pvo.ndim == 1:
         pv = pvo.reshape((1, 1, -1))
@@ -95,3 +100,76 @@ def evaluate_ldig(ldig, pvo):
     else:
         pv = pvo
     return ldig(pv[0, 0])
+
+
+@njit
+def evaluate_ldg(ldd, mu, pvo):
+    """Evaluate limb darkening profile derivatives across parameter sets and passbands.
+
+    Parameters
+    ----------
+    ldd : callable
+        Limb darkening derivative function with signature ``ldd(mu, pv)``
+        returning an array of shape ``(1+nldc, nmu)`` (row 0: dI/dmu,
+        rows 1.. : dI/dc_j).
+    mu : ndarray
+        Array of mu (= cos(theta)) values.
+    pvo : ndarray
+        Limb darkening parameter array with 1, 2, or 3 dimensions, following
+        the same convention as :func:`evaluate_ld`.
+
+    Returns
+    -------
+    ldg : ndarray
+        Profile derivatives with shape ``(n_sets, n_passbands, 1+nldc, n_mu)``.
+    """
+    if pvo.ndim == 1:
+        pv = pvo.reshape((1, 1, -1))
+    elif pvo.ndim == 2:
+        pv = pvo.reshape((1, pvo.shape[1], -1))
+    else:
+        pv = pvo
+
+    npv = pv.shape[0]
+    npb = pv.shape[1]
+    nrows = ldd(mu, pv[0, 0]).shape[0]
+    ldg = zeros((npv, npb, nrows, mu.size))
+    for ipv in range(npv):
+        for ipb in range(npb):
+            ldg[ipv, ipb, :, :] = ldd(mu, pv[ipv, ipb])
+    return ldg
+
+
+@njit
+def evaluate_distar(ldig, pvo):
+    """Evaluate integrated-intensity derivatives across parameter sets and passbands.
+
+    Parameters
+    ----------
+    ldig : callable
+        Gradient function with signature ``ldig(pv) -> (nldc,)``.
+    pvo : ndarray
+        Limb darkening parameter array (1D, 2D, or 3D), following the same
+        convention as :func:`evaluate_ld`.
+
+    Returns
+    -------
+    distar : ndarray
+        Derivatives of the integrated intensity with respect to each limb
+        darkening coefficient, shape ``(n_sets, n_passbands, nldc)``.
+    """
+    if pvo.ndim == 1:
+        pv = pvo.reshape((1, 1, -1))
+    elif pvo.ndim == 2:
+        pv = pvo.reshape((1, pvo.shape[1], -1))
+    else:
+        pv = pvo
+
+    npv = pv.shape[0]
+    npb = pv.shape[1]
+    nldc = pv.shape[2]
+    distar = zeros((npv, npb, nldc))
+    for ipv in range(npv):
+        for ipb in range(npb):
+            distar[ipv, ipb, :] = ldig(pv[ipv, ipb])
+    return distar
