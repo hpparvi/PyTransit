@@ -41,8 +41,25 @@ Date
 
 """
 
-__version__ = '2.6.18'
+__version__ = '3.0.0'
 
 # Generic
 # -------
 from .models.transitmodel import TransitModel
+
+# Transit models
+# --------------
+from .models.rrmodel import RoadRunnerModel
+from .models.udmodel import UniformDiskModel
+from .models.tsmodel import TransmissionSpectroscopyModel
+
+# Secondary-eclipse model
+# -----------------------
+from .models.semodel import SecondaryEclipseModel
+
+# Limb darkening
+# --------------
+from .models.ldmodel import LDModel
+
+__all__ = ['TransitModel', 'RoadRunnerModel', 'UniformDiskModel',
+           'TransmissionSpectroscopyModel', 'SecondaryEclipseModel', 'LDModel']
