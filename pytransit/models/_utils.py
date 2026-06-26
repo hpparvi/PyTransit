@@ -116,6 +116,73 @@ def _param_is_expanded(orig, npv, nd2):
     return o.shape[1] == nd2
 
 
+def _expand_gradient(dflux_compact, flux, npv, orig_params, lcids, pbids, epids,
+                     npb, ntc, nor, ld_block=None, use_jax=False):
+    """Scatter a compact per-point gradient into a per-input-parameter Jacobian.
+
+    The Numba/JAX kernels return a compact gradient whose first seven columns
+    hold, for each data point, the derivative w.r.t. its own passband's ``k`` and
+    its own epoch's ``t0, p, a, i, e, w``. This expands those columns to match how
+    the parameters were passed to ``evaluate``: a parameter shared across
+    passbands/epochs keeps a single column, while a passband-dependent radius ratio
+    or an epoch-dependent transit centre / orbital parameter is scattered into one
+    column per passband (``k``) or epoch (``t0`` and the orbital parameters), with
+    each point's derivative landing only in its own column. An optional ``ld_block``
+    (already per-passband) is appended unchanged. The output column order is
+    ``[k, t0, p, a, i, e, w, ldc]``.
+
+    Parameters
+    ----------
+    dflux_compact : ndarray
+        Compact gradient, shape ``(npv, npt, 7 [+ ld columns])``.
+    flux : ndarray
+        Model flux, shape ``(npv, npt)``; used to propagate invalid-PV NaNs.
+    npv : int
+        Number of parameter vectors.
+    orig_params : tuple
+        The ``(k, t0, p, a, i, e, w)`` arguments *as passed* to ``evaluate``
+        (before shape normalisation), used to decide per-parameter expansion.
+    lcids, pbids, epids : ndarray
+        Light-curve, passband, and epoch index arrays.
+    npb, ntc, nor : int
+        Number of passbands, transit centres, and orbit variations.
+    ld_block : ndarray, optional
+        Per-passband limb-darkening derivative columns to append unchanged.
+    use_jax : bool, optional
+        Use ``jax.numpy`` (functional scatter) instead of NumPy.
+    """
+    xp = __import__('jax.numpy', fromlist=['']) if use_jax else np
+
+    pb_pt = np.asarray(pbids)[np.asarray(lcids)]   # passband index per data point
+    ep_pt = np.asarray(epids)[np.asarray(lcids)]   # epoch index per data point
+    npt = pb_pt.size
+
+    def block(ccol, nd2, idx, expanded):
+        col = dflux_compact[:, :, ccol]                  # (npv, npt)
+        if not expanded:
+            return col[:, :, None]                       # shared -> single column
+        out = xp.zeros((npv, npt, nd2), dtype=dflux_compact.dtype)
+        if use_jax:
+            return out.at[:, xp.arange(npt), idx].set(col)
+        out[:, np.arange(npt), idx] = col                # scatter to own passband/epoch
+        return out
+
+    k, t0, p, a, i, e, w = orig_params
+    specs = ((0, npb, pb_pt, k), (1, ntc, ep_pt, t0), (2, nor, ep_pt, p),
+             (3, nor, ep_pt, a), (4, nor, ep_pt, i), (5, nor, ep_pt, e), (6, nor, ep_pt, w))
+    blocks = [block(c, nd2, idx, _param_is_expanded(o, npv, nd2)) for c, nd2, idx, o in specs]
+    if ld_block is not None:
+        blocks.append(ld_block)
+    dflux = xp.concatenate(blocks, axis=2)
+
+    mask = xp.isnan(flux)                                # invalid-PV rows are all NaN
+    if use_jax:
+        dflux = xp.where(mask[:, :, None], xp.nan, dflux)
+    else:
+        dflux[mask] = np.nan
+    return dflux
+
+
 def _normalize_parameter_shapes(k, t0, p, a, i, e, w, npb, ntc, nor):
     k = asarray(k)
     npv = _npv_from_k(k, npb)

@@ -31,12 +31,11 @@ from typing import Tuple, Callable, Union, List, Literal
 import jax
 import jax.numpy as jnp
 import numba
-from numpy import (ndarray, linspace, isscalar, atleast_1d, sqrt, pi, zeros, repeat, floating, squeeze,
-                   arange, isnan, concatenate, asarray, nan)
+from numpy import ndarray, linspace, isscalar, atleast_1d, sqrt, pi, zeros, repeat, floating, squeeze, asarray
 from numpy.typing import NDArray, ArrayLike
 from scipy.integrate import trapezoid
 
-from ._utils import _normalize_parameter_shapes, _npv_from_k, _param_is_expanded, PType
+from ._utils import _normalize_parameter_shapes, _npv_from_k, _expand_gradient, PType
 from .ldmodel import LDModel
 from .transitmodel import TransitModel
 from ..backends.numba.limb_darkening import *
@@ -279,46 +278,8 @@ class RoadRunnerModel(TransitModel):
             return jnp.squeeze(result) if self.backend == 'jax' else squeeze(result)
 
         flux, dflux_compact = result[0], result[1]
-        dflux = self._expand_gradient(dflux_compact, flux, npv, orig_params)
+        dflux = _expand_gradient(dflux_compact, flux, npv, orig_params,
+                                 self.lcids, self.pbids, self.epids,
+                                 self.npb, self.ntc, self.nor,
+                                 ld_block=dflux_compact[:, :, 7:])
         return squeeze(flux), squeeze(dflux)
-
-    def _expand_gradient(self, dflux_compact: ndarray, flux: ndarray, npv: int,
-                         orig_params: tuple) -> ndarray:
-        """Scatter the compact per-point gradient into a per-input-parameter Jacobian.
-
-        The Numba kernel returns a compact gradient with shape ``(npv, npt, 7 + npb*nldc)``
-        whose first seven columns hold, for each data point, the derivative w.r.t. its own
-        passband's ``k`` and its own epoch's ``t0, p, a, i, e, w``. This expands those columns
-        to match how the parameters were passed to :meth:`evaluate`: a parameter shared across
-        passbands/epochs keeps a single column, while a passband- or epoch-dependent parameter
-        is scattered into one column per passband (``k``) or epoch (``t0`` and the orbital
-        parameters), with each point's derivative landing only in its own column. The LD block
-        (``npb*nldc`` columns) is already per-passband and is appended unchanged. The output
-        column order is ``[k, t0, p, a, i, e, w, ldc]``.
-        """
-        npt = self.npt
-        pb_pt = self.pbids[self.lcids]   # passband index per data point
-        ep_pt = self.epids[self.lcids]   # epoch index per data point
-
-        def block(ccol, nd2, idx, expanded):
-            col = dflux_compact[:, :, ccol]              # (npv, npt)
-            if not expanded:
-                return col[:, :, None]                   # shared -> single column
-            out = zeros((npv, npt, nd2))
-            out[:, arange(npt), idx] = col               # scatter to own passband/epoch
-            return out
-
-        k, t0, p, a, i, e, w = orig_params
-        blocks = [
-            block(0, self.npb, pb_pt, _param_is_expanded(k,  npv, self.npb)),   # k
-            block(1, self.ntc, ep_pt, _param_is_expanded(t0, npv, self.ntc)),   # t0
-            block(2, self.nor, ep_pt, _param_is_expanded(p,  npv, self.nor)),   # p
-            block(3, self.nor, ep_pt, _param_is_expanded(a,  npv, self.nor)),   # a
-            block(4, self.nor, ep_pt, _param_is_expanded(i,  npv, self.nor)),   # i
-            block(5, self.nor, ep_pt, _param_is_expanded(e,  npv, self.nor)),   # e
-            block(6, self.nor, ep_pt, _param_is_expanded(w,  npv, self.nor)),   # w
-            dflux_compact[:, :, 7:],                                            # ldc block
-        ]
-        dflux = concatenate(blocks, axis=2)
-        dflux[isnan(flux)] = nan                         # propagate invalid-PV NaNs
-        return dflux

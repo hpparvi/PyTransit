@@ -1,11 +1,11 @@
 import numba
 
-from numpy import ndarray, squeeze
+from numpy import ndarray, squeeze, asarray
 
 from ..backends.numba.semodel import semodel as nbmodel
 from ..backends.numba.semodel_grad import semodel_grad as nbmodel_grad
 from .transitmodel import TransitModel
-from ._utils import _normalize_parameter_shapes, PType
+from ._utils import _normalize_parameter_shapes, _npv_from_k, _expand_gradient, PType
 
 __all__ = ['SecondaryEclipseModel']
 
@@ -70,12 +70,25 @@ class SecondaryEclipseModel(TransitModel):
         -------
         ndarray or tuple
             Eclipse flux (npv, npt), or (flux, dflux) if ``return_grad=True``.
-            The gradient's last axis corresponds to [k, t0, p, a, i, e, w].
+            The gradient columns match the parameters as passed, in the order
+            ``[k, t0, p, a, i, e, w]``: a scalar parameter contributes a single
+            shared column, while a passband-dependent radius ratio or an
+            epoch-dependent transit centre / orbital parameter is expanded into
+            one column per passband or epoch.
         """
+        orig_params = (k, t0, p, a, i, e, w)
+        npv = _npv_from_k(asarray(k), self.npb)
         k, t0, p, a, i, e, w = _normalize_parameter_shapes(k, t0, p, a, i, e, w, self.npb, self.ntc, self.nor)
         result = self._model(self.times, k, t0, p, a, i, e, w, float(rstar),
                              self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes, self.npb, self.nor)
-        return (squeeze(result[0]), squeeze(result[1])) if self.return_grad else squeeze(result)
+        if not self.return_grad:
+            return squeeze(result)
+
+        flux, dflux_compact = result[0], result[1]
+        dflux = _expand_gradient(dflux_compact, flux, npv, orig_params,
+                                 self.lcids, self.pbids, self.epids,
+                                 self.npb, self.ntc, self.nor)
+        return squeeze(flux), squeeze(dflux)
 
     def get_callable(self):
         return self._model
