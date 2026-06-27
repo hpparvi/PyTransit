@@ -160,6 +160,32 @@ class TestTSModelAndGrad(unittest.TestCase):
                     np.testing.assert_allclose(anal[mask], fd[mask], rtol=1e-3, atol=1e-8,
                         err_msg=f"{name} gradient band {ipb}")
 
+    def test_period_gradient_at_nonzero_epoch(self):
+        """Period derivative across transits at non-zero folded epochs.
+
+        tsmodel_grad folds with a scalar t0/p, so a transit observed whole
+        periods away from t0 sits at a non-zero epoch. The folded time
+        tc = t - t0 - epoch*p depends on the period via the -epoch*p term, so
+        the period derivative (slot 2) must gain an epoch-proportional term;
+        the epoch-0 case (covered by test_gradient_orbital_params) cannot see it.
+        """
+        eps = 1e-7
+        base_times = linspace(-0.15, 0.15, 300)
+        for epoch in (0, 1, 3):
+            self.times = base_times + epoch * self.p[0]
+            flux0, dflux0 = self._call()
+            plus = self.p.copy(); plus[0] += eps
+            fp, _ = self._call(p=plus)
+            minus = self.p.copy(); minus[0] -= eps
+            fm, _ = self._call(p=minus)
+            for ipb in range(self.npb):
+                fd = (fp[0, ipb] - fm[0, ipb]) / (2 * eps)
+                anal = dflux0[0, ipb, :, 2]
+                mask = flux0[0, ipb] < 0.999   # smooth region; avoid contact-point FD noise
+                self.assertTrue(mask.any())
+                np.testing.assert_allclose(anal[mask], fd[mask], rtol=1e-3, atol=1e-7,
+                    err_msg=f"period gradient epoch {epoch} band {ipb}")
+
     def test_gradient_ld_coefficients(self):
         """LD coefficient derivatives against finite differences."""
         eps = 1e-7

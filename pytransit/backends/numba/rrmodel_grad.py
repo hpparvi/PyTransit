@@ -132,7 +132,12 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
             else:
                 iep = 0
 
-            t = _folded_time(times[ipt], t0[ipv, itc], p[ipv, iep])
+            pv = p[ipv, iep]
+            # Integer transit epoch, matching the folding in `_folded_time`. The
+            # folded time t_eval = t - t0 - epoch*p depends on the period through
+            # this -epoch*p term, which the period derivative must account for.
+            epoch = floor((times[ipt] - t0[ipv, itc] + 0.5 * pv) / pv)
+            t = _folded_time(times[ipt], t0[ipv, itc], pv)
             if not ((bt1 - exptimes[ilc]) <= t <= (bt4 + exptimes[ilc])):
                 flux[ipv, ipt] = 1.0
             else:
@@ -161,8 +166,16 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
                     # dz is now the 7-element (tc, p, a, i, e, w, lan) gradient from
                     # sep_cd; slot 0 is the proper transit-centre derivative, so all
                     # six orbital terms share the same sign (lan, slot 6, is unused).
+                    dflux_dz = -(dIp_dz * aplanet + iplanet * dadz) / ldi_pb
                     for ip in range(6):
-                        dflux[ipv, ipt, ip + 1] += -(dIp_dz * aplanet + iplanet * dadz) * dz[ip] / ldi_pb
+                        dflux[ipv, ipt, ip + 1] += dflux_dz * dz[ip]
+
+                    # Period folding correction. The separation derivatives dz are
+                    # taken at fixed folded time, but the folded time itself depends
+                    # on the period via -epoch*p. Since d_flux/d_t_eval = -d_flux/d_t0,
+                    # the total period derivative gains epoch times the transit-centre
+                    # term (dz[0]); this vanishes for epoch 0 and grows with epoch.
+                    dflux[ipv, ipt, 2] += epoch * dflux_dz * dz[0]
 
                     # --- LD coefficient derivatives (only this point's passband) ---
                     for j in range(nldc):

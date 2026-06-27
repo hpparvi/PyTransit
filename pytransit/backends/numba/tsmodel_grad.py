@@ -169,6 +169,12 @@ def tsmodel_grad(times: ndarray,
                             for ip in range(6):
                                 dflux[ipv, ipb, ipt, ip + 1] += -dfdz * dz[ip]
 
+                            # Period folding correction: the folded time
+                            # tc = t - t0 - epoch*p depends on the period via the
+                            # -epoch*p term, so the period derivative gains epoch times
+                            # the transit-centre term (dz[0]). Vanishes at epoch 0.
+                            dflux[ipv, ipb, ipt, 2] += -epoch * dfdz * dz[0]
+
                             # LD coefficient derivatives
                             for j in range(nldc):
                                 dIp_dcj = interpolate_mean_limb_darkening(g, dg, dldm_dc[ipb, j])
@@ -198,6 +204,11 @@ def tsmodel_grad(times: ndarray,
                             # 7-element sep_cd gradient, slot 6 = lan is unused).
                             for ip in range(6):
                                 dflux[ipv, ipb, ipt, ip + 1] += -dfdz * dz[ip]
+
+                            # Period folding correction (see inner case): epoch times
+                            # the transit-centre term, accounting for the -epoch*p in
+                            # the folded time. Vanishes at epoch 0.
+                            dflux[ipv, ipb, ipt, 2] += -epoch * dfdz * dz[0]
 
                             # LD coefficient derivatives
                             for j in range(nldc):

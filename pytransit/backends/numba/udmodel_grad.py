@@ -1,6 +1,6 @@
 from meepmeep.numba2d import solve2d_d, sep_cd, bounding_box
 from numba import prange, njit
-from numpy import zeros, nan, fabs, pi
+from numpy import zeros, nan, fabs, pi, floor
 
 from .ccintersection import ccia_and_grad
 from ._utils import _folded_time
@@ -123,4 +123,11 @@ def udmodel_grad(times, k, t0, p, a, i, e, w, lcids, pbids, epids, nsamples, exp
                                   flux[ipv, ipt:ipt+1], dflux[ipv, ipt, :])
                 flux[ipv, ipt] /= nsamples[ilc]
                 dflux[ipv, ipt, :] /= nsamples[ilc]
+
+                # Period folding correction. The folded time t - t0 - epoch*p depends
+                # on the period via the -epoch*p term, so the total period derivative
+                # (slot 2) gains epoch times the transit-centre derivative (slot 1).
+                # This vanishes at epoch 0 and grows with the transit number.
+                epoch = floor((times[ipt] - t0[ipv, itc] + 0.5 * p[ipv, iep]) / p[ipv, iep])
+                dflux[ipv, ipt, 2] += epoch * dflux[ipv, ipt, 1]
     return flux, dflux

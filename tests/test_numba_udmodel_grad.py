@@ -280,6 +280,24 @@ class TestUdmodelGradFiniteDiff:
         np.testing.assert_allclose(anal[mask], fd[mask], rtol=1e-3, atol=1e-8,
                                    err_msg=f"{name} gradient")
 
+    @pytest.mark.parametrize("epoch", [0, 1, 3])
+    def test_period_gradient_at_nonzero_epoch(self, epoch):
+        """Period gradient stays correct for transits at non-zero folded epochs.
+
+        The folded time t - t0 - epoch*p depends on the period through the
+        -epoch*p term, so the period derivative (column 2) must pick up an
+        epoch-proportional contribution. Shifting the same transit by whole
+        periods (t0/p scalar) places it at the requested epoch.
+        """
+        times = TIMES + epoch * P
+        flux, dflux = _call_udmodel_grad(times, k=self.K, e=self.E_TEST)
+        fd = _finite_diff_grad(times, 'p', 2, self.EPS, k=self.K, e=self.E_TEST)
+        anal = dflux[0, :, 2]
+        mask = flux[0] < -1e-6
+        assert mask.any(), "Should have in-transit points"
+        np.testing.assert_allclose(anal[mask], fd[mask], rtol=1e-3, atol=1e-8,
+                                   err_msg=f"period gradient at epoch {epoch}")
+
     def test_gradient_nonzero_in_transit(self):
         """During transit, k/a/i gradients should be nonzero.
 

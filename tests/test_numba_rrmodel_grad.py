@@ -185,6 +185,55 @@ class TestRRGradSharedOrbit(unittest.TestCase):
             np.testing.assert_allclose(dflux0[ep_of_point != ep, col], 0.0, atol=1e-12)
 
 
+class TestRRGradNonzeroEpochs(unittest.TestCase):
+    """Period derivative across transits observed at non-zero folded epochs.
+
+    A single shared period folds each observation as ``t - t0 - epoch*p``, so the
+    period derivative must include the chain-rule term through ``-epoch*p``. Here
+    three transits share one period and reuse the two transit centres, placing the
+    later light curves at epochs 1 and 2 (unlike ``TestRRGradPerEpoch``, whose
+    per-epoch ``t0`` keeps every point at epoch ~0).
+    """
+
+    def setUp(self):
+        n = 1000
+        t = linspace(-0.5, 0.5, n)
+        self.p = 3.75
+        self.times = concatenate([t, t + self.p, t + 2 * self.p])
+        self.lcids = np.repeat([0, 1, 2], n)
+        self.epids = array([0, 0, 1])        # lc2 uses the second transit centre
+
+        self.t0 = array([-0.3, 0.1])
+        self.k, self.a = 0.1, 6.2
+        self.i, self.e, self.w = 0.49 * pi, 0.12, 1.54
+        self.ldc = array([0.2, 0.4])
+
+        self.model = RoadRunnerModel(backend='numba', return_grad=True, ldmodel='quadratic')
+        self.model.set_data(self.times, self.lcids, epids=self.epids,
+                            nsamples=[1, 10, 1], exptimes=[0.05, 0.05, 0.0],
+                            include_orbit_variations=False)
+
+    def _eval(self, p):
+        return self.model.evaluate(self.k, self.t0, p, self.a, self.i, self.e, self.w,
+                                   ldc=self.ldc)
+
+    def test_period_column_vs_finite_differences(self):
+        # Columns: [k | t0_0 t0_1 | p | a | i | e | w | ld0 ld1]; period is column 3.
+        # Compare where the supersampled model is smooth (flux < 0.99): at the steep
+        # ingress/egress contact points the finite difference suffers truncation
+        # error from the bounding-box cutoff and sample steps, not the analytic
+        # gradient. The deep-transit region still spans all three epochs (0, 1, 2),
+        # so the period folding term (which scales with epoch) is fully exercised.
+        eps = 1e-6
+        flux0, dflux0 = self._eval(self.p)
+        fd = (self._eval(self.p + eps)[0] - self._eval(self.p - eps)[0]) / (2 * eps)
+        smooth = flux0 < 0.99
+        for ilc in (0, 1, 2):                       # ensure every epoch is covered
+            self.assertTrue((smooth & (self.lcids == ilc)).any())
+        np.testing.assert_allclose(dflux0[smooth, 3], fd[smooth],
+                                   rtol=2e-3, atol=1e-5)
+
+
 class TestRRGradBackwardCompatible(unittest.TestCase):
     """Single passband, single epoch, all scalars -> compact 7+nldc layout."""
 
