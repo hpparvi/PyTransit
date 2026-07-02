@@ -1,6 +1,6 @@
-from math import cos, sin, sqrt, isfinite, nan
+from math import cos, sin, sqrt, isfinite, nan, fabs
 
-from numpy import ndarray, fabs, pi, full, arange
+from numpy import ndarray, pi, full, arange
 from numba import njit
 
 @njit
@@ -182,39 +182,13 @@ def ellipse_circle_intersection_area(cx: float, cy: float, z: float, k: float, f
         ny = ys.size
         dy = (ys[1] - ys[0])
         l = 0.0
-        if cx < -k:
-            for i in range(ny):
-                if isfinite(xs[i, 0]):
-                    xstar = -sqrt(1.0 - (ys[i] + cy) ** 2) - cx
-                    if xstar <= xs[i, 0]:
-                        l += xs[i, 1] - xs[i, 0]
-                    elif xstar <= xs[i, 1]:
-                        l += xs[i, 1] - xstar
-        elif cx > k:
-            for i in range(ny):
-                if isfinite(xs[i, 0]):
-                    xstar = sqrt(1.0 - (ys[i] + cy) ** 2) - cx
-                    if xstar >= xs[i, 1]:
-                        l += xs[i, 1] - xs[i, 0]
-                    elif xstar >= xs[i, 0]:
-                        l += xstar - xs[i, 0]
-        else:
-            for i in range(ny):
-                if isfinite(xs[i, 0]):
-                    if fabs(ys[i] + cy) <= 1.0:
-                        xstar = sqrt(1.0 - (ys[i] + cy) ** 2)
-                        xst1 = -xstar - cx
-                        xst2 = xstar - cx
-                        if xst1 <= xs[i, 0]:
-                            l += min(xst2, xs[i, 1]) - xs[i, 0]
-                        elif xst1 > xs[i, 0]:
-                            l +=  min(xst2, xs[i, 1]) - xst1
+        for i in range(ny):
+            if isfinite(xs[i, 0]):
+                yy = ys[i] + cy
+                if fabs(yy) <= 1.0:
+                    w = sqrt(1.0 - yy * yy)
+                    x0 = max(-w - cx, xs[i, 0])
+                    x1 = min(w - cx, xs[i, 1])
+                    if x1 > x0:
+                        l += x1 - x0
         return l*dy
-
-        #else:
-        #    for i in range(ny):
-        #        if isfinite(xs[i,0]):
-        #            xstar = sqrt(1.0 - (ys[i])**2) - b
-        #            if xstar < xs[i,1]:
-        #                l += xs[i,1]-  max(xstar, xs[i,0])
-        #    return pi*k*k*(1.0-f) - l*dy
