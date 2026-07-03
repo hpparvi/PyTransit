@@ -5,7 +5,7 @@ from numba import njit, prange
 from numpy import zeros, dot, ndarray, isnan, nan, full, squeeze, atleast_2d, atleast_1d
 
 from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
-from .ecintersection import create_ellipse, ellipse_circle_intersection_area as ecia
+from .ecintersection import ellipse_circle_intersection_area_exact as ecia
 
 
 def opmodel(times, k, f, alpha, t0, p, a, i, e, w,
@@ -71,9 +71,6 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
     xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
     bbs = zeros((npv, nlc, 2))   # Bounding boxes per (pv, lc)
 
-    exs = zeros((npv, npl, 2))   # Ellipse model scanline x-coordinates
-    eys = zeros((npv, npl))      # Elilpse model scanline y-coordinates
-
     for ipv in range(npv):
         if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
             pv_is_good[ipv] = False
@@ -107,13 +104,6 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
             bbs[ipv, ilc, 0] -= 0.0015 + _exptimes[ilc]
             bbs[ipv, ilc, 1] += 0.0015 + _exptimes[ilc]
 
-        # ----------------------------------
-        # Create the ellipse (x, y) points #
-        # ----------------------------------
-        _y, _x = create_ellipse(npl, ks[ipv,0], f[ipv], alpha[ipv])
-        exs[ipv, :, :] = _x
-        eys[ipv, :] = _y
-
     # ---------------------------#
     # Calculate the light curves #
     # ---------------------------#
@@ -140,7 +130,7 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
                 cx, cy = pos_c(tc + time_offset, xyc[ipv])
                 z = sqrt(cx*cx + cy*cy)
                 iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + ks[ipv, ipb]), dg, ldm[ipv, ipb])
-                aplanet = ecia(cx, cy, z, ks[ipv, ipb], f[ipv], exs[ipv,:,:], eys[ipv,:])
+                aplanet = ecia(cx, cy, z, ks[ipv, ipb], f[ipv], alpha[ipv])
                 flux[ipv, ipt] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
             flux[ipv, ipt] /= nsamples[ilc]
     return flux
