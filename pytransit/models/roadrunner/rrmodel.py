@@ -105,8 +105,6 @@ class RoadRunnerModel(TransitModel):
             if self.parallel:
                 set_num_threads(self.nthreads)
 
-        self.full_model = njit(rr_full, parallel=self.parallel, cache=True)
-
         self.splimit: float | None = small_planet_limit
 
         # Set up the limb darkening model
@@ -235,7 +233,7 @@ class RoadRunnerModel(TransitModel):
                                 atleast_1d(i), atleast_1d(e), atleast_1d(w))
 
         if self.nlc > 1 or k.shape[0] > 1:
-            return squeeze(self.full_model(self.time, k, t0, p, a, i, e, w, self.nlc, self.npb, self.nep,
+            return squeeze(rr_full(self.time, k, t0, p, a, i, e, w, self.parallel, self.nlc, self.npb, self.nep,
                                    self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
                                    ldp, istar, self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze))
         else:

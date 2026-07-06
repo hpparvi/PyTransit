@@ -215,6 +215,18 @@ def _op_flux(times: ndarray, f: ndarray, alpha: ndarray, t0: ndarray, p: ndarray
     Compiled both in serial and in parallel; in the parallel version the flat loop over
     the (parameter vector, time sample) pairs is distributed over the numba threads.
     """
+    # The precomputed arrays are copied locally because numba generates measurably (~35%)
+    # faster code for the flux loop with locally allocated arrays than with array arguments.
+    ks = ks.copy()
+    klds = klds.copy()
+    pv_is_good = pv_is_good.copy()
+    ldm = ldm.copy()
+    xyc = xyc.copy()
+    bbs = bbs.copy()
+    exs = exs.copy()
+    eys = eys.copy()
+    ews = ews.copy()
+
     npv = ks.shape[0]
     npt = times.size
     flux = zeros((npv, npt))
