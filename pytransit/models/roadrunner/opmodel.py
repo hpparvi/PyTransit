@@ -44,7 +44,8 @@ class OblatePlanetModel(RoadRunnerModel):
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  precompute_weights: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
                  nzin: int = 20, nzlimb: int = 20, zcut: float = 0.7, ng: int = 100, nlines: int = 100,
-                 nthreads: int = 1, small_planet_limit: float = 0.05, exact_areas: bool = False, **kwargs):
+                 nthreads: int = 1, small_planet_limit: float = 0.05, exact_areas: bool = False,
+                 exact_ld: bool = False, nannuli: int = 20, **kwargs):
         """
         Parameters
         ----------
@@ -54,16 +55,28 @@ class OblatePlanetModel(RoadRunnerModel):
             Calculate the planet-star intersection areas using the exact analytic algorithm instead of
             the θ-sampled scanline approximation. The exact algorithm is accurate to machine precision
             but several times slower to evaluate. Can be overridden per call in `evaluate`.
+        exact_ld
+            Integrate the limb darkening over the planet's exact elliptical footprint (a Stieltjes sum
+            over `nannuli` stellar annuli with the annulus areas from the ellipse-disk intersection
+            routine) instead of using the circular-footprint mean intensity approximation. Reduces the
+            model error from tens of ppm to below the ppm level for strongly oblate planets at roughly
+            25 times the computational cost. When combined with `exact_areas`, the annulus areas are
+            calculated with the exact analytic algorithm (slower, but free of the scanline resolution
+            floor). Can be overridden per call in `evaluate`.
+        nannuli
+            Number of stellar annuli used by the exact-footprint limb darkening integration.
         """
         super().__init__(ldmodel, precompute_weights, klims, nk, nzin, nzlimb, zcut, ng, nthreads, small_planet_limit, **kwargs)
         self.nlines = nlines
         self.exact_areas = exact_areas
+        self.exact_ld = exact_ld
+        self.nannuli = nannuli
 
     def evaluate(self, k: Union[float, ndarray], f: Union[float, ndarray], alpha: Union[float, ndarray],
                  ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
                  i: Union[float, ndarray], e: Union[float, ndarray] = 0.0, w: Union[float, ndarray] = 0.0,
-                 copy: bool = True, exact_areas: Optional[bool] = None) -> ndarray:
+                 copy: bool = True, exact_areas: Optional[bool] = None, exact_ld: Optional[bool] = None) -> ndarray:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
         Parameters
@@ -88,6 +101,10 @@ class OblatePlanetModel(RoadRunnerModel):
             Calculate the planet-star intersection areas using the exact analytic algorithm instead of
             the θ-sampled scanline approximation. If None (default), uses the value given in the model
             initializer.
+        exact_ld : optional
+            Integrate the limb darkening over the planet's exact elliptical footprint instead of using
+            the circular-footprint mean intensity approximation. If None (default), uses the value
+            given in the model initializer.
 
         Notes
         -----
@@ -119,10 +136,11 @@ class OblatePlanetModel(RoadRunnerModel):
                         istar[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv, ipb], self._ldz)
 
         exact_areas = self.exact_areas if exact_areas is None else exact_areas
+        exact_ld = self.exact_ld if exact_ld is None else exact_ld
         flux = opmodel(self.time, k, f, alpha, t0, p, a, i, e, w, self.parallel,
                        self.nlc, self.npb, self.nep, self.nlines,
                        self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
                        ldp, istar, self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
-                       exact_areas)
+                       self.mu, exact_areas, exact_ld, self.nannuli)
 
         return flux

@@ -314,6 +314,63 @@ def ellipse_circle_intersection_area_theta(cx: float, cy: float, z: float, k: fl
 
 
 @njit
+def ellipse_disk_intersection_area_theta(cx: float, cy: float, z: float, k: float, f: float,
+                                         xs: ndarray, ys: ndarray, ws: ndarray, r: float) -> float:
+    """Calculate the intersection area between a rotated ellipse and a star-centered disk of radius r.
+
+    Generalization of `ellipse_circle_intersection_area_theta` to a clipping disk of arbitrary
+    radius. The θ-sampled chord grid from `create_ellipse_theta` is independent of the clipping
+    disk, so the same precomputed grid serves all radii; this makes the routine suitable for
+    calculating the ellipse-annulus intersection areas needed by exact-footprint limb darkening
+    (as differences of two disk intersections).
+
+    Parameters
+    ----------
+    cx : float
+        The ellipse's center x coordinate.
+    cy : float
+        The ellipse's center y coordinate.
+    z : float
+        The center-center distance.
+    k : float
+        Radius ratio.
+    f : float
+        Flattening factor for the ellipse. Determines the extent to which the ellipse is squashed along the y-axis.
+    xs : ndarray
+        2D array of the left and right ellipse chord x-coordinates from `create_ellipse_theta`.
+    ys : ndarray
+        1D array of y-coordinates from `create_ellipse_theta`.
+    ws : ndarray
+        1D array of quadrature weights from `create_ellipse_theta`.
+    r : float
+        The radius of the clipping disk.
+
+    Returns
+    -------
+    float
+        The area of the intersection between the given ellipse and the disk.
+    """
+    if z <= r - k:
+        return pi * k * (1.0 - f) * k
+    elif z >= r + k:
+        return 0.0
+    else:
+        ny = ys.size
+        r2 = r * r
+        l = 0.0
+        for i in range(ny):
+            if isfinite(xs[i, 0]):
+                yy = ys[i] + cy
+                if fabs(yy) <= r:
+                    w = sqrt(r2 - yy * yy)
+                    x0 = max(-w - cx, xs[i, 0])
+                    x1 = min(w - cx, xs[i, 1])
+                    if x1 > x0:
+                        l += (x1 - x0) * ws[i]
+        return l
+
+
+@njit
 def _refine_root(lo: float, hi: float, glo: float, ea: float, eb: float, ec: float, ed: float) -> float:
     """Refine a bracketed root of g(t) = ea cos²t + eb cos t + ec sin t + ed with safeguarded Newton iteration.
 
