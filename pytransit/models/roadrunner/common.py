@@ -238,3 +238,26 @@ def interpolate_mean_limb_darkening_v(gs, dg, lda):
     for i in range(gs.size):
         r[i] = interpolate_mean_limb_darkening_s(gs[i], dg, lda)
     return r
+
+@njit(fastmath=True)
+def interpolate_limb_darkening_s(z, zm, ldp):
+    """Interpolate a tabulated limb darkening profile at a normalized distance z.
+
+    Linear interpolation of the limb darkening profile over the (non-uniform) profile node
+    grid `zm`, clamped to the last node beyond the edge of the grid. Used by the small-planet
+    approximation, where the mean intensity blocked by the planet is approximated by the
+    stellar intensity at the planet's center.
+    """
+    if z < 0.0:
+        return nan
+    if z >= zm[-1]:
+        return ldp[-1]
+    i = zm.size // 2
+    if z > zm[i]:
+        while z > zm[i + 1]:
+            i += 1
+    else:
+        while z < zm[i]:
+            i -= 1
+    a = (z - zm[i]) / (zm[i + 1] - zm[i])
+    return (1.0 - a) * ldp[i] + a * ldp[i + 1]

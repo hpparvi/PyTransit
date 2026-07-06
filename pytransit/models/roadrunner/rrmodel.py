@@ -60,7 +60,7 @@ class RoadRunnerModel(TransitModel):
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  precompute_weights: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
                  nzin: int = 20, nzlimb: int = 20, zcut: float = 0.7, ng: int = 100,
-                 nthreads: int = 1, small_planet_limit: float = 0.05, **kwargs):
+                 nthreads: int = 1, small_planet_limit: float = 0.01, **kwargs):
         """The RoadRunner transit model by Parviainen (2020).
 
         Parameters
@@ -85,7 +85,13 @@ class RoadRunnerModel(TransitModel):
             count is process-global, so the model created last defines the thread count for all
             models, and the value cannot exceed numba's launch-time maximum (NUMBA_NUM_THREADS).
         small_planet_limit: float, optional
-            The radius ratio limit below which to use a small planet approximation.
+            The radius ratio limit at and below which the single-light-curve model uses a small
+            planet approximation: the mean stellar intensity blocked by the planet is
+            approximated by the intensity at the planet's center, and the limb darkening
+            weighting is skipped. The approximation error grows roughly quadratically with the
+            radius ratio (below 1 ppm at the default limit of 0.01, but ~100 ppm at k = 0.05),
+            so raise the limit only if speed matters more than ppm-level accuracy. Set to None
+            or 0.0 to disable.
         """
         super().__init__()
 
@@ -237,5 +243,8 @@ class RoadRunnerModel(TransitModel):
                                    self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
                                    ldp, istar, self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze))
         else:
-            return rr_simple(self.time, k[0, 0], t0[0, 0], p[0], a[0], i[0], e[0], w[0], self.parallel, self.nsamples[0], self.exptimes[0],
-                             ldp[0, 0, :], istar[0, 0], self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
+            splimit = self.splimit if self.splimit is not None else 0.0
+            return rr_simple(self.time, k[0, 0], t0[0, 0], p[0], a[0], i[0], e[0], w[0], self.parallel, splimit,
+                             self.nsamples[0], self.exptimes[0],
+                             ldp[0, 0, :], istar[0, 0], self.weights, self.dk, self.klims[0], self.klims[1], self.dg,
+                             self.ze, self.zm)
