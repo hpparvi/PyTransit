@@ -1,4 +1,4 @@
-from math import fabs, floor, sqrt
+from math import floor, sqrt
 
 from meepmeep.backends.numba.point2d import pos_c, solve2d, bounding_box
 from numba import njit, prange
@@ -29,40 +29,45 @@ def op_full(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
             lcids: ndarray, pbids: ndarray, epids: ndarray, nsamples: ndarray, exptimes: ndarray,
             ldp: ndarray, istar: ndarray, weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray,
             exact_areas: bool = False):
-    """Full RoadRunner model for heterogeneous light curves."""
+    """Full oblate planet model for heterogeneous light curves.
+
+    The evaluation is split into a serial per-parameter-vector precompute stage and a flux stage
+    parallelized over all (parameter vector, time sample) pairs. Only the flux stage is compiled
+    with ``parallel=True``: compiling the precompute stage in parallel would turn its many small
+    array operations into per-iteration thread-pool launches, which costs far more than it saves.
+    """
+    ks, pv_is_good, ldm, xyc, bbs, exs, eys, ews = op_precompute(
+        k, f, alpha, p, a, i, e, w, nlc, npb, npl, exptimes,
+        ldp, weights, dk, kmin, kmax, z_edges, exact_areas)
 
     if parallelize:
-        return op_full_parallel(times, k, f, alpha, t0, p, a, i, e, w, nlc, npb, nep, npl,
-                              lcids, pbids, epids, nsamples, exptimes,
-                              ldp, istar, weights, dk, kmin, kmax, dg, z_edges, exact_areas)
+        return op_flux_parallel(times, f, alpha, t0, p, ks, pv_is_good, ldm, xyc, bbs, exs, eys, ews,
+                                lcids, pbids, epids, nsamples, exptimes, istar, dg, exact_areas)
     else:
-        return op_full_serial(times, k, f, alpha, t0, p, a, i, e, w, nlc, npb, nep, npl,
-                              lcids, pbids, epids, nsamples, exptimes,
-                              ldp, istar, weights, dk, kmin, kmax, dg, z_edges, exact_areas)
+        return op_flux_serial(times, f, alpha, t0, p, ks, pv_is_good, ldm, xyc, bbs, exs, eys, ews,
+                              lcids, pbids, epids, nsamples, exptimes, istar, dg, exact_areas)
 
 
-def _op_full(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
-                   t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
-            nlc: int, npb: int, nep: int, npl: int,
-            lcids: ndarray, pbids: ndarray, epids: ndarray, nsamples: ndarray, exptimes: ndarray,
-            ldp: ndarray, istar: ndarray, weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray,
-            exact_areas: bool = False):
-    """Full RoadRunner model for heterogeneous light curves."""
+@njit(parallel=False)
+def op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray, i: ndarray,
+                  e: ndarray, w: ndarray, nlc: int, npb: int, npl: int, exptimes: ndarray,
+                  ldp: ndarray, weights: ndarray, dk: float, kmin: float, kmax: float,
+                  z_edges: ndarray, exact_areas: bool):
+    """Precompute the per-parameter-vector quantities needed by the flux stage.
+
+    For each parameter vector: the mean limb darkening profiles, the Taylor series expansion
+    coefficients for the planet position, the transit bounding boxes, and (when not using exact
+    intersection areas) the θ-sampled ellipse scanline grids per passband.
+    """
     npv = k.shape[0]
-    npt = times.size
     ng = weights.shape[1]
 
     if k.shape[1] > 1 and k.shape[1] != npb:
         raise ValueError('Radius ratios should be given either as an [npv, 1] or [npv, npb] array.')
 
-    _exptimes = zeros(nlc)
-    _exptimes[:] = exptimes
-    _nsamples = zeros(nlc)
-    _nsamples[:] = nsamples
-
     # Copy the radius ratios
     # ----------------------
-    if k.shape[0] == npv and k.shape[1] == npb:
+    if k.shape[1] == npb:
         ks = k
     else:
         ks = zeros((npv, npb))
@@ -110,11 +115,9 @@ def _op_full(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
         # Calculate the bounding boxes #
         # -----------------------------#
         bt1, bt4 = bounding_box(ks[ipv, 0], xyc[ipv])
-        bbs[ipv, :, 0] = bt1
-        bbs[ipv, :, 1] = bt4
         for ilc in range(nlc):
-            bbs[ipv, ilc, 0] -= 0.0015 + _exptimes[ilc]
-            bbs[ipv, ilc, 1] += 0.0015 + _exptimes[ilc]
+            bbs[ipv, ilc, 0] = bt1 - (0.0015 + exptimes[ilc])
+            bbs[ipv, ilc, 1] = bt4 + (0.0015 + exptimes[ilc])
 
         # -------------------------------------------#
         # Create the ellipse scanline (x, y) points  #
@@ -126,9 +129,21 @@ def _op_full(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
                 eys[ipv, ipb, :] = _y
                 ews[ipv, ipb, :] = _w
 
-    # ---------------------------#
-    # Calculate the light curves #
-    # ---------------------------#
+    return ks, pv_is_good, ldm, xyc, bbs, exs, eys, ews
+
+
+def _op_flux(times: ndarray, f: ndarray, alpha: ndarray, t0: ndarray, p: ndarray,
+             ks: ndarray, pv_is_good: ndarray, ldm: ndarray, xyc: ndarray, bbs: ndarray,
+             exs: ndarray, eys: ndarray, ews: ndarray,
+             lcids: ndarray, pbids: ndarray, epids: ndarray, nsamples: ndarray, exptimes: ndarray,
+             istar: ndarray, dg: float, exact_areas: bool):
+    """Calculate the model fluxes for all (parameter vector, time sample) pairs.
+
+    Compiled both in serial and in parallel; in the parallel version the flat loop over
+    the (parameter vector, time sample) pairs is distributed over the numba threads.
+    """
+    npv = ks.shape[0]
+    npt = times.size
     flux = zeros((npv, npt))
     for j in prange(npv * npt):
         ipv = j // npt
@@ -147,6 +162,7 @@ def _op_full(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
         if not (bbs[ipv, ilc, 0] <= tc <= bbs[ipv, ilc, 1]):
             flux[ipv, ipt] = 1.0
         else:
+            fsum = 0.0
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
                 cx, cy = pos_c(tc + time_offset, xyc[ipv])
@@ -157,12 +173,10 @@ def _op_full(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
                 else:
                     aplanet = ellipse_circle_intersection_area_theta(cx, cy, z, ks[ipv, ipb], f[ipv],
                                                                      exs[ipv, ipb], eys[ipv, ipb], ews[ipv, ipb])
-                flux[ipv, ipt] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
-            flux[ipv, ipt] /= nsamples[ilc]
+                fsum += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
+            flux[ipv, ipt] = fsum / nsamples[ilc]
     return flux
 
 
-op_full_serial = njit(parallel=False, fastmath=False)(_op_full)
-
-
-op_full_parallel = njit(parallel=True, fastmath=False)(_op_full)
+op_flux_serial = njit(parallel=False)(_op_flux)
+op_flux_parallel = njit(parallel=True)(_op_flux)
