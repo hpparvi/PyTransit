@@ -29,7 +29,7 @@
 from typing import Tuple, Callable, Union, List, Optional
 from warnings import warn
 
-from numba import get_num_threads, njit
+from numba import config as numba_config, get_num_threads, njit, set_num_threads
 from numpy import ndarray, linspace, isscalar, unique, atleast_1d, squeeze, atleast_2d
 from scipy.integrate import trapezoid
 
@@ -80,7 +80,10 @@ class RoadRunnerModel(TransitModel):
         ng : int, optional
             Size of the grazing value table.
         nthreads: int, optional
-            Number of threads to use for the model computation.
+            Number of threads to use for the model computation. Values above one enable the
+            parallel model version and set the numba thread count. Note that the numba thread
+            count is process-global, so the model created last defines the thread count for all
+            models, and the value cannot exceed numba's launch-time maximum (NUMBA_NUM_THREADS).
         small_planet_limit: float, optional
             The radius ratio limit below which to use a small planet approximation.
         """
@@ -97,8 +100,10 @@ class RoadRunnerModel(TransitModel):
             self.nthreads: int = get_num_threads()
             self.parallel: bool = True
         else:
-            self.nthreads: int = nthreads
+            self.nthreads: int = min(nthreads, numba_config.NUMBA_NUM_THREADS)
             self.parallel = self.nthreads > 1
+            if self.parallel:
+                set_num_threads(self.nthreads)
 
         self.full_model = njit(rr_full, parallel=self.parallel, cache=True)
 
