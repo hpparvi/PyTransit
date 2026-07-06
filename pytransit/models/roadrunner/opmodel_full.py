@@ -5,20 +5,21 @@ from numba import njit, prange
 from numpy import zeros, dot, ndarray, isnan, nan, full, squeeze, atleast_2d, atleast_1d
 
 from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
-from .ecintersection import ellipse_circle_intersection_area_exact as ecia
+from .ecintersection import (create_ellipse_theta, ellipse_circle_intersection_area_theta,
+                             ellipse_circle_intersection_area_exact)
 
 
 def opmodel(times, k, f, alpha, t0, p, a, i, e, w,
             parallelize, nlc, npb, nep, npl,
             lcids, pbids, epids, nsamples, exptimes,
-            ldp, istar, weights, dk, kmin, kmax, dg, z_edges):
+            ldp, istar, weights, dk, kmin, kmax, dg, z_edges, exact_areas=False):
 
     k, f, alpha, t0, p, a, i, e, w = (atleast_2d(k), atleast_1d(f), atleast_1d(alpha), atleast_2d(t0), atleast_1d(p),
                                       atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w))
 
     return squeeze(op_full(times, k, f, alpha, t0, p, a, i, e, w, parallelize, nlc, npb, nep, npl,
                    lcids, pbids, epids, nsamples, exptimes,
-                   ldp, istar, weights, dk, kmin, kmax, dg, z_edges))
+                   ldp, istar, weights, dk, kmin, kmax, dg, z_edges, exact_areas))
 
 
 @njit
@@ -26,7 +27,8 @@ def op_full(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
             t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
             parallelize: bool, nlc: int, npb: int, nep: int, npl: int,
             lcids: ndarray, pbids: ndarray, epids: ndarray, nsamples: ndarray, exptimes: ndarray,
-            ldp: ndarray, istar: ndarray, weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray):
+            ldp: ndarray, istar: ndarray, weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray,
+            exact_areas: bool = False):
     """Full RoadRunner model for heterogeneous light curves."""
 
     #if parallelize:
@@ -36,7 +38,7 @@ def op_full(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
     #else:
     return op_full_serial(times, k, f, alpha, t0, p, a, i, e, w, nlc, npb, nep, npl,
                           lcids, pbids, epids, nsamples, exptimes,
-                          ldp, istar, weights, dk, kmin, kmax, dg, z_edges)
+                          ldp, istar, weights, dk, kmin, kmax, dg, z_edges, exact_areas)
 
 
 @njit(parallel=False, fastmath=False)
@@ -44,7 +46,8 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
                    t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
             nlc: int, npb: int, nep: int, npl: int,
             lcids: ndarray, pbids: ndarray, epids: ndarray, nsamples: ndarray, exptimes: ndarray,
-            ldp: ndarray, istar: ndarray, weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray):
+            ldp: ndarray, istar: ndarray, weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray,
+            exact_areas: bool = False):
     """Full RoadRunner model for heterogeneous light curves."""
     npv = k.shape[0]
     npt = times.size
@@ -70,6 +73,16 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
     ldm = zeros((npv, npb, ng))  # Limb darkening means
     xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
     bbs = zeros((npv, nlc, 2))   # Bounding boxes per (pv, lc)
+
+    # θ-sampled ellipse scanline grids per (pv, pb), used when exact_areas is False
+    if exact_areas:
+        exs = zeros((1, 1, 1, 2))
+        eys = zeros((1, 1, 1))
+        ews = zeros((1, 1, 1))
+    else:
+        exs = zeros((npv, npb, npl, 2))  # Scanline x-coordinates
+        eys = zeros((npv, npb, npl))     # Scanline y-coordinates
+        ews = zeros((npv, npb, npl))     # Scanline quadrature weights
 
     for ipv in range(npv):
         if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
@@ -104,6 +117,16 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
             bbs[ipv, ilc, 0] -= 0.0015 + _exptimes[ilc]
             bbs[ipv, ilc, 1] += 0.0015 + _exptimes[ilc]
 
+        # -------------------------------------------#
+        # Create the ellipse scanline (x, y) points  #
+        # -------------------------------------------#
+        if not exact_areas:
+            for ipb in range(npb):
+                _y, _x, _w = create_ellipse_theta(npl, ks[ipv, ipb], f[ipv], alpha[ipv])
+                exs[ipv, ipb, :, :] = _x
+                eys[ipv, ipb, :] = _y
+                ews[ipv, ipb, :] = _w
+
     # ---------------------------#
     # Calculate the light curves #
     # ---------------------------#
@@ -130,7 +153,11 @@ def op_full_serial(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
                 cx, cy = pos_c(tc + time_offset, xyc[ipv])
                 z = sqrt(cx*cx + cy*cy)
                 iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + ks[ipv, ipb]), dg, ldm[ipv, ipb])
-                aplanet = ecia(cx, cy, z, ks[ipv, ipb], f[ipv], alpha[ipv])
+                if exact_areas:
+                    aplanet = ellipse_circle_intersection_area_exact(cx, cy, z, ks[ipv, ipb], f[ipv], alpha[ipv])
+                else:
+                    aplanet = ellipse_circle_intersection_area_theta(cx, cy, z, ks[ipv, ipb], f[ipv],
+                                                                     exs[ipv, ipb], eys[ipv, ipb], ews[ipv, ipb])
                 flux[ipv, ipt] += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
             flux[ipv, ipt] /= nsamples[ilc]
     return flux

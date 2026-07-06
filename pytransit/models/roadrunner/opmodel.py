@@ -44,15 +44,26 @@ class OblatePlanetModel(RoadRunnerModel):
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  precompute_weights: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
                  nzin: int = 20, nzlimb: int = 20, zcut: float = 0.7, ng: int = 100, nlines: int = 100,
-                 nthreads: int = 1, small_planet_limit: float = 0.05, **kwargs):
+                 nthreads: int = 1, small_planet_limit: float = 0.05, exact_areas: bool = False, **kwargs):
+        """
+        Parameters
+        ----------
+        nlines
+            Number of scanlines used by the θ-sampled scanline planet-star intersection area model.
+        exact_areas
+            Calculate the planet-star intersection areas using the exact analytic algorithm instead of
+            the θ-sampled scanline approximation. The exact algorithm is accurate to machine precision
+            but several times slower to evaluate. Can be overridden per call in `evaluate`.
+        """
         super().__init__(ldmodel, precompute_weights, klims, nk, nzin, nzlimb, zcut, ng, nthreads, small_planet_limit, **kwargs)
         self.nlines = nlines
+        self.exact_areas = exact_areas
 
     def evaluate(self, k: Union[float, ndarray], f: Union[float, ndarray], alpha: Union[float, ndarray],
                  ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
                  i: Union[float, ndarray], e: Union[float, ndarray] = 0.0, w: Union[float, ndarray] = 0.0,
-                 copy: bool = True) -> ndarray:
+                 copy: bool = True, exact_areas: Optional[bool] = None) -> ndarray:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
         Parameters
@@ -73,6 +84,10 @@ class OblatePlanetModel(RoadRunnerModel):
             Orbital eccentricity as a float or a 1D vector.
         w : optional
             Argument of periastron as a float or a 1D vector.
+        exact_areas : optional
+            Calculate the planet-star intersection areas using the exact analytic algorithm instead of
+            the θ-sampled scanline approximation. If None (default), uses the value given in the model
+            initializer.
 
         Notes
         -----
@@ -103,9 +118,11 @@ class OblatePlanetModel(RoadRunnerModel):
                     for ipb in range(self.npb):
                         istar[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv, ipb], self._ldz)
 
+        exact_areas = self.exact_areas if exact_areas is None else exact_areas
         flux = opmodel(self.time, k, f, alpha, t0, p, a, i, e, w, self.parallel,
                        self.nlc, self.npb, self.nep, self.nlines,
                        self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
-                       ldp, istar, self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze)
+                       ldp, istar, self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
+                       exact_areas)
 
         return flux
