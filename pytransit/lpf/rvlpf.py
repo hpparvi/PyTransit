@@ -32,8 +32,8 @@ from astropy.table import Column
 from corner import corner
 from matplotlib.pyplot import subplots, setp
 from numba import njit
-from numpy import zeros, log, pi, inf, atleast_2d, arange, arctan2, cos, squeeze, median, linspace, \
-    percentile, argsort, sum, concatenate, full, sqrt, ndarray
+from numpy import zeros, log, pi, inf, atleast_2d, arange, arctan2, cos, squeeze, median, linspace, percentile, argsort, \
+    sum, concatenate, full, sqrt, ndarray, floor
 from numpy.random.mtrand import permutation
 
 from pytransit.lpf.logposteriorfunction import LogPosteriorFunction
@@ -57,7 +57,7 @@ def lnlike_normal(o, m, e):
 
 
 class RVLPF(LogPosteriorFunction):
-    def __init__(self, name: str, nplanets: int, times, rvs, rves, rvis=None, slope_order: int = 1):
+    def __init__(self, name: str, nplanets: int, times, rvs, rves, rvis, is_transiting, slope_order: int = 1):
         super().__init__(name)
 
         def transform_input(a):
@@ -76,8 +76,8 @@ class RVLPF(LogPosteriorFunction):
         else:
             rvis = zeros(len(times), 'int')
 
-        self._tref = concatenate(times).mean()
-        self.rvm: RVModel = RVModel(self, nplanets, times, rvs, rves, rvis, slope_order=slope_order)
+        self._tref = floor(concatenate(times).min())
+        self.rvm: RVModel = RVModel(self, nplanets, times, rvs, rves, rvis, is_transiting=is_transiting, slope_order=slope_order)
 
     def model(self, pv):
         return self.rvm.rv_model(pv)
@@ -102,13 +102,17 @@ class RVModel:
     """
 
     def __init__(self, lpf: LogPosteriorFunction, nplanets: int,
-                 times, rvs: Iterable, rves: Iterable, rvis: Iterable,
+                 times, rvs: Iterable, rves: Iterable, rvis: Iterable, is_transiting,
                  tref: Optional[float] = None, slope_order: int = 1):
         self.lpf = lpf
 
         if hasattr(lpf, 'nplanets'):
             assert lpf.nplanets == nplanets
         self.nplanets = nplanets
+
+        if len(is_transiting) != self.nplanets:
+            raise ValueError("The size of the is_transiting list must equal the number of planets.")
+        self.is_transiting = is_transiting
 
         if hasattr(lpf, '_tref'):
             assert tref is None
@@ -152,12 +156,15 @@ class RVModel:
         self.ps = ps = ParameterSet([])
         pp = []
         for i in range(1, self.nplanets + 1):
-            pp.extend([
-                GParameter(f'tc_{i}', f'zero epoch {i}', 'd', NP(0.0, 0.1), (-inf, inf)),
-                GParameter(f'p_{i}', f'period {i}', 'd', NP(1.0, 1e-5), (0, inf)),
-                GParameter(f'secw_{i}', f'sqrt(e) cos(w) {i}', '', UP(-1.0, 1.0), (-1, 1)),
-                GParameter(f'sesw_{i}', f'sqrt(e) sin(w) {i}', '', UP(-1.0, 1.0), (-1, 1)),
-            ])
+            if self.is_transiting[i-1]:
+                pp.append(GParameter(f't0_{i}', f'zero epoch {i}', 'd', NP(0.0, 0.1), (-inf, inf)))
+            else:
+                pp.append(GParameter(f'm0_{i}', f'reference mean anomaly {i}', 'd', UP(0.0, 2*pi), (0, 2*pi)))
+
+            pp.extend([GParameter(f'p_{i}', f'period {i}', 'd', NP(1.0, 1e-5), (0, inf)),
+                       GParameter(f'secw_{i}', f'sqrt(e) cos(w) {i}', '', UP(-1.0, 1.0), (-1, 1)),
+                       GParameter(f'sesw_{i}', f'sqrt(e) sin(w) {i}', '', UP(-1.0, 1.0), (-1, 1)),
+                       ])
         ps.add_global_block('planets', pp)
         self._start_pl = ps.blocks[-1].start
         self._sl_pl = ps.blocks[-1].slice
@@ -190,9 +197,11 @@ class RVModel:
         self._sl_rv_slope = ps.blocks[-1].slice
         self.ps.freeze()
 
-        pnames = "rv_k_{} tc_{} p_{} secw_{} sesw_{}".split()
+        pnames_tr = "rv_k_{} t0_{} p_{} secw_{} sesw_{}".split()
+        pnames_nt = "rv_k_{} m0_{} p_{} secw_{} sesw_{}".split()
         self.pids = zeros((self.nplanets, 5), 'int')
         for ipl in range(self.nplanets):
+            pnames = pnames_tr if self.is_transiting[ipl] else pnames_nt
             for ip, p in enumerate(pnames):
                 name = p.format(ipl + 1)
                 self.pids[ipl, ip] = self.ps.names.index(name)
@@ -216,7 +225,10 @@ class RVModel:
         planets = planets if planets is not None else arange(self.nplanets)
         for ipl in planets:
             pv = pvp[:, self.pids[ipl]]
-            tc = pv[:, 1] - self._tref
+            if self.is_transiting[ipl]:
+                tc = pv[:, 1] - self._tref
+            else:
+                tc = pv[:, 1] / (2*pi) * pv[:, 2]
             p = pv[:, 2]
             e = pv[:, 3] ** 2 + pv[:, 4] ** 2
             w = arctan2(pv[:, 4], pv[:, 3])
@@ -345,7 +357,10 @@ class RVModel:
             rv_others = median(self.rv_model(pvp, planets=other_planets, add_sv=False, add_slope=False), 0)
 
         period = pv[self.ps.names.index(f'p_{planet + 1}')]
-        tc = pv[self.ps.names.index(f'tc_{planet + 1}')] - self._tref
+        if self.is_transiting[planet]:
+            tc = pv[self.ps.names.index(f't0_{planet + 1}')] - self._tref
+        else:
+            tc = pv[self.ps.names.index(f'm0_{planet + 1}')] / (2*pi) * period
 
         phase = (fold(self._timea, period, tc, 0.5) - 0.5) * period
         phase_model = (fold(rv_time, period, tc, 0.5) - 0.5) * period
