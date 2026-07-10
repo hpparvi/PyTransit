@@ -28,11 +28,11 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Tuple, Callable, Union, List, Optional
 
-from numpy import ndarray, linspace, isscalar, unique, atleast_1d
+from numpy import ndarray, linspace, isscalar, unique, atleast_1d, atleast_2d, zeros, pi
 from scipy.integrate import trapezoid
 
 from ..ldmodel import LDModel
-from ..numba.ldmodels import *
+from ..limb_darkening import evaluate_ld, evaluate_ldi
 
 from .opmodel_full import opmodel
 from .rrmodel import RoadRunnerModel
@@ -217,7 +217,12 @@ class OblatePlanetModel(RoadRunnerModel):
         """
 
         npv = 1 if isscalar(p) else p.size
-        ldc = atleast_1d(ldc)
+        ldc = atleast_2d(ldc)
+        if ldc.ndim == 2:
+            # Normalize the limb darkening coefficients to a 3D array with a shape
+            # (npv, npb, nldc). A 2D array is interpreted either as (npb, nldc) for
+            # a single parameter vector or as (npv, npb*nldc) when npv > 1.
+            ldc = ldc.reshape((npv, self.npb, -1))
 
         if isinstance(self.ldmodel, LDModel):
             ldp, istar = self.ldmodel(self.mu, ldc)

@@ -23,13 +23,17 @@ import warnings
 from pyopencl import CompilerWarning
 
 from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, \
-    concatenate, empty, linspace, diff, trapezoid
+    concatenate, empty, linspace, diff, trapezoid, sqrt, pi
 from ..ldmodel import LDModel
 
 from .common import create_z_grid
 
 from ..transitmodel import TransitModel
-from ..numba.ldmodels import *
+from ..limb_darkening import (ld_uniform, ldi_uniform, ld_linear, ldi_linear, ld_quadratic, ldi_quadratic,
+                              ld_quadratic_tri, ldi_quadratic_tri, ld_nonlinear, ldi_nonlinear, ld_general, ldi_general,
+                              ld_square_root, ldi_square_root, ld_logarithmic, ldi_logarithmic,
+                              ld_exponential, ldi_exponential, ld_power_2, ldi_power_2, ld_power_2_pm, ldi_power_2_pm,
+                              evaluate_ld, evaluate_ldi)
 
 warnings.filterwarnings('ignore', category=CompilerWarning)
 
@@ -40,13 +44,13 @@ class RoadRunnerModelCL(TransitModel):
                 'linear': (ld_linear, ldi_linear),
                 'quadratic': (ld_quadratic, ldi_quadratic),
                 'quadratic-tri': (ld_quadratic_tri, ldi_quadratic_tri),
-                'nonlinear': ld_nonlinear,
-                'general': ld_general,
-                'square_root': ld_square_root,
-                'logarithmic': ld_logarithmic,
-                'exponential': ld_exponential,
-                'power-2': ld_power_2,
-                'power-2-pm': ld_power_2_pm}
+                'nonlinear': (ld_nonlinear, ldi_nonlinear),
+                'general': (ld_general, ldi_general),
+                'square_root': (ld_square_root, ldi_square_root),
+                'logarithmic': (ld_logarithmic, ldi_logarithmic),
+                'exponential': (ld_exponential, ldi_exponential),
+                'power-2': (ld_power_2, ldi_power_2),
+                'power-2-pm': (ld_power_2_pm, ldi_power_2_pm)}
 
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  interpolate: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,

@@ -28,12 +28,12 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Union, List, Optional
 
-from numpy import ndarray, isscalar, atleast_2d, atleast_1d, array
+from numpy import ndarray, isscalar, atleast_2d, atleast_1d, array, zeros, pi
 from pytransit.models.roadrunner.common import calculate_weights_3d
 from scipy.integrate import trapezoid
 
 from ..ldmodel import LDModel
-from ..numba.ldmodels import *
+from ..limb_darkening import evaluate_ld, evaluate_ldi
 from .rrmodel import RoadRunnerModel
 
 from .model_trspec import tsmodel_serial, tsmodel_parallel

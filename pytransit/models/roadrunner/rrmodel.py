@@ -30,11 +30,15 @@ from typing import Tuple, Callable, Union, List, Optional
 from warnings import warn
 
 from numba import config as numba_config, get_num_threads, njit, set_num_threads
-from numpy import ndarray, linspace, isscalar, unique, atleast_1d, squeeze, atleast_2d
+from numpy import ndarray, linspace, isscalar, unique, atleast_1d, squeeze, atleast_2d, sqrt, zeros, pi
 from scipy.integrate import trapezoid
 
 from ..ldmodel import LDModel
-from ..numba.ldmodels import *
+from ..limb_darkening import (ld_uniform, ldi_uniform, ld_linear, ldi_linear, ld_quadratic, ldi_quadratic,
+                              ld_quadratic_tri, ldi_quadratic_tri, ld_nonlinear, ldi_nonlinear, ld_general, ldi_general,
+                              ld_square_root, ldi_square_root, ld_logarithmic, ldi_logarithmic,
+                              ld_exponential, ldi_exponential, ld_power_2, ldi_power_2, ld_power_2_pm, ldi_power_2_pm,
+                              evaluate_ld, evaluate_ldi)
 from ..transitmodel import TransitModel
 
 from .common import create_z_grid, calculate_weights_3d
@@ -49,13 +53,13 @@ class RoadRunnerModel(TransitModel):
                 'linear': (ld_linear, ldi_linear),
                 'quadratic': (ld_quadratic, ldi_quadratic),
                 'quadratic-tri': (ld_quadratic_tri, ldi_quadratic_tri),
-                'nonlinear': ld_nonlinear,
-                'general': ld_general,
-                'square_root': ld_square_root,
-                'logarithmic': ld_logarithmic,
-                'exponential': ld_exponential,
+                'nonlinear': (ld_nonlinear, ldi_nonlinear),
+                'general': (ld_general, ldi_general),
+                'square_root': (ld_square_root, ldi_square_root),
+                'logarithmic': (ld_logarithmic, ldi_logarithmic),
+                'exponential': (ld_exponential, ldi_exponential),
                 'power-2': (ld_power_2, ldi_power_2),
-                'power-2-pm': ld_power_2_pm}
+                'power-2-pm': (ld_power_2_pm, ldi_power_2_pm)}
 
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  precompute_weights: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
@@ -219,7 +223,12 @@ class RoadRunnerModel(TransitModel):
         """
 
         npv = 1 if isscalar(p) else p.size
-        ldc = atleast_1d(ldc)
+        ldc = atleast_2d(ldc)
+        if ldc.ndim == 2:
+            # Normalize the limb darkening coefficients to a 3D array with a shape
+            # (npv, npb, nldc). A 2D array is interpreted either as (npb, nldc) for
+            # a single parameter vector or as (npv, npb*nldc) when npv > 1.
+            ldc = ldc.reshape((npv, self.npb, -1))
 
         if isinstance(self.ldmodel, LDModel):
             ldp, istar = self.ldmodel(self.mu, ldc)
