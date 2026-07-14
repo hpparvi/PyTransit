@@ -37,7 +37,7 @@ def tsmodel(times: ndarray,
             continue
 
         kmean = mean(k[ipv])
-        kmax = max(k[ipv])
+        kmax_band = max(k[ipv])
         afac = k[ipv] ** 2 / kmean ** 2
 
         # Pre-compute reciprocals to replace divisions in the hot loop
@@ -67,7 +67,7 @@ def tsmodel(times: ndarray,
         # --------------------------------#
         # Calculate the half-window width #
         # --------------------------------#
-        bt1, bt4 = bounding_box(k[0,0], xyc)
+        bt1, bt4 = bounding_box(kmax_band, xyc)
         bt1 -= 0.003 + exptimes[0]
         bt4 += 0.003 + exptimes[0]
 
@@ -83,16 +83,23 @@ def tsmodel(times: ndarray,
                 for isample in range(1, nsamples[0] + 1):
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
                     z = sep_c(tc + time_offset, xyc)
-                    ap0, k0 = ccia_and_k0(1.0, kmean, z)
-                    dadk = 2.0*kmean*k0
-                    if z <= 1.0 - kmax:
+                    if z <= 1.0 - kmax_band:
+                        # Inner case: planet fully inside the stellar disk. The occulted
+                        # area is computed for the mean radius ratio and scaled by
+                        # (k/kmean)^2 per passband.
+                        ap0, k0 = ccia_and_k0(1.0, kmean, z)
                         for ipb in range(npb):
                             iplanet = interpolate_mean_limb_darkening(z / (1.0 + kmean), dg, ldm[ipb])
                             flux[ipv, ipb, ipt] += (1.0 - iplanet * ap0 * afac[ipb] * inv_istar[ipb]) * inv_nsamples
                     else:
+                        # Edge case: the occulted area and the grazing parameter are
+                        # computed exactly for each per-passband radius ratio (matching
+                        # the gradient kernel in tsmodel_grad.py).
                         for ipb in range(npb):
-                            iplanet = interpolate_mean_limb_darkening(z / (1.0 + kmean), dg, ldm[ipb])
-                            flux[ipv, ipb, ipt] += (1.0 - iplanet * (ap0 + (k[ipv, ipb]-kmean)*dadk) * inv_istar[ipb]) * inv_nsamples
+                            kb = k[ipv, ipb]
+                            ap_b, _ = ccia_and_k0(1.0, kb, z)
+                            iplanet = interpolate_mean_limb_darkening(z / (1.0 + kb), dg, ldm[ipb])
+                            flux[ipv, ipb, ipt] += (1.0 - iplanet * ap_b * inv_istar[ipb]) * inv_nsamples
     return flux
 
 

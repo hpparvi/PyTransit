@@ -53,8 +53,26 @@ def tsmodel_grad(times: ndarray,
     -------
     flux : ndarray, shape (npv, npb, npt)
         Model flux.
-    dflux : ndarray, shape (npv, npb, npt, 7 + nldc)
-        Derivatives w.r.t. [k_ipb, t0, p, a, i, e, w, c_0, ..., c_{nldc-1}].
+    dflux : ndarray, shape (npv, npb, npt, 8 + nldc)
+        Derivatives w.r.t. [k_ipb, t0, p, a, i, e, w, c_0, ..., c_{nldc-1}, kmean].
+
+    Notes
+    -----
+    The model uses the mean radius ratio kmean = mean(k) as a shared reference: the
+    limb darkening means are tabulated for a planet with radius kmean, and the fully
+    in-disk case scales the kmean occulted area by (k_ipb / kmean)^2. The radius ratio
+    derivative in column 0 is the partial derivative with respect to k_ipb holding
+    kmean constant, and the last column holds the partial derivative with respect to
+    kmean holding the per-passband radius ratios constant. The total derivative of the
+    flux in passband b with respect to k_ipb' is
+
+        dF_b/dk_b' = dflux[..., 0] * delta_bb' + dflux[..., -1] / npb.
+
+    The transit center (t0) derivative is computed as the exact time derivative of
+    the evaluated position Taylor series, so it is consistent with the computed flux
+    to floating point precision (the analytically propagated orbit derivative from
+    `sep_cd` differs from the truncated series' own slope by the series truncation
+    error near the transit window edges).
     """
     if k.ndim != 2:
         raise ValueError("The radius ratios must be given as a 2D array with shape (npv, npb)")
@@ -67,14 +85,16 @@ def tsmodel_grad(times: ndarray,
     npv = k.shape[0]
     npb = k.shape[1]
     nldc = ldg.shape[2] - 1
+    ckm = 7 + nldc                  # Column index for the kmean derivative
 
     if weights is not None:
         ng = weights.shape[1]
 
     flux = zeros((npv, npb, npt))
-    dflux = zeros((npv, npb, npt, 7 + nldc))
+    dflux = zeros((npv, npb, npt, 8 + nldc))
     ldm = zeros((npb, ng))
     dldm_dc = zeros((npb, nldc, ng))
+    dldm_dk = zeros((npb, ng))      # Derivative of the LD means w.r.t. kmean
 
     for ipv in range(npv):
         if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0):
@@ -102,13 +122,20 @@ def tsmodel_grad(times: ndarray,
             ik = int(floor((kmean - kmin) / dk))
             ak = (kmean - kmin - ik * dk) / dk
             for ipb in prange(npb):
-                ldm[ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb, :]) + ak * dot(weights[ik + 1], ldp[ipv, ipb, :])
+                l0 = dot(weights[ik], ldp[ipv, ipb, :])
+                l1 = dot(weights[ik + 1], ldp[ipv, ipb, :])
+                ldm[ipb, :] = (1.0 - ak) * l0 + ak * l1
+                dldm_dk[ipb, :] = (l1 - l0) / dk
                 for j in range(nldc):
                     dldm_dc[ipb, j, :] = (1.0 - ak) * dot(weights[ik], ldg[ipv, ipb, j + 1, :]) + ak * dot(weights[ik + 1], ldg[ipv, ipb, j + 1, :])
         else:
             _, dg, wg = calculate_weights_2d(kmean, z_edges, ng)
+            dkm = 1e-4
+            _, _, wgp = calculate_weights_2d(kmean + dkm, z_edges, ng)
+            _, _, wgm = calculate_weights_2d(kmean - dkm, z_edges, ng)
             for ipb in prange(npb):
                 ldm[ipb, :] = dot(wg, ldp[ipv, ipb, :])
+                dldm_dk[ipb, :] = dot((wgp - wgm) / (2.0 * dkm), ldp[ipv, ipb, :])
                 for j in range(nldc):
                     dldm_dc[ipb, j, :] = dot(wg, ldg[ipv, ipb, j + 1, :])
 
@@ -139,6 +166,19 @@ def tsmodel_grad(times: ndarray,
 
                     z, dz = sep_cd(t_eval, cf, dcf)
 
+                    # Replace the transit-center derivative with the exact time
+                    # derivative of the evaluated position Taylor series: dz[0] from
+                    # sep_cd is the analytically propagated orbit derivative, which
+                    # differs from the slope of the truncated series (and hence from
+                    # the derivative of the computed flux) by the series truncation
+                    # error. The tc dependence enters only through t_eval, so
+                    # dz/dtc = -dz/dt evaluated on the series itself.
+                    px = cf[0, 0] + t_eval * (cf[0, 1] + t_eval * (cf[0, 2] + t_eval * (cf[0, 3] + t_eval * cf[0, 4])))
+                    py = cf[1, 0] + t_eval * (cf[1, 1] + t_eval * (cf[1, 2] + t_eval * (cf[1, 3] + t_eval * cf[1, 4])))
+                    vx = cf[0, 1] + t_eval * (2.0 * cf[0, 2] + t_eval * (3.0 * cf[0, 3] + 4.0 * t_eval * cf[0, 4]))
+                    vy = cf[1, 1] + t_eval * (2.0 * cf[1, 2] + t_eval * (3.0 * cf[1, 3] + 4.0 * t_eval * cf[1, 4]))
+                    dz[0] = -(px * vx + py * vy) / z
+
                     if z <= 1.0 - kmax_band:
                         # -------------------------------------------------#
                         # Inner case: planet fully inside the stellar disk #
@@ -156,6 +196,14 @@ def tsmodel_grad(times: ndarray,
                             # k derivative: d(aeff)/dk_ipb = ap0 * 2*k[ipb] / kmean^2
                             daeff_dk = ap0 * 2.0 * k[ipv, ipb] / (kmean * kmean)
                             dflux[ipv, ipb, ipt, 0] += -(iplanet * daeff_dk) * inv_is * inv_nsamples
+
+                            # kmean derivative: the reference radius ratio enters through
+                            # the occulted area (ccia), the area scaling factor
+                            # afac = k^2/kmean^2, the grazing parameter g = z/(1+kmean),
+                            # and the tabulated limb darkening means.
+                            dIp_dkm = interpolate_mean_limb_darkening(g, dg, dldm_dk[ipb]) - dIp_dg * g / (1.0 + kmean)
+                            daeff_dkm = dadk_mean * afac[ipb] - 2.0 * aeff / kmean
+                            dflux[ipv, ipb, ipt, ckm] += -(dIp_dkm * aeff + iplanet * daeff_dkm) * inv_is * inv_nsamples
 
                             # z derivatives for orbital parameters
                             dIp_dz = dIp_dg / (1.0 + kmean)
@@ -195,6 +243,12 @@ def tsmodel_grad(times: ndarray,
                             # k derivative
                             dIp_dk = dIp_dg * (-z / (1.0 + kb) ** 2)
                             dflux[ipv, ipb, ipt, 0] += -(dIp_dk * aplanet + iplanet * dadk) * inv_is * inv_nsamples
+
+                            # kmean derivative: only through the tabulated limb
+                            # darkening means (the occulted area and the grazing
+                            # parameter use the per-passband radius ratio).
+                            dIp_dkm = interpolate_mean_limb_darkening(g, dg, dldm_dk[ipb])
+                            dflux[ipv, ipb, ipt, ckm] += -dIp_dkm * aplanet * inv_is * inv_nsamples
 
                             # z derivatives for orbital parameters
                             dIp_dz = dIp_dg / (1.0 + kb)

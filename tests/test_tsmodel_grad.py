@@ -100,7 +100,7 @@ class TestTSModelAndGrad(unittest.TestCase):
         flux, dflux = self._call()
         npt = self.times.size
         self.assertEqual(flux.shape, (self.npv, self.npb, npt))
-        self.assertEqual(dflux.shape, (self.npv, self.npb, npt, 7 + self.nldc))
+        self.assertEqual(dflux.shape, (self.npv, self.npb, npt, 8 + self.nldc))
 
     def test_out_of_transit_is_one(self):
         flux, _ = self._call()
@@ -131,6 +131,29 @@ class TestTSModelAndGrad(unittest.TestCase):
             if mask.any():
                 np.testing.assert_allclose(anal[mask], fd[mask], rtol=0.1, atol=1e-8,
                     err_msg=f"k gradient band {ipb}")
+
+    def test_gradient_kmean_column(self):
+        """The total k Jacobian is dflux[..., 0] (diagonal) + dflux[..., -1]/npb (kmean).
+
+        A uniform perturbation of all radius ratios shifts kmean one-to-one, so the
+        finite difference along the uniform direction must equal the sum of the
+        per-band column and the kmean column.
+        """
+        eps = 1e-7
+        flux0, dflux0 = self._call()
+
+        kp = self.k_vals + eps
+        fp, _ = self._call(k=kp)
+        km = self.k_vals - eps
+        fm, _ = self._call(k=km)
+
+        for ipb in range(self.npb):
+            fd = (fp[0, ipb] - fm[0, ipb]) / (2 * eps)
+            anal = dflux0[0, ipb, :, 0] + dflux0[0, ipb, :, -1]
+            mask = flux0[0, ipb] < 0.9999
+            if mask.any():
+                np.testing.assert_allclose(anal[mask], fd[mask], rtol=1e-4, atol=1e-6,
+                    err_msg=f"kmean-corrected k gradient band {ipb}")
 
     def test_gradient_orbital_params(self):
         """Orbital parameter derivatives against finite differences."""
