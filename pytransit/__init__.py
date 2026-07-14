@@ -31,7 +31,7 @@
 """PyTransit: fast and easy exoplanet transit modelling in Python
 
 This package offers Python interfaces for a set of exoplanet transit light curve
-models implemented in Python (with Numba acceleration) and OpenCL.
+models with Numba (JIT-compiled) and JAX backends.
 
 Author
   Hannu Parviainen  <hannu@iac.es>
@@ -61,5 +61,12 @@ from .models.semodel import SecondaryEclipseModel
 # --------------
 from .models.ldmodel import LDModel
 
+# Model parameterization
+# ----------------------
+from .parameter import (Parameter, ParameterBlock, ParameterSet, normal_prior, uniform_prior,
+                        prior_kind, prior_limits, prior_moments, describe_prior)
+
 __all__ = ['TransitModel', 'RoadRunnerModel', 'UniformDiskModel',
-           'TransmissionSpectroscopyModel', 'SecondaryEclipseModel', 'LDModel']
+           'TransmissionSpectroscopyModel', 'SecondaryEclipseModel', 'LDModel',
+           'Parameter', 'ParameterBlock', 'ParameterSet', 'normal_prior', 'uniform_prior',
+           'prior_kind', 'prior_limits', 'prior_moments', 'describe_prior']
