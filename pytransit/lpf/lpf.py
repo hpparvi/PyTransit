@@ -303,9 +303,15 @@ class BaseLPF(LogPosteriorFunction):
         # Initialise the covariate arrays, if given
         # -----------------------------------------
         if covariates is not None:
-            self.covariates = covariates
-            for cv in self.covariates:
-                cv = (cv - cv.mean(0)) / cv.std(0)
+            # Standardise the covariates to zero mean and unit standard deviation. This keeps
+            # the baseline design matrices well conditioned and makes the covariate coefficient
+            # priors comparable across covariates. Constant columns are only centred, since
+            # they cannot be scaled.
+            self.covariates = []
+            for cv in covariates:
+                cv = asarray(cv, 'd')
+                cs = cv.std(0)
+                self.covariates.append((cv - cv.mean(0)) / where(cs > 0.0, cs, 1.0))
             #self.ncovs = self.covariates[0].shape[1]
             #self.covsize = array([c.size for c in self.covariates])
             #self.covstart = concatenate([[0], self.covsize.cumsum()[:-1]])
@@ -561,7 +567,7 @@ class BaseLPF(LogPosteriorFunction):
             if self.errors is not None:
                 errors.append(self.errors[i][mask])
 
-        self._init_data(times=times, fluxes=fluxes, covariates=self.covariates, pbids=self.pbids,
+        self._init_data(times=times, fluxes=fluxes, covariates=covariates, pbids=self.pbids,
                         errors=(errors if self.errors is not None else None), wnids=self.noise_ids,
                         nsamples=self.nsamples, exptimes=self.exptimes)
 

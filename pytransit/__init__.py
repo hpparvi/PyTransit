@@ -86,6 +86,7 @@ from .lpf.transitlpf import TransitLPF
 from .lpf.cntlpf import PhysContLPF
 from .lpf.baselines.legendrebaseline import LegendreBaseline
 from .lpf.baselines.linearbaseline import LinearModelBaseline
+from .lpf.baselines.lstsqbaseline import LSTSQBaseline
 from .lpf.transitanalysis import TransitAnalysis
 
 # Utilities
