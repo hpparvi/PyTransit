@@ -1,5 +1,56 @@
 # Changelog
 
+## [2.9.0] - 2026-08-18
+
+### Added
+
+- Added `pytransit.lpf.baselines.lstsqbaseline.LSTSQBaseline`, a parameterless baseline model. Rather than adding free
+  coefficients to the parameter set, it fits the baseline to the relative residuals `flux_obs / flux_mod` by linear
+  least squares at every evaluation. Its `__call__` takes model fluxes and an optional observed flux instead of a
+  parameter vector, so LPFs opt in by overriding `flux_model`.
+- Added analytic disk-integrated intensity functions `ldi_nonlinear`, `ldi_general`, `ldi_square_root`,
+  `ldi_logarithmic`, `ldi_exponential`, and `ldi_power_2_pm`. All limb darkening models now have one.
+- Added `exact_areas`, `exact_ld`, and `nannuli` options to `OblatePlanetModel`, settable in the initialiser and
+  overridable per call in `evaluate`. `exact_areas` computes the planet-star intersection areas with an exact analytic
+  algorithm instead of the θ-sampled scanline approximation, and `exact_ld` integrates the limb darkening over the
+  planet's exact elliptical footprint, reducing the model error for strongly oblate planets from tens of ppm to below
+  1 ppm.
+- Added exact and θ-sampled ellipse-circle and ellipse-disk intersection area routines to
+  `pytransit.models.roadrunner.ecintersection`.
+- Added support for non-transiting planets in `RVLPF` via a new `is_transiting` argument.
+- Added docstrings for the `OblatePlanetModel` class.
+
+### Changed
+
+- **Breaking**: `RVLPF.__init__` and `RVModel.__init__` now require `rvis` and a new `is_transiting` sequence with one
+  entry per planet. The zero epoch parameter `tc_{i}` is renamed `t0_{i}`, non-transiting planets are parameterised by a
+  reference mean anomaly `m0_{i}` instead, and the reference time is now `floor(min(times))` rather than the mean time.
+- The limb darkening models moved from `pytransit.models.numba.ldmodels` to `pytransit.models.limb_darkening`, which
+  now holds one module per model and exports them all from its `__init__`. The old module re-exports them, so existing
+  imports keep working.
+- Changed the `RoadRunnerModel` `small_planet_limit` default from 0.05 to 0.01. The small-planet approximation error
+  grows roughly quadratically with the radius ratio, so the old default allowed errors of ~100 ppm near the limit
+  against below 1 ppm now.
+- Capped the RoadRunner model thread count to numba's launch-time maximum (`NUMBA_NUM_THREADS`) and set the thread count
+  explicitly with `set_num_threads`. The numba thread count is process-global, so the model created last defines it for
+  all models.
+- Improved the RoadRunner model parallelisation and updated the single-light-curve model.
+- Improved the `OblatePlanetModel` weight calculations and bounding box handling.
+- `BaseLPF` now standardises the covariates it stores, as it always intended to.
+
+### Fixed
+
+- Fixed a bug in the scanline ellipse-circle intersection area routine that gave incorrect areas for some geometries,
+  affecting `OblatePlanetModel` accuracy.
+- Fixed `BaseLPF.remove_outliers` passing the unmasked covariates to `_init_data`, which left the covariates
+  inconsistent with the clipped data.
+- Fixed `BaseLPF._init_data` never writing back the standardised covariates.
+
+### Deprecated
+
+- Deprecated `pytransit.models.numba.ldmodels` in favour of `pytransit.models.limb_darkening`.
+
+
 ## [2.8.1] - 2026-06-21
 
 ### Changed
