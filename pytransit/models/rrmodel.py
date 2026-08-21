@@ -44,6 +44,15 @@ from ..backends.numba.rrmodel import create_z_grid, calculate_weights_3d, rrmode
 from ..backends.numba.rrmodel_grad import rrmodel_grad
 from ..backends.jax.rrmodel import rrmodel as jax_model
 
+try:
+    from ..backends.opencl.rrmodel import RRModelCL
+except ImportError as error:          # pragma: no cover - depends on the local install
+    # Only a genuinely missing dependency is tolerated here; the backend touches
+    # no device at import time, so a machine without an OpenCL driver still
+    # imports fine and fails later, loudly.
+    RRModelCL = None
+    _CL_IMPORT_ERROR = error
+
 __all__ = ['RoadRunnerModel']
 
 
@@ -56,7 +65,7 @@ class RoadRunnerModel(TransitModel):
                 'general': (ld_general, ldd_general, ldi_general, ldig_general),
                 'power-2': (ld_power_2, ldd_power_2, ldi_power_2, ldig_power_2)}
 
-    def __init__(self, backend: Literal["numba", "jax"] = "numba", return_grad: bool = False,
+    def __init__(self, backend: Literal["numba", "jax", "opencl"] = "numba", return_grad: bool = False,
                  parallel: bool = False, n_threads: int | None = None,
                  ldmodel: str | Callable | tuple[Callable, Callable] = 'quadratic',
                  precompute_weights: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
@@ -85,7 +94,7 @@ class RoadRunnerModel(TransitModel):
         small_planet_limit: float, optional
             The radius ratio limit below which to use a small planet approximation.
         """
-        super().__init__(backend, return_grad, parallel, n_threads)
+        super().__init__(backend, return_grad, parallel, n_threads, **kwargs)
 
         if backend == "jax":
             if return_grad:
@@ -108,6 +117,18 @@ class RoadRunnerModel(TransitModel):
                 self._model = numba.njit(rrmodel_grad, parallel=parallel)
             else:
                 self._model = numba.njit(rrmodel, parallel=parallel)
+        elif backend == "opencl":
+            if RRModelCL is None:
+                raise RuntimeError("The OpenCL backend is unavailable because pyopencl could "
+                                   "not be imported.") from _CL_IMPORT_ERROR
+            unknown = set(kwargs) - {'precision', 'cl_ctx', 'cl_queue'}
+            if unknown:
+                raise ValueError(f"Unknown OpenCL backend options: {sorted(unknown)}. "
+                                 f"Expected 'precision', 'cl_ctx', or 'cl_queue'.")
+            self._model = RRModelCL(return_grad=return_grad,
+                                    precision=kwargs.get('precision', 'double'),
+                                    cl_ctx=kwargs.get('cl_ctx'),
+                                    cl_queue=kwargs.get('cl_queue'))
         else:
             raise ValueError(f"Unknown backend: {backend}")
 
@@ -166,6 +187,11 @@ class RoadRunnerModel(TransitModel):
     def _init_model(self):
         pass
 
+    def _on_data_set(self):
+        if self.backend == 'opencl':
+            self._model.set_data(self.times, self.lcids, self.pbids, self.epids,
+                                 self.nsamples, self.exptimes)
+
     def init_integration(self, nzin: int, nzlimb: int, zcut: float, ng: int, nk: int):
         self.nk = nk
         self.ng = ng
@@ -177,7 +203,8 @@ class RoadRunnerModel(TransitModel):
         self.dk, self.dg, self.weights = calculate_weights_3d(nk, self.klims[0], self.klims[1], self.ze, ng)
 
     def evaluate(self, k: PType, t0: PType, p: PType, a: PType, i: PType, e: PType = 0.0, w: PType = 0.0,
-                 ldc: ArrayLike | None = None) -> NDArray | tuple[NDArray, NDArray]:
+                 ldc: ArrayLike | None = None, copy: bool = True
+                 ) -> NDArray | tuple[NDArray, NDArray] | None:
         """Evaluate the transit model for a set of scalar or vector parameters.
 
         Parameters
@@ -197,7 +224,16 @@ class RoadRunnerModel(TransitModel):
         w
             Argument of periastron as a float or a 1D vector.
         ldc
-            Limb darkening coefficients as a 1D or 2D array.
+            Limb darkening coefficients as a 1D or 2D array. A 2D array is read as
+            ``(npb, nldc)``: the leading axis is the passband.
+        copy
+            OpenCL backend only. If `False`, the results are left in device memory
+            and `None` is returned, skipping a readback that dominates the runtime
+            for a large parameter-vector population. The flux and the *compact*
+            gradient are then available as `model._model._b_flux` and, when
+            `return_grad=True`, `_b_dflux`; the gradient is not expanded into
+            per-passband and per-epoch columns, because that happens on the host,
+            and a later read must go through `model._model.queue`.
 
         Notes
         -----
@@ -219,6 +255,9 @@ class RoadRunnerModel(TransitModel):
 
         if ldc is None:
             raise ValueError("Limb darkening coefficients must be provided.")
+        if not copy and self.backend != 'opencl':
+            raise ValueError(f"The 'copy' argument is supported only by the OpenCL backend, "
+                             f"not by '{self.backend}'.")
         ldc = atleast_1d(ldc)
 
         # Keep the originals so the gradient can be laid out to match the input arity.
@@ -268,11 +307,15 @@ class RoadRunnerModel(TransitModel):
                                self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
                                self.npb, self.nor, int(self.nsamples.max()))
         else:
+            kwargs = {} if self.backend != 'opencl' else {'copy': copy}
             result = self._model(self.times, k, t0, p, a, i, e, w,
                                self.lcids, self.pbids, self.epids,
                                self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
                                self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
-                               self.npb, self.nor)
+                               self.npb, self.nor, **kwargs)
+
+        if result is None:
+            return None
 
         if not self.return_grad:
             return jnp.squeeze(result) if self.backend == 'jax' else squeeze(result)

@@ -43,7 +43,7 @@ pytransit/
   backends/
     numba/           # Numba implementations (forward + gradient)
     jax/             # JAX implementations (forward; gradients via JAX autodiff)
-    opencl/          # OpenCL implementations (forward + gradient); udmodel only
+    opencl/          # OpenCL implementations (forward + gradient); udmodel, rrmodel
   loglikelihoods/   # LogLikelihood, WNLogLikelihood helpers
 ```
 
@@ -56,7 +56,7 @@ on every Numba model.
 All models inherit from `TransitModel`:
 
 - **Constructor:** `TransitModel(backend="numba", return_grad=False, parallel=False, n_threads=None)`
-  - `backend` — `"numba"`, `"jax"`, or `"opencl"` (`UniformDiskModel` only)
+  - `backend` — `"numba"`, `"jax"`, or `"opencl"` (`UniformDiskModel`, `RoadRunnerModel`)
   - OpenCL-only kwargs, passed through `**kwargs`: `precision` (`"double"`/`"single"`),
     `cl_ctx`, `cl_queue`
   - `return_grad` — if `True`, `evaluate()` returns `(flux, jacobian)` instead of just `flux`
@@ -76,12 +76,12 @@ All models inherit from `TransitModel`:
 
 ### Models
 
-- **`RoadRunnerModel`** (`models/rrmodel.py`) — Recommended. Fast, supports any radially symmetric limb darkening via the `LDModel` helper. Numba + JAX backends.
+- **`RoadRunnerModel`** (`models/rrmodel.py`) — Recommended. Fast, supports any radially symmetric limb darkening via the `LDModel` helper. Numba + JAX + OpenCL backends.
 - **`UniformDiskModel`** (`models/udmodel.py`) — Simplest model: uniform stellar disk (no limb darkening). Numba + JAX + OpenCL backends.
 - **`TransmissionSpectroscopyModel`** (`models/tsmodel.py`) — Optimized for wavelength-dependent transit depth (`evaluate(k, ldc, t0, p, ...)` — note `ldc` is the 2nd arg here). Numba + JAX backends.
 - **`SecondaryEclipseModel`** (`models/semodel.py`) — Eclipse (occultation) model. Numba backend only; `evaluate(..., rstar=1.0)` takes a stellar radius for the light-travel-time correction.
 
-The Numba backends (and, for `UniformDiskModel`, OpenCL) support the analytic `return_grad=True`
+The Numba backends (and, for `UniformDiskModel` and `RoadRunnerModel`, OpenCL) support the analytic `return_grad=True`
 Jacobian. The JAX backends provide forward evaluation; obtain JAX gradients with
 `jax.grad`/`jax.jacobian` on the forward model (RoadRunner raises `NotImplementedError` for
 `backend="jax", return_grad=True`).
@@ -96,10 +96,12 @@ JAX autodiff handles differentiation. `rrmodel` and `tsmodel` rely on plain JAX 
 `jnp.where` kernels are already differentiable); only `udmodel` wraps an explicit `@jax.custom_jvp` to feed
 the Taylor-coefficient derivative chain.
 
-**OpenCL** (`backends/opencl/`, `udmodel` only): `.cl` device sources next to a Python host wrapper.
-`common.cl` holds the shared device code (circle-circle intersection, Horner separation), `udmodel.cl`
-the forward and gradient kernels, `udmodel.py` the `UDModelCL` host class, `context.py` the shared
-context/queue/program cache, and `_host.py` the jitted MeepMeep prep. See "OpenCL Backend" below.
+**OpenCL** (`backends/opencl/`, `udmodel` and `rrmodel`): `.cl` device sources next to a Python host
+wrapper. `common.cl` holds the shared device code (circle-circle intersection, Horner separation,
+time folding), `<model>.cl` the forward and gradient kernels, `<model>.py` the host class,
+`_base.py` the `CLModel` base (context, buffers, time shift, read-back), `context.py` the shared
+context/queue/program cache, and `_host.py` the jitted MeepMeep and limb-darkening prep.
+See "OpenCL Backend" below.
 
 ### Limb Darkening (`backends/{numba,jax}/limb_darkening/`)
 
@@ -114,6 +116,11 @@ square_root in Numba only).
 
 **JAX** provides only `ld_*` and `ldi_*` (derivatives are handled by autodiff).
 
+The `evaluate_*` helpers in `backends/numba/limb_darkening/evaluate.py` accept `ldc` as 1D
+`(nldc,)`, 2D `(npb, nldc)` — the **leading** axis is the passband — or 3D `(npv, npb, nldc)`.
+The 2D case used to reshape on `shape[1]`, which reinterpreted rather than transposed the buffer and
+returned silent garbage whenever `npb != nldc`; every test used `npb == nldc == 2`, which hid it.
+
 ### Circle-Circle Intersection (`backends/{numba,jax}/ccintersection.py`, `backends/opencl/common.cl`)
 
 Core geometric kernel computing the overlap area between planet and star disks. Numba uses if/else branching; JAX uses 
@@ -122,8 +129,10 @@ time samples almost always take the same branch, so divergence is confined to th
 
 ### OpenCL Backend (`backends/opencl/`)
 
-Currently `UniformDiskModel` only. `UniformDiskModel(backend="opencl")` is a drop-in for
-`backend="numba"`: same `evaluate` call, same NumPy return, agreement to ~1e-14.
+`UniformDiskModel` and `RoadRunnerModel`. Both are drop-ins for `backend="numba"`: same `evaluate`
+call, same NumPy return, agreement to ~1e-14. `CLModel` (`_base.py`) owns everything the two share —
+context, precision, buffer lifecycle, the time shift, read-back — so a third model only needs its
+`.cl` kernels, a host prep function, and a thin `__call__`.
 
 **What runs where.** The Taylor coefficients are solved on the *host* with MeepMeep
 (`_host.py`, jitted) and uploaded; only the per-datapoint separation, `ccia`, and supersampling
@@ -169,11 +178,53 @@ no expansion happens on that path. Passing `copy=False` to the Numba or JAX back
   Python source leaves `a_kite` unbound and Numba happens to zero it, giving the correct
   `dadb = 0`. The `.cl` port sets it to zero explicitly — an uninitialised read is UB in C.
 
-**Testing.** `tests/test_opencl_udmodel{,_grad,_class}.py`, guarded with `pytest.importorskip` plus
+**RoadRunner specifics.** Limb darkening never reaches the device as a function:
+`RoadRunnerModel.evaluate` already tabulates it (`ldp`, `ldg`, `ldi`, `dldi`), and
+`_host.rr_precompute*` contracts it against the weight table into `ldm`, the mean intensity under
+the planet disk versus the grazing parameter. The kernels only interpolate that, so the device code
+is **limb-darkening-agnostic** — every profile, including a user `LDModel`, works with no device
+code. Keeping the contraction on the host also keeps the 8 MB weight table off the device and
+reproduces the out-of-`klims` `calculate_weights_2d` fallback exactly; measured, it is only 5-6% of
+the `copy=False` runtime, so moving it to a device pre-pass kernel is not worth it.
+
+Three RoadRunner conventions differ from the uniform disk and are easy to carry over wrongly:
+- Flux is **normalised** (1.0 out of transit); the uniform disk returns a deficit (0.0). Test masks
+  are `flux < 0.9999`, not `flux < -1e-6`.
+- There is a real per-parameter-vector **validity guard** (`a <= 1`, `e < 0`, NaN in `ldp`), which
+  the uniform disk lacks. An invalid vector yields an all-NaN flux and gradient row. It inspects
+  **passband 0 only** — a quirk of the reference.
+- The gradient row is `7 + npb*nldc` wide, and `nldc` is only known once `ldg` arrives, so the
+  program is built lazily with `-DNLDC=<n>` and cached per `nldc`. That keeps the private
+  accumulator a static `REAL df[7+NLDC]`; only the point's own passband block is ever non-zero, so
+  it accumulates `7+nldc` values and scatters on write-out.
+
+**Device memory.** The Jacobian is `npv * npt * (7 + npb*nldc)` reals — 1.44 GB at `npv=200,
+npt=1e5`. `CLModel._check_allocation` compares against the device's `max_mem_alloc_size` (a quarter
+of device memory on this card) and raises a `MemoryError` naming the size, because `cl.Buffer`
+allocation is lazy and an oversized request otherwise fails as a bare
+`MEM_OBJECT_ALLOCATION_FAILURE` at kernel-enqueue time.
+
+**One deliberate divergence from Numba.** `interpolate_mean_limb_darkening` reads `lda[ng]`, one
+past the end, when `g` is within ~1e-7 of 1.0 (because `dg = (1-1e-7)/(ng-1)`, so
+`floor(1.0/dg) == ng-1`). Numba returns whatever follows the array; on a device that is an
+out-of-bounds global read, so the kernel clamps the index to `ng-2`, as the JAX backend does.
+Matching undefined behaviour is not possible.
+
+**Guard NaN before any float-to-int conversion in a kernel.** `k` is not covered by the validity
+guard, so `g = z/(1+k)` can be NaN. NaN compares false against both `g < 0` and `g > 1`, and
+`(int)floor(NaN)` is **INT_MIN** on NVIDIA — which slips under an upper-bound clamp and indexes the
+table at a -16 GB offset. That is a memory fault, and it kills the *shared* context for the rest of
+the process, so a sampler that hands the model one NaN cannot continue. `interp_ldm*` therefore
+tests `isnan` first and clamps the index from below; either alone suffices, both are kept.
+Numba returns NaN gracefully here, which is the behaviour to match.
+
+**Testing.** `tests/test_opencl_{ud,rr}model{,_grad,_class}.py`, guarded with `pytest.importorskip` plus
 a platform check so a machine with no ICD skips rather than errors. The decisive tests compare
 against Numba over heterogeneous data; note the per-epoch orbital parameters must genuinely differ
 between epochs, or the `nor > 1` indexing is unobservable and the comparison passes even when every
-point wrongly reads epoch 0.
+point wrongly reads epoch 0. Mutation-test new kernels rather than trusting green tests; that is
+what caught the weak per-epoch test and a lifecycle test that never allocated the buffers it meant
+to invalidate.
 
 ### Orbital Mechanics (via `meepmeep`)
 

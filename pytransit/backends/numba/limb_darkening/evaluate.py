@@ -26,7 +26,7 @@ def evaluate_ld(ldm, mu, pvo):
     if pvo.ndim == 1:
         pv = pvo.reshape((1, 1, -1))
     elif pvo.ndim == 2:
-        pv = pvo.reshape((1, pvo.shape[1], -1))
+        pv = pvo.reshape((1, pvo.shape[0], -1))
     else:
         pv = pvo
 
@@ -58,7 +58,7 @@ def evaluate_ldi(ldi, pvo):
     if pvo.ndim == 1:
         pv = pvo.reshape((1, 1, -1))
     elif pvo.ndim == 2:
-        pv = pvo.reshape((1, pvo.shape[1], -1))
+        pv = pvo.reshape((1, pvo.shape[0], -1))
     else:
         pv = pvo
 
@@ -96,7 +96,7 @@ def evaluate_ldig(ldig, pvo):
     if pvo.ndim == 1:
         pv = pvo.reshape((1, 1, -1))
     elif pvo.ndim == 2:
-        pv = pvo.reshape((1, pvo.shape[1], -1))
+        pv = pvo.reshape((1, pvo.shape[0], -1))
     else:
         pv = pvo
     return ldig(pv[0, 0])
@@ -126,7 +126,7 @@ def evaluate_ldg(ldd, mu, pvo):
     if pvo.ndim == 1:
         pv = pvo.reshape((1, 1, -1))
     elif pvo.ndim == 2:
-        pv = pvo.reshape((1, pvo.shape[1], -1))
+        pv = pvo.reshape((1, pvo.shape[0], -1))
     else:
         pv = pvo
 
@@ -161,7 +161,7 @@ def evaluate_distar(ldig, pvo):
     if pvo.ndim == 1:
         pv = pvo.reshape((1, 1, -1))
     elif pvo.ndim == 2:
-        pv = pvo.reshape((1, pvo.shape[1], -1))
+        pv = pvo.reshape((1, pvo.shape[0], -1))
     else:
         pv = pvo
 

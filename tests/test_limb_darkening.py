@@ -252,3 +252,52 @@ class TestEdgeCases:
             ldi_linear(np.array([u])),
             rtol=1e-12,
         )
+
+
+class TestMultiPassbandCoefficients:
+    """A 2D `ldc` is documented as one parameter set with several passbands.
+
+    The `evaluate_*` helpers reshape it to `(1, npb, nldc)`. Getting the axis
+    wrong reinterprets the buffer rather than transposing it, which is invisible
+    whenever `npb == nldc` — the shape every other test in the suite uses.
+    """
+
+    @pytest.mark.parametrize("npb,nldc", [(2, 2), (3, 2), (2, 3), (4, 2)])
+    def test_shapes_follow_passband_axis(self, npb, nldc):
+        from pytransit.backends.numba.limb_darkening import (evaluate_ld, evaluate_ldg,
+                                                             evaluate_ldi, evaluate_distar)
+        from pytransit.backends.numba.limb_darkening.general import ld_general, ldd_general
+        from pytransit.backends.numba.limb_darkening.general import ldi_general, ldig_general
+
+        mu = np.linspace(0.0, 1.0, 7)
+        ldc = 0.1 + 0.05 * np.arange(npb * nldc, dtype=float).reshape(npb, nldc)
+
+        assert evaluate_ld(ld_general, mu, ldc).shape == (1, npb, mu.size)
+        assert evaluate_ldi(ldi_general, ldc).shape == (1, npb)
+        assert evaluate_ldg(ldd_general, mu, ldc).shape == (1, npb, 1 + nldc, mu.size)
+        assert evaluate_distar(ldig_general, ldc).shape == (1, npb, nldc)
+
+    def test_each_passband_uses_its_own_coefficients(self):
+        """The decisive check: row i of `ldc` must drive passband i."""
+        from pytransit.backends.numba.limb_darkening import evaluate_ld
+        from pytransit.backends.numba.limb_darkening.quadratic import ld_quadratic
+
+        mu = np.linspace(0.0, 1.0, 7)
+        ldc = np.array([[0.30, 0.20], [0.55, 0.10], [0.05, 0.40]])   # npb=3, nldc=2
+
+        ldp = evaluate_ld(ld_quadratic, mu, ldc)
+        assert ldp.shape == (1, 3, mu.size)
+        for ipb in range(3):
+            assert_allclose(ldp[0, ipb], ld_quadratic(mu, ldc[ipb]), atol=1e-14)
+
+    def test_roadrunner_flux_is_physical_with_more_passbands_than_coefficients(self):
+        from pytransit.models.rrmodel import RoadRunnerModel
+
+        t = np.linspace(-0.06, 0.06, 100)
+        model = RoadRunnerModel(backend='numba', ldmodel='quadratic')
+        model.set_data(np.concatenate([t, t, t]), lcids=np.repeat([0, 1, 2], t.size),
+                       pbids=np.array([0, 1, 2]))
+        flux = np.asarray(model.evaluate(0.1, 0.0, 3.0, 6.0, 0.5 * np.pi,
+                                         ldc=np.array([[0.3, 0.2], [0.4, 0.2], [0.5, 0.1]])))
+        assert np.all(flux > 0.9) and np.all(flux <= 1.0 + 1e-12), \
+            f"flux out of physical range: [{flux.min()}, {flux.max()}]"

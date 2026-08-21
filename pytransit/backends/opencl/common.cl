@@ -138,3 +138,12 @@ inline REAL sep_cd(REAL t, __global const REAL *cf, __global const REAL *dcf, RE
     }
     return d;
 }
+
+
+/* Fold a time onto the transit-centred interval, returning the epoch through
+   `epoch` because the gradient kernels need it for the period chain rule.
+   Port of `backends.numba._utils._folded_time`. */
+inline REAL folded_time(REAL t, REAL t0, REAL p, REAL *epoch) {
+    *epoch = floor((t - t0 + (REAL)0.5 * p) / p);
+    return t - (t0 + *epoch * p);
+}

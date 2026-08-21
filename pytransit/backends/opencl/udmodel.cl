@@ -19,15 +19,6 @@
  */
 
 
-/* Fold a time onto the transit-centred interval, returning the epoch through
-   `epoch` because the gradient kernel needs it for the period chain rule.
-   Port of `backends.numba._utils._folded_time`. */
-inline REAL folded_time(REAL t, REAL t0, REAL p, REAL *epoch) {
-    *epoch = floor((t - t0 + (REAL)0.5 * p) / p);
-    return t - (t0 + *epoch * p);
-}
-
-
 __kernel void udmodel(__global const REAL *times,      /* (npt,)          */
                       __global const REAL *k,          /* (npv, npb)      */
                       __global const REAL *t0,         /* (npv, ntc)      */
