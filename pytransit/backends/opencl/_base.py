@@ -17,9 +17,10 @@
 """Shared host-side machinery for the OpenCL transit model backends."""
 
 import pyopencl as cl
-from numpy import ascontiguousarray, asarray, float64, int32, zeros
+from numpy import ascontiguousarray, asarray, concatenate, float64, int32, zeros
 
-from .context import dtype_for_precision, get_context, get_queue
+from .context import (build_options, build_program, dtype_for_precision, get_context,
+                      get_queue, read_kernel_source)
 
 __all__ = ['CLModel']
 
@@ -86,6 +87,20 @@ class CLModel:
         self._b_nsamples = None
         self._b_exptimes = None
 
+        # Log-likelihood reduction: built lazily, since most models are only ever
+        # evaluated.
+        self._reduction = None
+        self._reduction_lsize = None
+        self._obs_id = None
+        self._obs_cache = None
+        self._b_obs = None
+        self._b_err = None
+        self._b_slot_col = None
+        self._b_slot_kind = None
+        self._b_slot_grp = None
+        self._b_lnl = None
+        self._slot_key = None
+
     # -- buffer handling -------------------------------------------------------
 
     def _release(self, *names) -> None:
@@ -124,7 +139,9 @@ class CLModel:
             buffer = getattr(self, name)
             if buffer is None or buffer.size != size:
                 self._release(name)
-                setattr(self, name, cl.Buffer(self.ctx, cl.mem_flags.WRITE_ONLY, size))
+                # READ_WRITE, not WRITE_ONLY: the reduction kernel reads these, and
+                # reading a WRITE_ONLY buffer inside a kernel is undefined behaviour.
+                setattr(self, name, cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, size))
 
     def _check_allocation(self, name: str, nbytes: int) -> None:
         """Fail clearly when a buffer exceeds what the device can allocate.
@@ -171,6 +188,7 @@ class CLModel:
         self._upload('_b_epids', ascontiguousarray(epids, int32))
         self._upload('_b_nsamples', ascontiguousarray(nsamples, int32))
         self._upload('_b_exptimes', ascontiguousarray(exptimes, self.dtype))
+        self._obs_id = None      # a new time array invalidates any uploaded observations
 
     def _check_data(self, times, lcids, pbids, epids, nsamples, exptimes) -> None:
         """Verify the caller's data arrays still match what `set_data` uploaded."""
@@ -195,6 +213,136 @@ class CLModel:
         dflux = zeros((npv, self.npt, ngrad), self.dtype)
         cl.enqueue_copy(self.queue, dflux, self._b_dflux)
         return flux, dflux
+
+    # -- log-likelihood reduction ---------------------------------------------
+
+    def set_observations(self, obs, err) -> None:
+        """Upload the observed flux and its per-point uncertainties.
+
+        Cached on the identity of the two arrays, so a sampler calling
+        `loglikelihood` in a loop uploads them once. The cache holds a reference
+        to what it uploaded: `id()` is unique only among *live* objects, so
+        without that a freed array's address could be recycled by a different
+        array and the stale upload would be reused silently.
+        """
+        key = (id(obs), id(err))
+        if key == self._obs_id:
+            return
+        # Pin the objects the key was taken from, before any dtype conversion:
+        # in single precision `ascontiguousarray` returns copies, and pinning
+        # those would leave the keyed originals free to be deallocated and their
+        # addresses recycled -- which would make this cache hit on a different
+        # array and silently reuse a stale upload.
+        keyed = (obs, err)
+        obs = ascontiguousarray(obs, self.dtype)
+        err = ascontiguousarray(err, self.dtype)
+        if obs.size != self.npt or err.size != self.npt:
+            raise ValueError(f"The observation arrays must have {self.npt} points, got "
+                             f"{obs.size} and {err.size}.")
+        self._upload('_b_obs', obs)
+        self._upload('_b_err', err)
+        self._obs_cache = keyed
+        self._obs_id = key
+
+    def reduce_loglikelihood(self, jitter: float, slots, ngrad: int, npv: int):
+        """Reduce the device-resident flux and Jacobian into log-likelihood sums.
+
+        Must follow an evaluation with ``copy=False``, whose results are still in
+        `_b_flux` and `_b_dflux`. Nothing but the reduced sums crosses the bus.
+
+        Parameters
+        ----------
+        jitter : float
+            Additional white-noise term, added in quadrature to the per-point
+            uncertainties.
+        slots : tuple of ndarray
+            ``(col, kind, grp)`` describing each gradient output slot; see
+            `reduction.cl`. The first `NSCALAR` slots are the scalar sums and are
+            prepended here.
+        ngrad : int
+            Width of the compact Jacobian rows on the device.
+
+        Returns
+        -------
+        ndarray
+            Shape ``(npv, 4 + n_gradient_slots)``: the four scalar sums followed
+            by one reduced gradient column per slot.
+        """
+        if self._b_flux is None or self._b_dflux is None:
+            raise RuntimeError("Evaluate the model with copy=False before reducing it.")
+        if self._b_obs is None:
+            raise RuntimeError("set_observations() must be called before reducing.")
+
+        # The kernel strides the Jacobian by `ngrad`, which the caller derives
+        # independently of the buffer the model kernel filled. A mismatch -- a
+        # custom LDModel whose gradient row count disagrees with its coefficient
+        # count, or a stale buffer from a differently shaped evaluation -- would
+        # read the wrong columns and return plausible nonsense.
+        expected = npv * self.npt * ngrad * self.dtype().nbytes
+        if self._b_dflux.size != expected:
+            raise ValueError(
+                f"The gradient row width ({ngrad}) does not match the Jacobian on the device "
+                f"({self._b_dflux.size} bytes, expected {expected}). Evaluate and reduce with "
+                f"the same parameter shapes.")
+
+        if self._reduction is None:
+            self._reduction = build_program(
+                self.ctx, read_kernel_source('common.cl', 'reduction.cl'),
+                build_options(self.precision))
+
+        col, kind, grp = slots
+        nslot = 4 + col.size
+        # The slot table depends only on the parameter shapes, so in a sampling
+        # loop it is identical every call; re-uploading it would be three
+        # avoidable round trips per likelihood evaluation.
+        key = (col.tobytes(), kind.tobytes(), grp.tobytes())
+        if key != self._slot_key:
+            # The four scalar sums occupy the leading slots; their col/kind/grp
+            # are unused by the kernel but must be present so the arrays line up.
+            pad = zeros(4, int32)
+            self._upload('_b_slot_col', concatenate([pad, asarray(col, int32)]))
+            self._upload('_b_slot_kind', concatenate([pad, asarray(kind, int32)]))
+            self._upload('_b_slot_grp', concatenate([pad, asarray(grp, int32)]))
+            self._slot_key = key
+
+        nbytes = npv * nslot * self.dtype().nbytes
+        if self._b_lnl is None or self._b_lnl.size != nbytes:
+            self._check_allocation('_b_lnl', nbytes)
+            self._release('_b_lnl')
+            self._b_lnl = cl.Buffer(self.ctx, cl.mem_flags.WRITE_ONLY, nbytes)
+
+        lsize = self._reduction_local_size()
+        self._reduction.wn_loglikelihood(
+            self.queue, (lsize * nslot, npv), (lsize, 1),
+            self._b_obs, self._b_err, self._b_flux, self._b_dflux,
+            self._b_lcids, self._b_pbids, self._b_epids,
+            self._b_slot_col, self._b_slot_kind, self._b_slot_grp,
+            int32(self.npt), int32(ngrad), int32(nslot), self.dtype(jitter),
+            cl.LocalMemory(lsize * self.dtype().nbytes), self._b_lnl)
+
+        sums = zeros((npv, nslot), self.dtype)
+        cl.enqueue_copy(self.queue, sums, self._b_lnl)
+        return sums
+
+    def _reduction_local_size(self) -> int:
+        """Largest power-of-two work-group the kernel's tree reduction can use.
+
+        Bounded by the *kernel's* limit, not just the device's: register and
+        local-memory pressure can push `CL_KERNEL_WORK_GROUP_SIZE` below
+        `CL_DEVICE_MAX_WORK_GROUP_SIZE`, and enqueueing a larger group then fails
+        with CL_INVALID_WORK_GROUP_SIZE.
+        """
+        if self._reduction_lsize is None:
+            kernel = self._reduction.wn_loglikelihood
+            limit = min(min(device.max_work_group_size,
+                            kernel.get_work_group_info(
+                                cl.kernel_work_group_info.WORK_GROUP_SIZE, device))
+                        for device in self.ctx.devices)
+            size = 1
+            while size * 2 <= min(limit, 256):
+                size *= 2
+            self._reduction_lsize = size
+        return self._reduction_lsize
 
     @property
     def data_buffers(self):

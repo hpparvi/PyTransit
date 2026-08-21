@@ -30,7 +30,10 @@ import jax
 
 from typing import Literal, Callable
 
-from numpy import (ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype, integer, float64, array, full, isscalar)
+from numpy import (ones, ndarray, asarray, concatenate, log, ndim, pi, squeeze, zeros, unique,
+                   atleast_1d, issubdtype, integer, float64, array, full, isscalar)
+
+from ._utils import _npv_from_k, _param_is_expanded
 
 
 class TransitModel:
@@ -58,6 +61,7 @@ class TransitModel:
 
         self.simple = True
         self._time_id: int | None = None
+        self._err_broadcast: tuple | None = None
         self._kwargs = kwargs
 
         self._init_model()
@@ -160,6 +164,7 @@ class TransitModel:
             self.nsamples = jax.device_put(self.nsamples)
             self.exptimes = jax.device_put(self.exptimes)
 
+        self._err_broadcast = None
         self._on_data_set()
 
     def _on_data_set(self) -> None:
@@ -180,6 +185,117 @@ class TransitModel:
                  w: float | ndarray = 0.0,
                  ldp: ndarray | None = None) -> ndarray | tuple[ndarray, ndarray]:
         raise NotImplementedError
+
+    def loglikelihood(self, obs, err, jitter, k, t0, p, a, i, e=0.0, w=0.0, **kwargs):
+        """Log-likelihood and its gradient, reduced on the OpenCL device.
+
+        Evaluates the model with ``copy=False`` and reduces the device-resident
+        flux and Jacobian in place, so the Jacobian -- the largest array in a fit
+        -- never crosses the bus. Only a handful of doubles are read back.
+
+        The noise is independent Gaussian with a fixed per-point `err` and a
+        sampled `jitter`, combined as ``e2 = err**2 + jitter**2``; a constant
+        `err` gives the i.i.d. case.
+
+        Parameters
+        ----------
+        obs : ndarray
+            Observed flux, shape ``(npt,)``.
+        err : ndarray
+            Per-point uncertainties, shape ``(npt,)``. May be a scalar.
+        jitter : float
+            Additional white noise added in quadrature.
+        k, t0, p, a, i, e, w : float or ndarray
+            Model parameters, exactly as for `evaluate`.
+        **kwargs
+            Passed to `evaluate`, so limb-darkening coefficients go here as
+            ``ldc=`` (RoadRunner) or ``ldp=`` (uniform disk).
+
+        Returns
+        -------
+        lnl : float or ndarray
+            Log-likelihood; a plain float for a single parameter vector,
+            otherwise shape ``(npv,)``.
+        grad : ndarray
+            Gradient with the same columns `evaluate` returns for the Jacobian,
+            in the order ``[k, t0, p, a, i, e, w, ldc]``, plus a trailing
+            ``d lnL / d jitter``.
+        """
+        if self.backend != 'opencl':
+            raise NotImplementedError(
+                f"The device-side log-likelihood reduction needs backend='opencl', not "
+                f"'{self.backend}'. Compute it from evaluate()'s flux and Jacobian instead.")
+        if not self.return_grad:
+            raise ValueError("loglikelihood() needs a model built with return_grad=True.")
+        if 'copy' in kwargs:
+            raise TypeError("loglikelihood() does not take a 'copy' argument; it always "
+                            "reduces on the device and returns the result.")
+
+        obs = asarray(obs, float64)
+        # Broadcast a scalar `err` once and reuse the array: minting a new one per
+        # call would defeat the backend's identity-keyed upload cache, re-sending
+        # the uncertainties on every likelihood evaluation.
+        if isscalar(err) or ndim(err) == 0:
+            value = float(err)
+            if self._err_broadcast is None or self._err_broadcast[0] != value:
+                self._err_broadcast = (value, full(self.npt, value, float64))
+            err = self._err_broadcast[1]
+        else:
+            err = asarray(err, float64)
+
+        npv = _npv_from_k(asarray(k), self.npb)
+        slots, ncol = self._gradient_slots((k, t0, p, a, i, e, w), npv, **kwargs)
+
+        self._model.set_observations(obs, err)
+        self.evaluate(k, t0, p, a, i, e, w, **kwargs, copy=False)
+        sums = self._model.reduce_loglikelihood(jitter, slots, ncol, npv)
+
+        # Slot order matches reduction.cl: chi2, log_e2, chi2_e2, inv_e2, then
+        # one reduced column per gradient slot.
+        chi2, log_e2, chi2_e2, inv_e2 = (sums[:, j] for j in range(4))
+        lnl = -0.5 * self.npt * log(2.0 * pi) - 0.5 * log_e2 - 0.5 * chi2
+        djitter = jitter * (chi2_e2 - inv_e2)
+        grad = concatenate([sums[:, 4:], djitter[:, None]], axis=1)
+        if lnl.size == 1:
+            return float(lnl[0]), grad[0]
+        return lnl, grad
+
+    def _gradient_slots(self, orig_params, npv, **kwargs):
+        """Describe the reduction's output slots, and the compact Jacobian width.
+
+        Each slot names a compact Jacobian column and the data points it accepts,
+        which makes the reduction land directly in `evaluate`'s expanded column
+        layout: a parameter shared across passbands or epochs accepts every point
+        and collapses to one column, while a per-passband or per-epoch parameter
+        gets one slot per group. See `backends/opencl/reduction.cl`.
+        """
+        MATCH_ALL, MATCH_PASSBAND, MATCH_EPOCH = 0, 1, 2
+        col, kind, grp = [], [], []
+        # (compact column, number of groups, match rule, parameter as passed)
+        specs = [(0, self.npb, MATCH_PASSBAND, orig_params[0]),
+                 (1, self.ntc, MATCH_EPOCH, orig_params[1])]
+        specs += [(2 + n, self.nor, MATCH_EPOCH, orig_params[2 + n]) for n in range(5)]
+
+        for ccol, nd2, rule, original in specs:
+            if _param_is_expanded(original, npv, nd2):
+                col += nd2 * [ccol]
+                kind += nd2 * [rule]
+                grp += list(range(nd2))
+            else:
+                col.append(ccol)
+                kind.append(MATCH_ALL)
+                grp.append(0)
+
+        nldc = self._ld_column_count(**kwargs)
+        for j in range(self.npb * nldc):
+            col.append(7 + j)
+            kind.append(MATCH_ALL)      # the compact LD block is already per passband
+            grp.append(0)
+        return (array(col, 'int32'), array(kind, 'int32'), array(grp, 'int32')), 7 + self.npb * nldc
+
+    def _ld_column_count(self, **kwargs) -> int:
+        """Number of limb-darkening coefficients in the compact Jacobian."""
+        return 0
 
     def get_callable(self) -> Callable:
         raise NotImplementedError

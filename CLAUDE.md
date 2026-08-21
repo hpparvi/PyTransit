@@ -100,8 +100,8 @@ the Taylor-coefficient derivative chain.
 wrapper. `common.cl` holds the shared device code (circle-circle intersection, Horner separation,
 time folding), `<model>.cl` the forward and gradient kernels, `<model>.py` the host class,
 `_base.py` the `CLModel` base (context, buffers, time shift, read-back), `context.py` the shared
-context/queue/program cache, and `_host.py` the jitted MeepMeep and limb-darkening prep.
-See "OpenCL Backend" below.
+context/queue/program cache, `_host.py` the jitted MeepMeep and limb-darkening prep, and
+`reduction.cl` the device-side log-likelihood reduction. See "OpenCL Backend" below.
 
 ### Limb Darkening (`backends/{numba,jax}/limb_darkening/`)
 
@@ -170,6 +170,9 @@ runtime: ~1.2x over threaded Numba with `copy=True` versus ~105x with `copy=Fals
 device-resident gradient is the *compact* `(npv, npt, 7)` form — `_expand_gradient` is host-side, so
 no expansion happens on that path. Passing `copy=False` to the Numba or JAX backends raises.
 
+Its consumer is the device-side log-likelihood below, which reduces those buffers in place; that is
+what turns `copy=False` from a benchmark curiosity into something a sampler can use.
+
 **Porting gotchas** (both already handled, do not "fix" them back):
 - `flux` is a *deficit*: it starts at 0 and is only decremented, so out of transit it is 0.0 and at
   mid-transit `-k**2`. It is not normalised to 1. The deleted v2 `ma_uniform.cl` returned
@@ -203,6 +206,31 @@ npt=1e5`. `CLModel._check_allocation` compares against the device's `max_mem_all
 of device memory on this card) and raises a `MemoryError` naming the size, because `cl.Buffer`
 allocation is lazy and an oversized request otherwise fails as a bare
 `MEM_OBJECT_ALLOCATION_FAILURE` at kernel-enqueue time.
+
+**Device-side log-likelihood** (`reduction.cl`, `CLModel.reduce_loglikelihood`,
+`TransitModel.loglikelihood`). `model.loglikelihood(obs, err, jitter, k, t0, ...)` evaluates with
+`copy=False` and reduces the device-resident flux and Jacobian in place, so the Jacobian never
+crosses the bus; only a handful of doubles come back. `WNLogLikelihood` wraps it. The noise is
+independent Gaussian with fixed per-point `err` and a sampled `jitter` (`e2 = err**2 + jitter**2`);
+a constant `err` gives the i.i.d. case. The returned gradient has `evaluate`'s Jacobian columns plus
+a trailing `d lnL / d jitter`.
+
+The reduction runs one work-group per output slot, each scanning the whole time series. Slots 0-3
+are the scalar sums (`sum r^2/e2`, `sum log e2`, `sum r^2/e2^2`, `sum 1/e2`); the rest are gradient
+columns, each carrying a rule saying which points it accepts. That rule is what makes the output
+land directly in `evaluate`'s **expanded** column layout with no host-side scatter: a parameter
+shared across passbands or epochs accepts every point and collapses to one column, while a
+per-passband or per-epoch one gets a slot per group. The compact LD block is already scattered per
+passband, so it uses `MATCH_ALL`. `TransitModel._gradient_slots` builds the table; keep it in step
+with `_expand_gradient`.
+
+**When the OpenCL backend actually pays off.** It wins on the *parameter-vector* axis, not the
+per-call one. At `npv=200, npt=1e5` with gradients it is ~88x threaded Numba. At `npv=1` -- the
+optimiser/HMC case -- a bare pyopencl kernel launch costs ~0.08 ms on this stack and scales with
+argument count, so a whole `loglikelihood` call is ~0.6 ms at `npt=1e4` of which almost all is
+Python-side API overhead: 1.4x over Numba there, 2.6x at 5e4, 18x at 2e5. Batching the per-call
+parameter uploads into one buffer, or binding kernel arguments persistently, is the identified next
+step for small-`npt` gradient fitting.
 
 **One deliberate divergence from Numba.** `interpolate_mean_limb_darkening` reads `lda[ng]`, one
 past the end, when `g` is within ~1e-7 of 1.0 (because `dg = (1-1e-7)/(ng-1)`, so

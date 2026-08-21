@@ -187,6 +187,11 @@ class RoadRunnerModel(TransitModel):
     def _init_model(self):
         pass
 
+    def _ld_column_count(self, ldc=None, **kwargs) -> int:
+        if ldc is None:
+            raise ValueError("Limb darkening coefficients must be provided.")
+        return atleast_1d(ldc).shape[-1]
+
     def _on_data_set(self):
         if self.backend == 'opencl':
             self._model.set_data(self.times, self.lcids, self.pbids, self.epids,
