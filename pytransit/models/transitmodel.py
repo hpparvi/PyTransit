@@ -36,7 +36,7 @@ from numpy import (ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype
 class TransitModel:
     """Exoplanet transit light curve model.
     """
-    def __init__(self, backend: Literal["numba", "jax"] = "numba", return_grad: bool = False,
+    def __init__(self, backend: Literal["numba", "jax", "opencl"] = "numba", return_grad: bool = False,
                  parallel: bool = False, n_threads: int | None = None, **kwargs):
         self.backend = backend
         self.return_grad = return_grad
@@ -58,6 +58,7 @@ class TransitModel:
 
         self.simple = True
         self._time_id: int | None = None
+        self._kwargs = kwargs
 
         self._init_model()
 
@@ -158,6 +159,16 @@ class TransitModel:
             self.epids = jax.device_put(self.epids)
             self.nsamples = jax.device_put(self.nsamples)
             self.exptimes = jax.device_put(self.exptimes)
+
+        self._on_data_set()
+
+    def _on_data_set(self) -> None:
+        """Hook called at the end of `set_data`, after all the shape attributes are set.
+
+        Backends that keep a private copy of the data, such as OpenCL with its
+        device buffers, override this to (re)upload it. The default does nothing.
+        """
+        pass
 
     def evaluate(self,
                  k: float | ndarray,

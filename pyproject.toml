@@ -33,5 +33,8 @@ version = {attr = "pytransit.__version__"}
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["pytransit"]
+include = ["pytransit*"]
 namespaces = true
+
+[tool.setuptools.package-data]
+"pytransit.backends.opencl" = ["*.cl"]
