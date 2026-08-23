@@ -18,6 +18,10 @@
 - Added exact and θ-sampled ellipse-circle and ellipse-disk intersection area routines to
   `pytransit.models.roadrunner.ecintersection`.
 - Added support for non-transiting planets in `RVLPF` via a new `is_transiting` argument.
+- Added `pytransit.utils.io.LightCurveDataGroup`, a container of `LightCurveData` objects. Adding light curves together
+  gives a group (`lc1 + lc2`, `sum([lc1, lc2, lc3])`), and the group exposes the per-light-curve quantities as the
+  lists and arrays `BaseLPF` expects (`times`, `fluxes`, `covariates`, `passband_names`, `pbids`, `wnids`, `nsamples`,
+  `exptimes`).
 - Added docstrings for the `OblatePlanetModel` class.
 
 ### Changed
