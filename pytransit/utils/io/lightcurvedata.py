@@ -90,6 +90,11 @@ class LightCurveData:
     passband
         Passband name, or a sequence of names for a light curve combining several. Stored
         as a tuple of strings.
+    pids
+        Indices of the planets transiting in this light curve, for modelling multiplanet
+        systems. An integer is accepted for a single planet. Stored as a tuple of ints.
+        Defaults to `None` meaning "unspecified", which is distinct from an empty sequence
+        meaning "no planet transits here".
     noise
         White noise estimate. Defaults to the point-to-point estimate
         ``nanstd(diff(flux)) / sqrt(2)``, the same estimator `BaseLPF` uses, or to NaN for
@@ -117,6 +122,7 @@ class LightCurveData:
                  error: Optional[Union[Sequence, ndarray]] = None,
                  covariates: Optional[Union[Sequence, ndarray]] = None,
                  passband: Union[str, Sequence[str]] = 'white',
+                 pids: Optional[Union[int, Sequence[int]]] = None,
                  noise: Optional[float] = None,
                  instrument: str = '',
                  sector: int = -1,
@@ -176,6 +182,25 @@ class LightCurveData:
                                  f"got {passband!r}.") from e
         if len(self.passband) == 0:
             raise ValueError("'passband' cannot be empty.")
+
+        if pids is None:
+            self.pids = None
+        else:
+            if isinstance(pids, str):
+                raise ValueError(f"'pids' must be an integer or a sequence of integers, "
+                                 f"got the string {pids!r}.")
+            if isinstance(pids, (int, integer)) and not isinstance(pids, (bool, bool_)):
+                pids = [pids]
+            try:
+                pl = tuple(_as_int(p, 'pids') for p in pids)
+            except TypeError as e:
+                raise ValueError(f"'pids' must be an integer or a sequence of integers, "
+                                 f"got {pids!r}.") from e
+            if any(p < 0 for p in pl):
+                raise ValueError(f"'pids' cannot contain negative planet indices, got {pids!r}.")
+            if len(set(pl)) != len(pl):
+                raise ValueError(f"'pids' contains duplicate planet indices: {pids!r}.")
+            self.pids = pl
 
         if noise is None:
             self.noise = self._estimate_noise()
@@ -237,6 +262,11 @@ class LightCurveData:
         """True if an explicit uncertainty array was given."""
         return self._error is not None
 
+    @property
+    def has_pids(self) -> bool:
+        """True if the transiting planets were specified."""
+        return self.pids is not None
+
     def __add__(self, other) -> 'LightCurveDataGroup':
         if isinstance(other, LightCurveData):
             return LightCurveDataGroup([self, other])
@@ -251,8 +281,8 @@ class LightCurveData:
 
     def __repr__(self) -> str:
         return (f"LightCurveData(npt={self.size}, passband={self.passband}, "
-                f"instrument={self.instrument!r}, sector={self.sector}, segment={self.segment}, "
-                f"ncov={self.ncov})")
+                f"pids={self.pids}, instrument={self.instrument!r}, sector={self.sector}, "
+                f"segment={self.segment}, ncov={self.ncov})")
 
 
 class LightCurveDataGroup:
@@ -323,6 +353,14 @@ class LightCurveDataGroup:
         return [d.passband for d in self.data]
 
     @property
+    def pids(self) -> list:
+        """List of per-light-curve transiting-planet index tuples.
+
+        An entry is `None` for a light curve whose transiting planets were not specified.
+        """
+        return [d.pids for d in self.data]
+
+    @property
     def instruments(self) -> list:
         """List of instrument names."""
         return [d.instrument for d in self.data]
@@ -368,6 +406,21 @@ class LightCurveDataGroup:
     def has_errors(self) -> bool:
         """True if every light curve was given an explicit uncertainty array."""
         return all(d.has_error for d in self.data) if self.data else False
+
+    @property
+    def has_pids(self) -> bool:
+        """True if every light curve names its transiting planets."""
+        return all(d.has_pids for d in self.data) if self.data else False
+
+    @property
+    def n_planets(self) -> int:
+        """Number of planets implied by the planet indices.
+
+        One past the largest index given by any light curve, or zero if none of them
+        specify their planets.
+        """
+        ids = [p for d in self.data if d.pids is not None for p in d.pids]
+        return max(ids) + 1 if ids else 0
 
     @property
     def has_covariates(self) -> bool:
