@@ -2,6 +2,13 @@
 
 ## [2.9.1] - 2026-08-24
 
+### Added
+
+- Added `pytransit.utils.io.LCData` and `LCDataGroup` light curve data containers. `LCData` holds a single light curve
+  with its time, flux, uncertainty, covariate, passband, instrument, and transiting planet (`pids`) metadata, and adding
+  light curves together (`lc1 + lc2`, `sum([lc1, lc2])`) gives an `LCDataGroup` that exposes the per-light-curve lists
+  and arrays `BaseLPF` expects.
+- Added `pytransit.utils.io.RVData` and `RVDataGroup`, the radial velocity counterparts of the light curve containers.
 
 
 ## [2.9.0] - 2026-08-18
@@ -20,8 +27,6 @@
 - Added exact and θ-sampled ellipse-circle and ellipse-disk intersection area routines to
   `pytransit.models.roadrunner.ecintersection`.
 - Added support for non-transiting planets in `RVLPF` via a new `is_transiting` argument.
-- Added `pytransit.utils.io.LCData` and `LCDataGroup` light curve data containers.
-- Added `pytransit.utils.io.RVData` and `RVDataGroup`, the radial velocity counterparts of the light curve containers.
 
 ### Changed
 
