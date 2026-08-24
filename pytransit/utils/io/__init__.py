@@ -15,5 +15,6 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from .lightcurvedata import LightCurveData, LightCurveDataGroup
+from .rvdata import RVData, RVDataGroup
 
-__all__ = ['LightCurveData', 'LightCurveDataGroup']
+__all__ = ['LightCurveData', 'LightCurveDataGroup', 'RVData', 'RVDataGroup']

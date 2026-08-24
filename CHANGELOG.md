@@ -22,6 +22,9 @@
   gives a group (`lc1 + lc2`, `sum([lc1, lc2, lc3])`), and the group exposes the per-light-curve quantities as the
   lists and arrays `BaseLPF` expects (`times`, `fluxes`, `covariates`, `passband_names`, `pbids`, `wnids`, `nsamples`,
   `exptimes`).
+- Added `pytransit.utils.io.RVData` and `RVDataGroup`, the radial velocity counterparts of the light curve containers.
+  `RVData` holds the velocities, uncertainties, and covariates from a single instrument, and the group exposes the
+  per-dataset lists `RVLPF` expects (`times`, `rvs`, `errors`, `rvis`). Velocities are in m/s and times in days.
 - Added docstrings for the `OblatePlanetModel` class.
 
 ### Changed

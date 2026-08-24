@@ -34,43 +34,17 @@ a `BaseLPF`::
 import warnings
 
 from collections.abc import Sequence
-from typing import Callable, Optional, Union
+from typing import Optional, Union
 
-from numpy import (ndarray, asarray, zeros, full, array, diff, nanstd, sqrt, nan, isfinite,
-                   argsort, integer, floating, bool_)
+from numpy import ndarray, full, array, diff, nanstd, sqrt, nan, isfinite
+
+from .base import (_Data, _DataGroup, _as_float, _as_int, _validate_time, _validate_series,
+                   _validate_error, _validate_covariates, _validate_names, _validate_pids)
 
 __all__ = ['LightCurveData', 'LightCurveDataGroup']
 
 
-def _as_float_array(x, name: str) -> ndarray:
-    """Convert `x` into a float64 array, re-raising conversion failures informatively."""
-    try:
-        return asarray(x, 'd')
-    except (TypeError, ValueError) as e:
-        raise ValueError(f"Could not convert '{name}' into a float array: {e}") from e
-
-
-def _as_int(v, name: str) -> int:
-    """Convert `v` into an int, rejecting non-integral values."""
-    if isinstance(v, (bool, bool_)):
-        raise ValueError(f"'{name}' must be an integer, got a boolean.")
-    try:
-        iv = int(v)
-    except (TypeError, ValueError) as e:
-        raise ValueError(f"'{name}' must be an integer, got {v!r}.") from e
-    if iv != v:
-        raise ValueError(f"'{name}' must be an integer, got {v!r}.")
-    return iv
-
-
-def _as_float(v, name: str) -> float:
-    try:
-        return float(v)
-    except (TypeError, ValueError) as e:
-        raise ValueError(f"'{name}' must be a float, got {v!r}.") from e
-
-
-class LightCurveData:
+class LightCurveData(_Data):
     """Data and metadata for a single light curve.
 
     Parameters
@@ -130,77 +104,14 @@ class LightCurveData:
                  exptime: float = 0.0,
                  nsamples: int = 1) -> None:
 
-        self.time = _as_float_array(time, 'time')
-        if self.time.ndim != 1:
-            raise ValueError(f"'time' must be a 1D array, got a {self.time.ndim}D one.")
-        if not isfinite(self.time).all():
-            raise ValueError("'time' contains non-finite values.")
-
-        self.flux = _as_float_array(flux, 'flux')
-        if self.flux.ndim != 1:
-            raise ValueError(f"'flux' must be a 1D array, got a {self.flux.ndim}D one.")
-        if self.flux.size != self.time.size:
-            raise ValueError(f"'flux' has {self.flux.size} points but 'time' has {self.time.size}.")
-        if not isfinite(self.flux).all():
-            warnings.warn("'flux' contains non-finite values.")
-
-        if error is None:
-            self._error = None
-        else:
-            e = _as_float_array(error, 'error')
-            if e.ndim != 1:
-                raise ValueError(f"'error' must be a 1D array, got a {e.ndim}D one.")
-            if e.size != self.time.size:
-                raise ValueError(f"'error' has {e.size} points but 'time' has {self.time.size}.")
-            finite = isfinite(e)
-            if not finite.all():
-                warnings.warn("'error' contains non-finite values.")
-            if (e[finite] <= 0.0).any():
-                raise ValueError("'error' contains non-positive values.")
-            self._error = e
-
+        self.time = _validate_time(time)
         npt = self.time.size
-        if covariates is None:
-            self.covariates = zeros((npt, 0))
-        else:
-            cv = _as_float_array(covariates, 'covariates')
-            if cv.ndim == 1:
-                cv = cv.reshape((-1, 1))
-            elif cv.ndim != 2:
-                raise ValueError(f"'covariates' must be a 1D or 2D array, got a {cv.ndim}D one.")
-            if cv.shape[0] != npt:
-                raise ValueError(f"'covariates' has {cv.shape[0]} rows but 'time' has {npt} points.")
-            self.covariates = cv
 
-        if isinstance(passband, str):
-            self.passband = (passband,)
-        else:
-            try:
-                self.passband = tuple(str(pb) for pb in passband)
-            except TypeError as e:
-                raise ValueError(f"'passband' must be a string or a sequence of strings, "
-                                 f"got {passband!r}.") from e
-        if len(self.passband) == 0:
-            raise ValueError("'passband' cannot be empty.")
-
-        if pids is None:
-            self.pids = None
-        else:
-            if isinstance(pids, str):
-                raise ValueError(f"'pids' must be an integer or a sequence of integers, "
-                                 f"got the string {pids!r}.")
-            if isinstance(pids, (int, integer)) and not isinstance(pids, (bool, bool_)):
-                pids = [pids]
-            try:
-                pl = tuple(_as_int(p, 'pids') for p in pids)
-            except TypeError as e:
-                raise ValueError(f"'pids' must be an integer or a sequence of integers, "
-                                 f"got {pids!r}.") from e
-            if any(p < 0 for p in pl):
-                raise ValueError(f"'pids' cannot contain negative planet indices, got {pids!r}.")
-            if len(set(pl)) != len(pl):
-                raise ValueError(f"'pids' contains duplicate planet indices: {pids!r}.")
-            self.pids = pl
+        self.flux = _validate_series(flux, npt, 'flux')
+        self._error = _validate_error(error, npt)
+        self.covariates = _validate_covariates(covariates, npt)
+        self.passband = _validate_names(passband, 'passband')
+        self.pids = _validate_pids(pids)
 
         if noise is None:
             self.noise = self._estimate_noise()
@@ -267,25 +178,13 @@ class LightCurveData:
         """True if the transiting planets were specified."""
         return self.pids is not None
 
-    def __add__(self, other) -> 'LightCurveDataGroup':
-        if isinstance(other, LightCurveData):
-            return LightCurveDataGroup([self, other])
-        elif isinstance(other, LightCurveDataGroup):
-            return LightCurveDataGroup([self] + other.data)
-        return NotImplemented
-
-    def __radd__(self, other):
-        if other == 0 or other is None:
-            return LightCurveDataGroup([self])
-        return NotImplemented
-
     def __repr__(self) -> str:
         return (f"LightCurveData(npt={self.size}, passband={self.passband}, "
                 f"pids={self.pids}, instrument={self.instrument!r}, sector={self.sector}, "
                 f"segment={self.segment}, ncov={self.ncov})")
 
 
-class LightCurveDataGroup:
+class LightCurveDataGroup(_DataGroup):
     """A container of `LightCurveData` objects.
 
     The light curves keep their insertion order, which defines both the light curve index
@@ -299,46 +198,14 @@ class LightCurveDataGroup:
         groups are flattened.
     """
 
-    def __init__(self, data: Union['LightCurveData', Sequence, 'LightCurveDataGroup'] = ()) -> None:
-        self.data: list = []
-        if isinstance(data, (LightCurveData, LightCurveDataGroup)):
-            data = [data]
-        for d in data:
-            self._add_data(d)
-
-    def _add_data(self, d) -> None:
-        if isinstance(d, LightCurveDataGroup):
-            for x in d.data:
-                self._add_data(x)
-            return
-        if not isinstance(d, LightCurveData):
-            raise TypeError(f"A LightCurveDataGroup holds LightCurveData objects, "
-                            f"got {type(d).__name__}.")
-        if any(d is x for x in self.data):
-            raise ValueError("The same LightCurveData instance cannot be added to a group twice.")
-        self.data.append(d)
+    _item_type = LightCurveData
 
     # Bulk data
     # ---------
     @property
-    def times(self) -> list:
-        """List of 1D time arrays."""
-        return [d.time for d in self.data]
-
-    @property
     def fluxes(self) -> list:
         """List of 1D flux arrays."""
         return [d.flux for d in self.data]
-
-    @property
-    def covariates(self) -> list:
-        """List of 2D covariate matrices."""
-        return [d.covariates for d in self.data]
-
-    @property
-    def errors(self) -> list:
-        """List of 1D flux uncertainty arrays."""
-        return [d.error for d in self.data]
 
     # Metadata
     # --------
@@ -361,11 +228,6 @@ class LightCurveDataGroup:
         return [d.pids for d in self.data]
 
     @property
-    def instruments(self) -> list:
-        """List of instrument names."""
-        return [d.instrument for d in self.data]
-
-    @property
     def sectors(self) -> ndarray:
         """Array of sector ids."""
         return array([d.sector for d in self.data], int)
@@ -385,28 +247,6 @@ class LightCurveDataGroup:
         """Array of supersampling factors."""
         return array([d.nsamples for d in self.data], int)
 
-    # Sizes
-    # -----
-    @property
-    def size(self) -> int:
-        """Number of light curves."""
-        return len(self.data)
-
-    @property
-    def npts(self) -> ndarray:
-        """Array of per-light-curve datapoint counts."""
-        return array([d.size for d in self.data], int)
-
-    @property
-    def ncovs(self) -> ndarray:
-        """Array of per-light-curve covariate counts."""
-        return array([d.ncov for d in self.data], int)
-
-    @property
-    def has_errors(self) -> bool:
-        """True if every light curve was given an explicit uncertainty array."""
-        return all(d.has_error for d in self.data) if self.data else False
-
     @property
     def has_pids(self) -> bool:
         """True if every light curve names its transiting planets."""
@@ -422,35 +262,8 @@ class LightCurveDataGroup:
         ids = [p for d in self.data if d.pids is not None for p in d.pids]
         return max(ids) + 1 if ids else 0
 
-    @property
-    def has_covariates(self) -> bool:
-        """True if any light curve has at least one covariate."""
-        return bool((self.ncovs > 0).any())
-
-    @property
-    def tmin(self) -> float:
-        """Earliest time in the group."""
-        return min((d.time.min() for d in self.data if d.size), default=nan)
-
-    @property
-    def tmax(self) -> float:
-        """Latest time in the group."""
-        return max((d.time.max() for d in self.data if d.size), default=nan)
-
     # Derived ids
     # -----------
-    def _group_ids(self, *fields) -> ndarray:
-        """Map tuples of per-light-curve metadata into 0-based contiguous group ids.
-
-        The ids are numbered by first appearance, so they are contiguous by construction,
-        which `BaseLPF._init_data` asserts for the noise ids.
-        """
-        keys = list(zip(*fields))
-        if not keys:
-            return zeros(0, int)
-        cats = {k: i for i, k in enumerate(dict.fromkeys(keys))}
-        return array([cats[k] for k in keys], int)
-
     @property
     def passband_names(self) -> list:
         """Unique passband names, ordered by first appearance.
@@ -491,11 +304,6 @@ class LightCurveDataGroup:
         return self._group_ids(self.instruments, self.sectors, self.segments)
 
     @property
-    def ins(self) -> list:
-        """Instrument names, under the name `LinearModelBaseline` looks for."""
-        return self.instruments
-
-    @property
     def piis(self) -> ndarray:
         """Running index of each light curve within its instrument.
 
@@ -504,81 +312,11 @@ class LightCurveDataGroup:
 
             lpf.ins, lpf.piis = lcs.ins, lcs.piis
         """
-        counts: dict = {}
-        out = []
-        for ins in self.instruments:
-            out.append(counts.get(ins, 0))
-            counts[ins] = out[-1] + 1
-        return array(out, int)
-
-    # Selection
-    # ---------
-    def select(self, instrument=None, passband=None, sector=None, segment=None) -> 'LightCurveDataGroup':
-        """Return a new group with the light curves matching all the given criteria."""
-        def matches(d):
-            return ((instrument is None or d.instrument == instrument)
-                    and (passband is None or passband in d.passband)
-                    and (sector is None or d.sector == sector)
-                    and (segment is None or d.segment == segment))
-        return LightCurveDataGroup([d for d in self.data if matches(d)])
-
-    def sorted_by(self, key: Union[str, Callable] = 'time') -> 'LightCurveDataGroup':
-        """Return a new group ordered by `key`.
-
-        Parameters
-        ----------
-        key
-            One of 'time', 'instrument', 'passband', 'sector', or 'segment', or a callable
-            taking a `LightCurveData` and returning a sort key.
-        """
-        keys = {'time': lambda d: d.time.min() if d.size else nan,
-                'instrument': lambda d: d.instrument,
-                'passband': lambda d: d.passband,
-                'sector': lambda d: d.sector,
-                'segment': lambda d: d.segment}
-        if callable(key):
-            f = key
-        elif key in keys:
-            f = keys[key]
-        else:
-            raise ValueError(f"Unknown sort key {key!r}, choose from {sorted(keys)} or pass a callable.")
-        return LightCurveDataGroup(sorted(self.data, key=f))
-
-    # Container protocol
-    # ------------------
-    def __len__(self) -> int:
-        return self.size
-
-    def __iter__(self):
-        return iter(self.data)
-
-    def __getitem__(self, index):
-        if isinstance(index, (int, integer)):
-            return self.data[index]
-        if isinstance(index, slice):
-            return LightCurveDataGroup(self.data[index])
-        ix = asarray(index)
-        if ix.dtype == bool:
-            if ix.size != self.size:
-                raise IndexError(f"Boolean index has {ix.size} entries but the group has {self.size} "
-                                 f"light curves.")
-            return LightCurveDataGroup([d for d, m in zip(self.data, ix) if m])
-        if ix.dtype.kind in 'iu':
-            return LightCurveDataGroup([self.data[i] for i in ix])
-        raise TypeError(f"Cannot index a LightCurveDataGroup with {type(index).__name__}.")
-
-    def __add__(self, other) -> 'LightCurveDataGroup':
-        if isinstance(other, LightCurveData):
-            return LightCurveDataGroup(self.data + [other])
-        elif isinstance(other, LightCurveDataGroup):
-            return LightCurveDataGroup(self.data + other.data)
-        return NotImplemented
-
-    def __radd__(self, other):
-        if other == 0 or other is None:
-            return LightCurveDataGroup(self.data)
-        return NotImplemented
+        return super().piis
 
     def __repr__(self) -> str:
         return (f"LightCurveDataGroup with {self.size} light curves, {int(self.npts.sum())} points, "
                 f"passbands {self.passband_names}")
+
+
+LightCurveData._group_type = LightCurveDataGroup
