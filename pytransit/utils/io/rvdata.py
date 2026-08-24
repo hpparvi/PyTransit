@@ -30,7 +30,7 @@ The group exposes the per-dataset quantities in the form `RVLPF` wants::
 
 Radial velocities are in **m/s** and times in **days**, matching `pytransit.lpf.rvlpf`.
 
-Unlike `LightCurveData` these containers have no `pids` field: a radial velocity signal is
+Unlike `LCData` these containers have no `pids` field: a radial velocity signal is
 the sum over every planet in the system, so there is no per-dataset subset of planets to
 name. `is_transiting` is a property of a planet rather than of a dataset and stays an
 argument of `RVLPF`.
@@ -115,7 +115,7 @@ class RVData(_Data):
     def noise(self) -> float:
         """Point-to-point scatter estimate, ``nanstd(diff(rv)) / sqrt(2)``.
 
-        A read-only diagnostic. Unlike `LightCurveData` this is never a constructor
+        A read-only diagnostic. Unlike `LCData` this is never a constructor
         argument, since RV uncertainties are always given, and it is not used by any model:
         `RVLPF` fits a separate jitter term per instrument on top of `error`.
         """

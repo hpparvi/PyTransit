@@ -21,7 +21,7 @@ from numpy.random import default_rng
 from numpy.testing import assert_allclose, assert_array_equal
 
 from pytransit.lpf.rvlpf import RVLPF
-from pytransit.utils.io import LightCurveData, RVData, RVDataGroup
+from pytransit.utils.io import LCData, RVData, RVDataGroup
 
 NPT = 40
 
@@ -200,7 +200,7 @@ class TestCrossTypeAddition:
     """The shared container base must not let the two data types mix."""
 
     def make_lc(self):
-        return LightCurveData(linspace(0, 1, 20), ones(20), passband='TESS')
+        return LCData(linspace(0, 1, 20), ones(20), passband='TESS')
 
     def test_rv_plus_light_curve_raises(self):
         with pytest.raises(TypeError):
@@ -216,18 +216,18 @@ class TestCrossTypeAddition:
             make_group() + self.make_lc()
 
     def test_light_curve_group_rejects_rv_data(self):
-        from pytransit.utils.io import LightCurveDataGroup
+        from pytransit.utils.io import LCDataGroup
         with pytest.raises(TypeError, match='unsupported operand'):
-            LightCurveDataGroup([self.make_lc()]) + make_rv()
+            LCDataGroup([self.make_lc()]) + make_rv()
 
     def test_constructing_a_mixed_group_gives_an_informative_error(self):
         with pytest.raises(TypeError, match='holds RVData objects'):
             RVDataGroup([make_rv(), self.make_lc()])
 
     def test_constructing_a_mixed_lc_group_gives_an_informative_error(self):
-        from pytransit.utils.io import LightCurveDataGroup
-        with pytest.raises(TypeError, match='holds LightCurveData objects'):
-            LightCurveDataGroup([self.make_lc(), make_rv()])
+        from pytransit.utils.io import LCDataGroup
+        with pytest.raises(TypeError, match='holds LCData objects'):
+            LCDataGroup([self.make_lc(), make_rv()])
 
 
 class TestGroupProperties:

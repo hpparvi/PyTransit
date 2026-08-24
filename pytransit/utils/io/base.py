@@ -16,7 +16,7 @@
 
 """Shared machinery for the observation data containers.
 
-`LightCurveData`/`LightCurveDataGroup` and `RVData`/`RVDataGroup` differ in the metadata
+`LCData`/`LCDataGroup` and `RVData`/`RVDataGroup` differ in the metadata
 they carry but share their field validation and their container behaviour. The validators
 here are plain functions each item class calls in order, so the classes stay flat and
 readable, while `_Data` and `_DataGroup` hold the addition algebra and the container
@@ -133,7 +133,7 @@ def _validate_names(names, name: str = 'passband') -> tuple:
 def _validate_pids(pids, name: str = 'pids') -> Optional[tuple]:
     """Return `pids` as a tuple of unique non-negative ints, or None.
 
-    Only `LightCurveData` uses this: an RV signal always contains every planet in the
+    Only `LCData` uses this: an RV signal always contains every planet in the
     system, so there is no per-dataset subset to name. It lives here to keep the validators
     in one place.
     """

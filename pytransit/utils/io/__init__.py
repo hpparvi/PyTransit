@@ -14,7 +14,7 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from .lightcurvedata import LightCurveData, LightCurveDataGroup
+from .lcdata import LCData, LCDataGroup
 from .rvdata import RVData, RVDataGroup
 
-__all__ = ['LightCurveData', 'LightCurveDataGroup', 'RVData', 'RVDataGroup']
+__all__ = ['LCData', 'LCDataGroup', 'RVData', 'RVDataGroup']

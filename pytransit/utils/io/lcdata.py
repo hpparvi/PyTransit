@@ -16,11 +16,11 @@
 
 """Containers for light curve data and metadata.
 
-`LightCurveData` holds a single light curve together with the metadata describing it, and
-`LightCurveDataGroup` collects several of them. Adding light curves together gives a group::
+`LCData` holds a single light curve together with the metadata describing it, and
+`LCDataGroup` collects several of them. Adding light curves together gives a group::
 
-    lc1 + lc2                    # -> LightCurveDataGroup with two light curves
-    lc1 + lc2 + lc3              # -> LightCurveDataGroup with three
+    lc1 + lc2                    # -> LCDataGroup with two light curves
+    lc1 + lc2 + lc3              # -> LCDataGroup with three
     sum([lc1, lc2, lc3])         # -> the same
 
 The group exposes the per-light-curve quantities as lists and arrays ready to be handed to
@@ -41,10 +41,10 @@ from numpy import ndarray, full, array, diff, nanstd, sqrt, nan, isfinite
 from .base import (_Data, _DataGroup, _as_float, _as_int, _validate_time, _validate_series,
                    _validate_error, _validate_covariates, _validate_names, _validate_pids)
 
-__all__ = ['LightCurveData', 'LightCurveDataGroup']
+__all__ = ['LCData', 'LCDataGroup']
 
 
-class LightCurveData(_Data):
+class LCData(_Data):
     """Data and metadata for a single light curve.
 
     Parameters
@@ -179,13 +179,13 @@ class LightCurveData(_Data):
         return self.pids is not None
 
     def __repr__(self) -> str:
-        return (f"LightCurveData(npt={self.size}, passband={self.passband}, "
+        return (f"LCData(npt={self.size}, passband={self.passband}, "
                 f"pids={self.pids}, instrument={self.instrument!r}, sector={self.sector}, "
                 f"segment={self.segment}, ncov={self.ncov})")
 
 
-class LightCurveDataGroup(_DataGroup):
-    """A container of `LightCurveData` objects.
+class LCDataGroup(_DataGroup):
+    """A container of `LCData` objects.
 
     The light curves keep their insertion order, which defines both the light curve index
     (`lcid`) an LPF will use and the order of `passband_names`. Nothing is sorted
@@ -194,11 +194,11 @@ class LightCurveDataGroup(_DataGroup):
     Parameters
     ----------
     data
-        A `LightCurveData`, a sequence of them, or another `LightCurveDataGroup`. Nested
+        A `LCData`, a sequence of them, or another `LCDataGroup`. Nested
         groups are flattened.
     """
 
-    _item_type = LightCurveData
+    _item_type = LCData
 
     # Bulk data
     # ---------
@@ -315,8 +315,8 @@ class LightCurveDataGroup(_DataGroup):
         return super().piis
 
     def __repr__(self) -> str:
-        return (f"LightCurveDataGroup with {self.size} light curves, {int(self.npts.sum())} points, "
+        return (f"LCDataGroup with {self.size} light curves, {int(self.npts.sum())} points, "
                 f"passbands {self.passband_names}")
 
 
-LightCurveData._group_type = LightCurveDataGroup
+LCData._group_type = LCDataGroup
