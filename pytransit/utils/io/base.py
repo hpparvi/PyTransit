@@ -362,6 +362,39 @@ class _DataGroup:
             f = lambda d: getattr(d, key)
         return type(self)(sorted(self.data, key=f))
 
+    # Indexing
+    # --------
+    def _resolve_indices(self, index) -> list:
+        """Return `index` as a list of non-negative positions into `self.data`.
+
+        Accepts the index forms `__getitem__` accepts: an integer, a slice, a sequence, set, or
+        array of integers, or a boolean mask with one entry per dataset. Negative integers count
+        from the end and are normalised, and duplicate indices are kept.
+        """
+        if isinstance(index, slice):
+            return list(range(*index.indices(self.size)))
+        if hasattr(index, '__iter__') and not isinstance(index, (ndarray, str)):
+            index = list(index)          # Tuples, lists, sets, ranges, and generators.
+
+        ix = asarray(index)
+        if ix.dtype == bool:
+            if ix.ndim == 0:
+                raise ValueError("A dataset index must be an integer, got a boolean.")
+            if ix.size != self.size:
+                raise IndexError(f"Boolean index has {ix.size} entries but the group has "
+                                 f"{self.size} datasets.")
+            return [i for i, m in enumerate(ix.ravel()) if m]
+
+        ids = ([_as_int(index, 'index')] if ix.ndim == 0 else
+               [_as_int(i, 'index') for i in ix.ravel().tolist()])
+        out = []
+        for i in ids:
+            j = i + self.size if i < 0 else i
+            if not 0 <= j < self.size:
+                raise IndexError(f"Index {i} is out of range for a group with {self.size} datasets.")
+            out.append(j)
+        return out
+
     # Container protocol
     # ------------------
     def __len__(self) -> int:

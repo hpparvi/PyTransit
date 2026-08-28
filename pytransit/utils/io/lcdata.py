@@ -37,12 +37,44 @@ from collections.abc import Sequence
 from typing import Optional, Union
 
 from matplotlib.pyplot import subplots, setp
-from numpy import ndarray, full, array, diff, nanstd, sqrt, nan, isfinite, ceil, floor, s_
+from numpy import (ndarray, full, array, diff, nanstd, sqrt, nan, isfinite, ceil, floor, s_,
+                   median, zeros, atleast_1d)
+from scipy.signal import medfilt
 
 from .base import (_Data, _DataGroup, _as_float, _as_int, _validate_time, _validate_series,
                    _validate_error, _validate_covariates, _validate_names, _validate_pids)
 
 __all__ = ['LCData', 'LCDataGroup']
+
+
+# Running median and outliers
+# ---------------------------
+def _as_odd_width(width) -> int:
+    """Validate a running median width: a positive odd integer, as `medfilt` requires."""
+    w = _as_int(width, 'width')
+    if w < 1 or w % 2 == 0:
+        raise ValueError(f"'width' must be a positive odd integer, got {width!r}.")
+    return w
+
+
+def _running_median(flux: ndarray, width: int) -> ndarray:
+    """Running median of `flux` with the zero-padded edges repaired.
+
+    `scipy.signal.medfilt` pads with zeros, which biases the median of the first and the last
+    `width // 2` points towards the low end of their window. Those points are given the median of
+    the first and the last full window instead.
+    """
+    m = medfilt(flux, width)
+    h = width // 2
+    if h and flux.size > width:
+        m[:h] = median(flux[:width])
+        m[-h:] = median(flux[-width:])
+    return m
+
+
+def _mad_sigma(residuals: ndarray) -> float:
+    """Robust scatter estimate, 1.4826 times the median absolute deviation from the median."""
+    return float(1.4826 * median(abs(residuals - median(residuals))))
 
 
 class LCData(_Data):
@@ -89,7 +121,16 @@ class LCData(_Data):
     -----
     The arrays are stored without copying when they already are float64 ndarrays, so the
     caller and the object may share memory.
+
+    A light curve also carries a boolean `marked` flag, `False` at construction, that
+    `LCDataGroup.mark_for_removal` sets and `LCDataGroup.remove_marked` acts on. It records the
+    state of an interactive session rather than a property of the data, so it is not a constructor
+    argument and does not affect anything a model sees.
     """
+
+    # A class-level default so that a light curve pickled before this attribute existed unpickles
+    # as unmarked instead of raising an AttributeError.
+    marked: bool = False
 
     def __init__(self,
                  time: Union[Sequence, ndarray],
@@ -114,6 +155,7 @@ class LCData(_Data):
         self.passband = _validate_names(passband, 'passband')
         self.pids = _validate_pids(pids)
 
+        self._noise_given = noise is not None
         if noise is None:
             self.noise = self._estimate_noise()
         else:
@@ -134,6 +176,8 @@ class LCData(_Data):
             raise ValueError(f"'nsamples' must be at least one, got {nsamples!r}.")
         if self.nsamples > 1 and self.exptime == 0.0:
             warnings.warn("Supersampling has no effect with a zero exposure time.")
+
+        self.marked = False
 
     def _estimate_noise(self) -> float:
         """Point-to-point white noise estimate, matching `BaseLPF`'s own."""
@@ -179,10 +223,75 @@ class LCData(_Data):
         """True if the transiting planets were specified."""
         return self.pids is not None
 
+    # Outliers
+    # --------
+    def running_median(self, width: int = 15) -> ndarray:
+        """Running median of the flux, `width` points wide.
+
+        Parameters
+        ----------
+        width
+            Width of the median filter in points. Must be a positive odd integer, and is clipped to
+            the length of the light curve when it is longer.
+        """
+        w = _as_odd_width(width)
+        if w > self.size:
+            w = max(1, self.size - 1 + self.size % 2)
+        return _running_median(self.flux, w)
+
+    def outlier_mask(self, nsigma: float = 3.0, width: int = 15) -> ndarray:
+        """Boolean mask flagging the flux points further than `nsigma` from the running median.
+
+        The scatter is a robust MAD estimate of the residuals from the running median, so that a
+        few strong outliers cannot inflate the very threshold meant to catch them. A light curve
+        with no scatter at all flags nothing.
+
+        Parameters
+        ----------
+        nsigma
+            Clipping threshold in units of the robust residual scatter.
+        width
+            Width of the median filter in points. Must be a positive odd integer.
+        """
+        if self.size == 0:
+            return zeros(0, bool)
+        r = self.flux - self.running_median(width)
+        s = _mad_sigma(r)
+        if not isfinite(s) or s == 0.0:
+            return zeros(self.size, bool)
+        return abs(r) > nsigma * s
+
+    def remove_outliers(self, nsigma: float = 3.0, width: int = 15) -> int:
+        """Remove the flux points further than `nsigma` from the running median, in place.
+
+        The times, fluxes, covariates, and uncertainties are all filtered together, and the noise
+        estimate is refreshed unless it was given explicitly. Returns the number of points removed.
+
+        Parameters
+        ----------
+        nsigma
+            Clipping threshold in units of the robust residual scatter.
+        width
+            Width of the median filter in points. Must be a positive odd integer.
+        """
+        m = ~self.outlier_mask(nsigma, width)
+        if m.all():
+            return 0
+
+        self.time = self.time[m]
+        self.flux = self.flux[m]
+        self.covariates = self.covariates[m]
+        if self._error is not None:
+            self._error = self._error[m]
+        if not self._noise_given:
+            self.noise = self._estimate_noise()
+        return int((~m).sum())
+
     def __repr__(self) -> str:
+        marked = ', marked' if self.marked else ''
         return (f"LCData(npt={self.size}, passband={self.passband}, "
                 f"pids={self.pids}, instrument={self.instrument!r}, sector={self.sector}, "
-                f"segment={self.segment}, ncov={self.ncov})")
+                f"segment={self.segment}, ncov={self.ncov}{marked})")
 
 
 class LCDataGroup(_DataGroup):
@@ -333,6 +442,94 @@ class LCDataGroup(_DataGroup):
             start += int(npt)
         return slices
 
+    # Marking and removal
+    # -------------------
+    @property
+    def marked(self) -> ndarray:
+        """Boolean array telling which light curves are marked for removal."""
+        return array([d.marked for d in self.data], bool)
+
+    @property
+    def n_marked(self) -> int:
+        """Number of light curves marked for removal."""
+        return int(sum(d.marked for d in self.data))
+
+    def mark_for_removal(self, indices) -> None:
+        """Mark the given light curves for removal, modifying the group in place.
+
+        Marking only sets a flag: the marked light curves stay in the group and keep appearing in
+        every bulk property until `remove_marked` is called, so nothing a model sees changes until
+        then. `plot` draws the marked light curves on a light gray background, so the workflow is
+        to plot the group, mark the bad light curves by the index shown in the upper left corner of
+        their panels, plot again to check, and then remove them.
+
+        Parameters
+        ----------
+        indices
+            Index of a light curve, a sequence, set, or array of indices, a boolean mask with one
+            entry per light curve, or a slice. Negative indices count from the end.
+
+        Notes
+        -----
+        Marking is additive, so several calls accumulate, and `unmark` clears the marks again. The
+        flag lives in the `LCData` objects themselves, which the groups share by reference, so
+        marking a light curve through a `select` result or a slice marks it in the group it came
+        from as well. The marked light curves can be selected with `select(marked=True)`.
+
+        Examples
+        --------
+        ::
+
+            lcs.plot()                       # Eyeball the light curves
+            lcs.mark_for_removal([2, 7, 9])  # Mark the bad ones by their panel index
+            lcs.plot()                       # The marked ones now have a gray background
+            lcs.remove_marked()
+        """
+        for i in self._resolve_indices(indices):
+            self.data[i].marked = True
+
+    def unmark(self, indices=None) -> None:
+        """Clear the removal marks of the given light curves, modifying the group in place.
+
+        Parameters
+        ----------
+        indices
+            The light curves to unmark, in any of the forms `mark_for_removal` accepts. Defaults to
+            `None` for all of them.
+        """
+        for i in range(self.size) if indices is None else self._resolve_indices(indices):
+            self.data[i].marked = False
+
+    def remove_marked(self) -> None:
+        """Remove the light curves marked for removal from the group, in place.
+
+        The group shrinks and every index derived from the order, such as `pbids`, `wnids`, `piis`,
+        and `lcslices`, is renumbered the next time it is asked for, which is why the removal should
+        happen before the group is handed to a `BaseLPF`. Removing every light curve leaves a legal
+        empty group.
+
+        Unlike marking, removal is not shared: the light curves are dropped from this group only,
+        and any other group holding them keeps them, still marked, until its own `remove_marked`.
+        """
+        self.data = [d for d in self.data if not d.marked]
+
+    def remove_outliers(self, nsigma: float = 3.0, width: int = 15) -> int:
+        """Remove the outlying flux points from every light curve, in place.
+
+        Each light curve is clipped separately against its own running median, see
+        `LCData.remove_outliers`. Returns the total number of points removed. The light curves
+        themselves are always kept, even if one loses every point; use `remove_marked` to drop
+        whole light curves.
+
+        Parameters
+        ----------
+        nsigma
+            Clipping threshold in units of the robust residual scatter.
+        width
+            Width of the median filter in points. Must be a positive odd integer.
+        """
+        return sum(d.remove_outliers(nsigma, width) for d in self.data)
+
     # Plotting
     # --------
     def plot(self, ncols: int = 5, figsize: Optional[tuple] = None,
@@ -340,13 +537,18 @@ class LCDataGroup(_DataGroup):
              instruments: Optional[Union[str, Sequence[str]]] = None,
              sectors: Optional[Union[int, Sequence[int]]] = None,
              pids: Optional[Union[int, Sequence[int]]] = None,
-             annotate: bool = True, errorbars: bool = False, xoffset: Optional[float] = None,
+             annotate: bool = True, show_index: bool = True, show_xticks: bool = True,
+             show_median: bool = False, median_width: int = 15,
+             nsigma: Union[float, Sequence[float]] = 3.0,
+             errorbars: bool = False, xoffset: Optional[float] = None,
              ylim: Optional[tuple] = None, alpha: float = 0.5, **kwargs):
         """Plot the light curves in a grid of subplots.
 
         The panels share their y limits so the transit depths can be compared by eye, but not
         their x limits, since the light curves generally cover different times. Each panel's
-        time axis is offset by its own zero point by default, keeping the tick labels short.
+        time axis is offset by its own zero point by default, keeping the tick labels short. The
+        light curves marked for removal are drawn on a light gray background, and `show_median`
+        overlays the running median with its n-sigma limits for spotting outlying points.
 
         Parameters
         ----------
@@ -360,6 +562,22 @@ class LCDataGroup(_DataGroup):
             selects a light curve with unspecified transiting planets.
         annotate
             Show the instrument name and the passband in the upper right corner of each panel.
+        show_index
+            Show each light curve's index in the group in the upper left corner of its panel. This
+            is the index `mark_for_removal` takes, and it is the position in the group `plot` was
+            called on even when the panels are filtered.
+        show_xticks
+            Draw the x axis ticks and labels. Switching them off packs more light curves onto the
+            screen when eyeballing the data.
+        show_median
+            Overlay the running median of the flux and its n-sigma limits, for spotting the points
+            `remove_outliers` would clip.
+        median_width
+            Width of the median filter in points. Must be a positive odd integer.
+        nsigma
+            Limits to draw around the running median, as a multiple of the robust MAD scatter of
+            the residuals from it. Either a single number or a sequence of them, in which case one
+            band is drawn per value.
         errorbars
             Plot the flux uncertainties as error bars. The uncertainties fall back to the
             estimated point-to-point scatter for the light curves without explicit errors, see
@@ -400,6 +618,10 @@ class LCDataGroup(_DataGroup):
             raise ValueError(f"No light curves to plot matching {given}." if given else
                              "No light curves to plot: the group is empty.")
 
+        # The position of each light curve in this group, kept through the filter so that the index
+        # shown in a panel is the one 'mark_for_removal' takes.
+        lcids = {id(d): i for i, d in enumerate(self.data)}
+
         ncols = min(ncols, nlc)
         nrows = int(ceil(nlc / ncols))
         fig, axs = subplots(nrows, ncols, figsize=figsize or (13, 2.5 * nrows),
@@ -410,11 +632,18 @@ class LCDataGroup(_DataGroup):
 
         for i, lc in enumerate(lcs):
             ax = axs.flat[i]
+            if lc.marked:
+                ax.set_facecolor('0.9')
+
             t0 = (floor(lc.time.min()) if lc.size else 0.0) if xoffset is None else xoffset
             if errorbars:
                 ax.errorbar(lc.time - t0, lc.flux, lc.error, alpha=alpha, **kwargs)
             else:
                 ax.plot(lc.time - t0, lc.flux, alpha=alpha, **kwargs)
+
+            if show_index:
+                ax.text(0.02, 0.95, str(lcids[id(lc)]), ha='left', va='top', size='small',
+                        transform=ax.transAxes)
 
             if annotate:
                 label = '+'.join(lc.passband)
@@ -422,11 +651,24 @@ class LCDataGroup(_DataGroup):
                     label = f"{lc.instrument}\n{label}"
                 ax.text(0.98, 0.95, label, ha='right', va='top', size='small', transform=ax.transAxes)
 
+            # Drawn after the flux so that the data stays the panel's first line, and behind it so
+            # that the points remain visible.
+            if show_median and lc.size:
+                tp = lc.time - t0
+                m = lc.running_median(median_width)
+                sigma = _mad_sigma(lc.flux - m)
+                for n in atleast_1d(nsigma):
+                    ax.fill_between(tp, m - n * sigma, m + n * sigma, fc='k', alpha=0.15, zorder=-100)
+                ax.plot(tp, m, 'w', lw=3, zorder=-50)
+                ax.plot(tp, m, 'k', lw=1, zorder=-50)
+
             if xoffset is None:
                 setp(ax, xlabel=f"Time - {t0:.0f} [BJD]")
 
         if xoffset is not None:
             setp(axs[-1, :], xlabel="Time [BJD]" if xoffset == 0.0 else f"Time - {xoffset:.0f} [BJD]")
+        if not show_xticks:
+            setp(axs, xticks=[], xlabel='')
         setp(axs[:, 0], ylabel='Normalised flux')
         if ylim is not None:
             setp(axs, ylim=ylim)
@@ -436,8 +678,9 @@ class LCDataGroup(_DataGroup):
         return fig
 
     def __repr__(self) -> str:
+        marked = f", {self.n_marked} marked for removal" if self.n_marked else ""
         return (f"LCDataGroup with {self.size} light curves, {int(self.npts.sum())} points, "
-                f"passbands {self.passband_names}")
+                f"passbands {self.passband_names}{marked}")
 
 
 LCData._group_type = LCDataGroup

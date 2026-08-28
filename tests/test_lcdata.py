@@ -14,6 +14,8 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import pickle
+
 import matplotlib
 import pytest
 
@@ -21,7 +23,7 @@ matplotlib.use('Agg')  # A headless backend, set before pytransit imports pyplot
 
 from matplotlib.pyplot import close
 from numpy import (linspace, ones, zeros, full, array, arange, diff, nanstd, sqrt, nan, isnan,
-                   isfinite, unique, float64, floor, concatenate)
+                   isfinite, unique, float64, floor, concatenate, median)
 from numpy.random import default_rng
 from numpy.testing import assert_allclose, assert_array_equal
 
@@ -578,6 +580,282 @@ class TestLPFIntegration:
         assert any('TESS' in n for n in names)
 
 
+def make_spiked_lc(npt=NPT, spikes=(42,), amplitude=0.02, seed=0, **kwargs):
+    """A clean light curve with a large flux spike at each of the given indices."""
+    rng = default_rng(seed)
+    f = 1.0 + rng.normal(0.0, 1e-3, npt)
+    for i in spikes:
+        f[i] += amplitude
+    return LCData(linspace(0.9, 1.1, npt), f, covariates=arange(float(npt)).reshape(npt, 1), **kwargs)
+
+
+class TestRunningMedian:
+    def test_running_median_has_the_right_length_and_tracks_the_flux(self):
+        lc = make_lc()
+        m = lc.running_median(15)
+        assert m.size == lc.size
+        assert_allclose(m, 1.0, atol=1e-3)
+
+    def test_the_edges_are_not_biased_low(self):
+        """medfilt zero-pads, which drags the edge medians below the data."""
+        from scipy.signal import medfilt
+        rng = default_rng(0)
+        f = 1.0 + rng.normal(0.0, 1e-3, NPT)
+        lc = LCData(linspace(0.9, 1.1, NPT), f)
+        m, raw = lc.running_median(15), medfilt(f, 15)
+        assert_allclose(m[:7], median(f[:15]))
+        assert_allclose(m[-7:], median(f[-15:]))
+        assert raw[0] < m[0] and raw[-1] < m[-1]             # The unrepaired filter is biased low.
+        assert abs(m[0] - 1.0) < abs(raw[0] - 1.0)
+
+    def test_a_width_wider_than_the_light_curve_stays_finite(self):
+        lc = make_lc(npt=9)
+        assert isfinite(lc.running_median(15)).all()
+
+    def test_an_even_width_raises(self):
+        with pytest.raises(ValueError, match="'width' must be a positive odd integer"):
+            make_lc().running_median(10)
+
+    def test_a_non_positive_width_raises(self):
+        with pytest.raises(ValueError, match="'width' must be a positive odd integer"):
+            make_lc().running_median(-1)
+
+    def test_a_non_integral_width_raises(self):
+        with pytest.raises(ValueError, match="'width' must be an integer"):
+            make_lc().running_median(15.5)
+
+
+class TestOutlierRemoval:
+    def test_outlier_mask_flags_the_spike(self):
+        lc = make_spiked_lc(spikes=(42,))
+        assert_array_equal(lc.outlier_mask(5.0, 15).nonzero()[0], array([42]))
+
+    def test_remove_outliers_drops_the_spike_and_returns_the_count(self):
+        lc = make_spiked_lc(spikes=(42,))
+        assert lc.remove_outliers(5.0, 15) == 1
+        assert lc.npt == NPT - 1
+
+    def test_every_per_point_array_is_filtered_consistently(self):
+        lc = make_spiked_lc(spikes=(42,), error=full(NPT, 1e-3))
+        lc.remove_outliers(5.0, 15)
+        assert lc.time.size == lc.flux.size == lc.covariates.shape[0] == lc.error.size == NPT - 1
+        # The covariates carry their point index, so the survivors must skip exactly 42.
+        assert_array_equal(lc.covariates[40:44, 0], array([40.0, 41.0, 43.0, 44.0]))
+
+    def test_several_spikes_are_caught_in_one_pass(self):
+        """The robust scatter is what makes this work: a plain std would be inflated by them."""
+        lc = make_spiked_lc(spikes=(10, 42, 77), amplitude=0.05)
+        assert lc.remove_outliers(5.0, 15) == 3
+
+    def test_a_clean_light_curve_keeps_its_points(self):
+        lc = make_lc()
+        assert lc.remove_outliers(5.0, 15) == 0
+        assert lc.npt == NPT
+
+    def test_an_estimated_noise_is_refreshed(self):
+        lc = make_spiked_lc(spikes=(42,))
+        assert lc.remove_outliers(5.0, 15) == 1
+        assert_allclose(lc.noise, nanstd(diff(lc.flux)) / sqrt(2))
+
+    def test_an_explicit_noise_is_left_alone(self):
+        lc = make_spiked_lc(spikes=(42,), noise=5e-3)
+        lc.remove_outliers(5.0, 15)
+        assert lc.noise == 5e-3
+
+    def test_a_constant_light_curve_removes_nothing(self):
+        """A zero scatter must not divide by zero."""
+        lc = LCData(linspace(0.9, 1.1, NPT), ones(NPT))
+        assert not lc.outlier_mask(3.0, 15).any()
+        assert lc.remove_outliers(3.0, 15) == 0
+
+    def test_an_empty_light_curve_is_handled(self):
+        lc = LCData([], [])
+        assert lc.outlier_mask(3.0, 15).size == 0
+        assert lc.remove_outliers(3.0, 15) == 0
+
+    def test_group_removal_returns_the_total_and_keeps_the_light_curves(self):
+        g = LCDataGroup([make_spiked_lc(spikes=(42,), seed=0),
+                         make_spiked_lc(spikes=(10, 60), seed=1)])
+        assert g.remove_outliers(5.0, 15) == 3
+        assert g.size == 2
+        assert_array_equal(g.npts, array([NPT - 1, NPT - 2]))
+
+    def test_group_slices_follow_a_removal(self):
+        g = LCDataGroup([make_spiked_lc(spikes=(42,), seed=0),
+                         make_spiked_lc(spikes=(10, 60), seed=1)])
+        g.remove_outliers(5.0, 15)
+        assert g.lcslices == [slice(0, NPT - 1), slice(NPT - 1, 2 * NPT - 3)]
+
+
+class TestMarking:
+    def test_light_curves_are_unmarked_by_default(self):
+        g = make_group()
+        assert not g[0].marked
+        assert_array_equal(g.marked, zeros(4, bool))
+        assert g.n_marked == 0
+
+    def test_mark_for_removal_marks_the_given_indices(self):
+        g = make_group()
+        assert g.mark_for_removal([0, 2]) is None
+        assert_array_equal(g.marked, array([True, False, True, False]))
+        assert g.n_marked == 2
+
+    def test_mark_for_removal_accepts_a_single_index(self):
+        g = make_group()
+        g.mark_for_removal(1)
+        assert g.n_marked == 1 and g[1].marked
+
+    def test_mark_for_removal_accepts_a_set(self):
+        g = make_group()
+        g.mark_for_removal({1, 3})
+        assert_array_equal(g.marked, array([False, True, False, True]))
+
+    def test_mark_for_removal_accepts_a_negative_index(self):
+        g = make_group()
+        g.mark_for_removal(-1)
+        assert g[3].marked and g.n_marked == 1
+
+    def test_mark_for_removal_accepts_a_boolean_mask(self):
+        g = make_group()
+        g.mark_for_removal(g.segments == 1)
+        assert_array_equal(g.marked, array([False, False, True, True]))
+
+    def test_mark_for_removal_accepts_a_slice(self):
+        g = make_group()
+        g.mark_for_removal(slice(1, 3))
+        assert g.n_marked == 2 and g[1].marked and g[2].marked
+
+    def test_mark_for_removal_is_additive_and_idempotent(self):
+        g = make_group()
+        g.mark_for_removal(0)
+        g.mark_for_removal([2, 2])
+        assert_array_equal(g.marked, array([True, False, True, False]))
+
+    def test_mark_for_removal_out_of_range_raises(self):
+        with pytest.raises(IndexError, match='out of range'):
+            make_group().mark_for_removal(4)
+        with pytest.raises(IndexError, match='out of range'):
+            make_group().mark_for_removal(-5)
+
+    def test_mark_for_removal_rejects_a_boolean_scalar(self):
+        with pytest.raises(ValueError, match='got a boolean'):
+            make_group().mark_for_removal(True)
+
+    def test_mark_for_removal_rejects_a_non_integral_index(self):
+        with pytest.raises(ValueError, match='must be an integer'):
+            make_group().mark_for_removal(1.5)
+
+    def test_mark_for_removal_wrong_length_mask_raises(self):
+        with pytest.raises(IndexError, match='Boolean index has 2 entries'):
+            make_group().mark_for_removal(array([True, False]))
+
+    def test_unmark_clears_the_given_indices(self):
+        g = make_group()
+        g.mark_for_removal([0, 2])
+        g.unmark(0)
+        assert_array_equal(g.marked, array([False, False, True, False]))
+
+    def test_unmark_without_arguments_clears_everything(self):
+        g = make_group()
+        g.mark_for_removal([0, 2])
+        g.unmark()
+        assert g.n_marked == 0
+
+    def test_marks_are_shared_with_a_selection(self):
+        g = make_group()
+        g.select(instrument='MuSCAT2').mark_for_removal(0)
+        assert g[1].marked and g.n_marked == 1
+
+    def test_marks_are_shared_with_a_slice(self):
+        g = make_group()
+        g[1:].mark_for_removal(0)
+        assert g[1].marked and g.n_marked == 1
+
+    def test_marked_light_curves_can_be_selected(self):
+        g = make_group()
+        g.mark_for_removal([1, 3])
+        assert g.select(marked=True).size == 2
+
+    def test_marking_does_not_change_the_bulk_data(self):
+        g = make_group()
+        g.mark_for_removal(0)
+        assert g.size == 4 and len(g.times) == 4 and g.pbids.size == 4
+
+    def test_reprs_report_the_marks_only_when_set(self):
+        g = make_group()
+        assert 'marked' not in repr(g) and 'marked' not in repr(g[0])
+        g.mark_for_removal([0, 2])
+        assert '2 marked for removal' in repr(g) and 'marked' in repr(g[0])
+
+    def test_marks_survive_pickling(self):
+        g = make_group()
+        g.mark_for_removal(1)
+        assert_array_equal(pickle.loads(pickle.dumps(g)).marked, g.marked)
+
+    def test_a_light_curve_without_the_attribute_reads_as_unmarked(self):
+        """A light curve pickled before `marked` existed must not raise."""
+        lc = make_lc()
+        del lc.__dict__['marked']
+        assert lc.marked is False
+
+
+class TestRemoveMarked:
+    def test_remove_marked_removes_in_place(self):
+        g = make_group()
+        keep = [g[1], g[3]]
+        g.mark_for_removal([0, 2])
+        assert g.remove_marked() is None
+        assert g.size == 2 and g[0] is keep[0] and g[1] is keep[1]
+
+    def test_remove_marked_without_marks_is_a_no_op(self):
+        g = make_group()
+        g.remove_marked()
+        assert g.size == 4
+
+    def test_survivors_are_unmarked(self):
+        g = make_group()
+        g.mark_for_removal(0)
+        g.remove_marked()
+        assert g.n_marked == 0
+
+    def test_removed_light_curves_keep_their_mark(self):
+        g = make_group()
+        lc = g[0]
+        g.mark_for_removal(0)
+        g.remove_marked()
+        assert lc.marked
+
+    def test_removing_everything_leaves_a_legal_empty_group(self):
+        g = make_group()
+        g.mark_for_removal(slice(None))
+        g.remove_marked()
+        assert g.size == 0 and g.times == [] and g.passband_names == [] and g.lcslices == []
+
+    def test_derived_ids_are_renumbered(self):
+        g = make_group()
+        g.mark_for_removal(0)                        # The only TESS light curve.
+        g.remove_marked()
+        assert g.passband_names == ['g', 'r']
+        assert_array_equal(g.pbids, array([0, 0, 1]))
+        assert g.lcslices[-1] == slice(200, 300)
+
+    def test_removal_does_not_touch_another_group_holding_the_same_light_curves(self):
+        g = make_group()
+        sub = g.select(instrument='MuSCAT2')
+        g.mark_for_removal(1)
+        g.remove_marked()
+        assert g.size == 3 and sub.size == 3 and sub.n_marked == 1
+
+    def test_the_group_still_feeds_baselpf_after_a_removal(self):
+        lcs = make_group()
+        lcs.mark_for_removal(0)
+        lcs.remove_marked()
+        lpf = BaseLPF('cut', passbands=lcs.passband_names, times=lcs.times, fluxes=lcs.fluxes,
+                      pbids=lcs.pbids, covariates=lcs.covariates, wnids=lcs.wnids,
+                      tm=RoadRunnerModel('quadratic'))
+        assert lpf.nlc == 3 and lpf.timea.size == 300
+
+
 class TestPlotting:
     def test_returns_a_figure_with_one_axis_per_light_curve(self):
         fig = make_group().plot()
@@ -647,23 +925,23 @@ class TestPlotting:
             make_group().plot(ncols=0)
 
     def test_annotation_shows_the_instrument_and_the_passband(self):
-        fig = make_group().plot()
+        fig = make_group().plot(show_index=False)
         assert [t.get_text() for t in fig.axes[0].texts] == ['TESS\nTESS']
         assert [t.get_text() for t in fig.axes[1].texts] == ['MuSCAT2\ng']
         close(fig)
 
     def test_annotation_can_be_switched_off(self):
-        fig = make_group().plot(annotate=False)
+        fig = make_group().plot(annotate=False, show_index=False)
         assert all(len(ax.texts) == 0 for ax in fig.axes)
         close(fig)
 
     def test_annotation_omits_an_empty_instrument(self):
-        fig = LCDataGroup([make_lc(instrument='')]).plot()
+        fig = LCDataGroup([make_lc(instrument='')]).plot(show_index=False)
         assert [t.get_text() for t in fig.axes[0].texts] == ['TESS']
         close(fig)
 
     def test_annotation_joins_multiple_passbands(self):
-        fig = LCDataGroup([make_lc(passband=('g', 'r'), instrument='')]).plot()
+        fig = LCDataGroup([make_lc(passband=('g', 'r'), instrument='')]).plot(show_index=False)
         assert [t.get_text() for t in fig.axes[0].texts] == ['g+r']
         close(fig)
 
@@ -705,6 +983,65 @@ class TestPlotting:
     def test_kwargs_reach_the_plot_call(self):
         fig = make_group().plot(marker='o', color='k')
         assert fig.axes[0].lines[0].get_marker() == 'o'
+        close(fig)
+
+    def test_the_light_curve_index_is_shown(self):
+        fig = make_group().plot()
+        assert '0' in [t.get_text() for t in fig.axes[0].texts]
+        assert '3' in [t.get_text() for t in fig.axes[3].texts]
+        close(fig)
+
+    def test_the_shown_index_is_the_group_index_not_the_panel_index(self):
+        fig = make_group().plot(passbands='r')     # Only light curve 3 survives the filter.
+        assert [t.get_text() for t in fig.axes[0].texts if t.get_text().isdigit()] == ['3']
+        close(fig)
+
+    def test_the_index_survives_annotate_false(self):
+        fig = make_group().plot(annotate=False)
+        assert [t.get_text() for t in fig.axes[2].texts] == ['2']
+        close(fig)
+
+    def test_xticks_can_be_switched_off(self):
+        fig = make_group().plot(show_xticks=False)
+        assert all(len(ax.get_xticks()) == 0 and ax.get_xlabel() == '' for ax in fig.axes)
+        close(fig)
+
+    def test_xticks_can_be_switched_off_with_a_common_offset(self):
+        fig = make_group().plot(ncols=2, xoffset=0.0, show_xticks=False)
+        assert all(len(ax.get_xticks()) == 0 and ax.get_xlabel() == '' for ax in fig.axes)
+        close(fig)
+
+    def test_marked_light_curves_get_a_gray_background(self):
+        g = make_group()
+        g.mark_for_removal(1)
+        fig = g.plot()
+        assert_allclose(fig.axes[1].get_facecolor(), (0.9, 0.9, 0.9, 1.0))
+        assert fig.axes[0].get_facecolor() != fig.axes[1].get_facecolor()
+        close(fig)
+
+    def test_show_median_draws_a_band_per_sigma_level(self):
+        g = make_group()
+        fig = g.plot(show_median=True, nsigma=(1, 3, 5))
+        assert all(len(ax.collections) == 3 for ax in fig.axes)
+        close(fig)
+
+    def test_show_median_accepts_a_scalar_nsigma(self):
+        fig = make_group().plot(show_median=True)
+        assert all(len(ax.collections) == 1 for ax in fig.axes)
+        close(fig)
+
+    def test_nothing_is_drawn_without_show_median(self):
+        fig = make_group().plot()
+        assert all(len(ax.collections) == 0 and len(ax.lines) == 1 for ax in fig.axes)
+        close(fig)
+
+    def test_the_median_is_drawn_after_the_data_at_the_panel_offset(self):
+        g = make_group()
+        fig = g.plot(show_median=True)
+        for ax, lc in zip(fig.axes, g):
+            assert_allclose(ax.lines[0].get_xdata(), lc.time - floor(lc.time.min()))   # Data first.
+            assert_allclose(ax.lines[-1].get_ydata(), lc.running_median(15))
+            assert_allclose(ax.lines[-1].get_xdata(), lc.time - floor(lc.time.min()))
         close(fig)
 
     def test_axis_labels(self):

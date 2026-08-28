@@ -4,6 +4,16 @@
 
 ### Added
 
+- Added `LCData.running_median`, `LCData.outlier_mask`, `LCData.remove_outliers`, and
+  `LCDataGroup.remove_outliers` for weeding out outlying flux points. The points are clipped against a running median
+  computed with `scipy.signal.medfilt`, using a robust MAD estimate of the residual scatter so that the outliers cannot
+  inflate the threshold meant to catch them, and the removal methods return the number of points removed.
+- Added `LCData.marked` and `LCDataGroup.mark_for_removal`, `unmark`, `remove_marked`, `marked`, and `n_marked` for
+  weeding out bad light curves interactively: plot the group, mark the bad light curves by the index shown in their
+  panels, plot again to check, and remove them. Marking only sets a flag, and `remove_marked` modifies the group in
+  place.
+- Added `show_index` and `show_xticks` to `LCDataGroup.plot`. Switching the x axis ticks and labels off packs more
+  light curves onto the screen when eyeballing the data.
 - Added `LCDataGroup.lcslices`, a list of slices splitting an array of concatenated per-light-curve values back into
   a list of per-light-curve arrays, matching the slices `BaseLPF` stores under the same name.
 - Added `LCDataGroup.plot`, a utility method that plots the light curves in a grid of subplots sharing their y limits.
@@ -19,6 +29,11 @@
 
 ### Changed
 
+- `LCDataGroup.plot` takes `show_median`, `median_width`, and `nsigma` for overlaying the running median of the flux
+  with its n-sigma limits, for spotting the points `remove_outliers` would clip. `nsigma` accepts either a single
+  number or a sequence of them, in which case one band is drawn per value.
+- `LCDataGroup.plot` now shows each light curve's index in the group in the upper left corner of its panel and draws
+  the light curves marked for removal on a light gray background.
 - `LCDataGroup.select` and `RVDataGroup.select` now accept a sequence of values for any criterion, selecting the
   datasets matching any of them, so `lcs.select(passband=['g', 'r'])` works as expected. A sequence used to be compared
   as a single value, which silently selected nothing.
