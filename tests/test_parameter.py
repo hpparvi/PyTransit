@@ -162,3 +162,50 @@ def test_string_representations():
     for p in ps:
         assert isinstance(str(p), str)
     ps.check_pv(ps.mean_pv)
+
+
+class TestVectorizedPriorParity:
+    """log_prior/log_prior_gradient use cached vectorized descriptors; they must
+    match the per-parameter scipy loop exactly, and the cache must refresh when
+    a prior is replaced (via set_prior or by direct assignment)."""
+
+    def _reference(self, ps, pv):
+        pv = np.atleast_2d(pv)
+        lnp = np.zeros(pv.shape[0])
+        m = (pv > ps.bounds[:, 0]).all(1) & (pv < ps.bounds[:, 1]).all(1)
+        for i, p in enumerate(ps):
+            lnp = lnp + p.log_prior(pv[:, i])
+        return np.squeeze(np.where(m, lnp, -np.inf))
+
+    def _make(self):
+        ps = ParameterSet()
+        ps.add_block('a', [Parameter('x1', prior=normal_prior(1.0, 0.3)),
+                           Parameter('x2', prior=uniform_prior(-2.0, 3.0), bounds=(-2, 3)),
+                           Parameter('x3', prior=None, bounds=(0, 10)),
+                           Parameter('x4', prior=uniform_prior(0.0, 1.0), bounds=(0, 1))])
+        ps.freeze()
+        return ps
+
+    def test_log_prior_matches_scipy_loop(self):
+        ps = self._make()
+        rng = np.random.default_rng(1)
+        pv = rng.normal([1, 0.5, 5, 0.5], [0.5, 2.0, 3.0, 0.6], (500, 4))
+        new, ref = ps.log_prior(pv), self._reference(ps, pv)
+        fin = np.isfinite(ref)
+        assert np.array_equal(np.isfinite(new), fin)
+        np.testing.assert_allclose(new[fin], ref[fin], rtol=1e-12)
+
+    def test_prior_cache_refreshes(self):
+        ps = self._make()
+        x = np.array([1.0, 0.5, 5.0, 0.5])
+        ps.log_prior(x)                       # populate the cache
+        ps[0].prior = normal_prior(2.0, 0.1)  # direct assignment
+        assert np.isclose(float(ps.log_prior(x)), float(self._reference(ps, x)))
+        ps.set_prior('x2', 'N', 0.0, 1.0)
+        assert np.isclose(float(ps.log_prior(x)), float(self._reference(ps, x)))
+
+    def test_log_prior_gradient_normal_only(self):
+        ps = self._make()
+        x = np.array([1.1, 0.5, 5.0, 0.5])
+        g = ps.log_prior_gradient(x)
+        np.testing.assert_allclose(g, [-(1.1 - 1.0) / 0.3 ** 2, 0.0, 0.0, 0.0], atol=1e-12)

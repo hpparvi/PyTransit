@@ -24,7 +24,7 @@ using (mean, std) and (a, b) semantics.
 
 from typing import Sequence
 
-from numpy import inf, where, atleast_2d, zeros, squeeze, array, ndarray, isfinite, stack
+from numpy import inf, where, atleast_2d, zeros, squeeze, array, ndarray, isfinite, stack, log, sqrt, pi
 from numpy.random import uniform as _runiform
 from scipy.stats import norm, uniform
 
@@ -176,12 +176,64 @@ class ParameterSet(list):
         else:
             raise ValueError('Trying to update a frozen ParameterSet')
 
+    def _refresh_prior_cache(self):
+        """(Re)build the vectorized prior descriptors when the priors change.
+
+        Normal and uniform priors are unpacked into plain arrays so `log_prior`
+        and `log_prior_gradient` can run as a handful of numpy operations
+        instead of one scipy frozen-distribution call per parameter (which
+        dominates the cost of a single posterior evaluation). Staleness is
+        detected by object identity against a held reference list, so priors
+        replaced either through `set_prior` or by direct assignment to
+        `parameter.prior` are picked up on the next call.
+        """
+        priors = [p.prior for p in self]
+        cached = getattr(self, '_pc_priors', None)
+        if cached is not None and len(cached) == len(priors) and \
+                all(a is b for a, b in zip(cached, priors)):
+            return
+        norm_ids, norm_m, norm_s = [], [], []
+        uni_ids, uni_a, uni_b = [], [], []
+        other_ids = []
+        for i, p in enumerate(self):
+            kind = prior_kind(p.prior)
+            if kind == 'norm':
+                m, s = prior_moments(p.prior)
+                norm_ids.append(i)
+                norm_m.append(m)
+                norm_s.append(s)
+            elif kind == 'uniform':
+                a, b = prior_limits(p.prior)
+                uni_ids.append(i)
+                uni_a.append(a)
+                uni_b.append(b)
+            elif p.prior is not None:
+                other_ids.append(i)
+        self._pc_priors = priors
+        self._pc_nids = array(norm_ids, int)
+        self._pc_nm = array(norm_m)
+        self._pc_ns = array(norm_s)
+        self._pc_nconst = -log(self._pc_ns * sqrt(2.0 * pi)).sum() if norm_ids else 0.0
+        self._pc_uids = array(uni_ids, int)
+        self._pc_ua = array(uni_a)
+        self._pc_ub = array(uni_b)
+        self._pc_uconst = -log(self._pc_ub - self._pc_ua).sum() if uni_ids else 0.0
+        self._pc_oids = other_ids
+
     def log_prior(self, pv):
         pv = atleast_2d(pv)
-        lnp = zeros(pv.shape[0])
+        self._refresh_prior_cache()
         m = (pv > self.bounds[:, 0]).all(1) & (pv < self.bounds[:, 1]).all(1)
-        for i, p in enumerate(self):
-            lnp += p.log_prior(pv[:, i])
+        lnp = zeros(pv.shape[0])
+        if self._pc_nids.size:
+            x = (pv[:, self._pc_nids] - self._pc_nm) / self._pc_ns
+            lnp += self._pc_nconst - 0.5 * (x * x).sum(1)
+        if self._pc_uids.size:
+            x = pv[:, self._pc_uids]
+            inside = ((x >= self._pc_ua) & (x <= self._pc_ub)).all(1)
+            lnp = where(inside, lnp + self._pc_uconst, -inf)
+        for i in self._pc_oids:
+            lnp = lnp + self[i].log_prior(pv[:, i])
         return squeeze(where(m, lnp, -inf))
 
     def log_prior_gradient(self, pv) -> ndarray:
@@ -193,17 +245,15 @@ class ParameterSet(list):
         bounds and the prior supports.
         """
         pv = atleast_2d(pv)
+        self._refresh_prior_cache()
+        if self._pc_oids:
+            i = self._pc_oids[0]
+            raise NotImplementedError(f'Log prior gradient is not implemented for the '
+                                      f'"{prior_kind(self[i].prior)}" prior of parameter '
+                                      f'"{self[i].name}".')
         g = zeros(pv.shape)
-        for i, p in enumerate(self):
-            kind = prior_kind(p.prior)
-            if kind == 'norm':
-                m, s = prior_moments(p.prior)
-                g[:, i] = -(pv[:, i] - m) / s ** 2
-            elif kind == 'uniform' or kind is None:
-                pass
-            else:
-                raise NotImplementedError(f'Log prior gradient is not implemented for the "{kind}" '
-                                          f'prior of parameter "{p.name}".')
+        if self._pc_nids.size:
+            g[:, self._pc_nids] = -(pv[:, self._pc_nids] - self._pc_nm) / self._pc_ns ** 2
         return g[0] if g.shape[0] == 1 else g
 
     def freeze(self):
