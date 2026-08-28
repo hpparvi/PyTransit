@@ -36,7 +36,8 @@ import warnings
 from collections.abc import Sequence
 from typing import Optional, Union
 
-from numpy import ndarray, full, array, diff, nanstd, sqrt, nan, isfinite
+from matplotlib.pyplot import subplots, setp
+from numpy import ndarray, full, array, diff, nanstd, sqrt, nan, isfinite, ceil, floor, s_
 
 from .base import (_Data, _DataGroup, _as_float, _as_int, _validate_time, _validate_series,
                    _validate_error, _validate_covariates, _validate_names, _validate_pids)
@@ -313,6 +314,126 @@ class LCDataGroup(_DataGroup):
             lpf.ins, lpf.piis = lcs.ins, lcs.piis
         """
         return super().piis
+
+    @property
+    def lcslices(self) -> list:
+        """Slices splitting a concatenated array back into per-light-curve arrays.
+
+        The slices follow the order of the light curves in the group, so an array created by
+        concatenating any of the per-light-curve quantities can be split back into a list::
+
+            timea = concatenate(lcs.times)
+            times = [timea[sl] for sl in lcs.lcslices]
+
+        These are the slices `BaseLPF` stores as `lcslices` for the same data.
+        """
+        slices, start = [], 0
+        for npt in self.npts:
+            slices.append(s_[start:start + int(npt)])
+            start += int(npt)
+        return slices
+
+    # Plotting
+    # --------
+    def plot(self, ncols: int = 5, figsize: Optional[tuple] = None,
+             passbands: Optional[Union[str, Sequence[str]]] = None,
+             instruments: Optional[Union[str, Sequence[str]]] = None,
+             sectors: Optional[Union[int, Sequence[int]]] = None,
+             pids: Optional[Union[int, Sequence[int]]] = None,
+             annotate: bool = True, errorbars: bool = False, xoffset: Optional[float] = None,
+             ylim: Optional[tuple] = None, alpha: float = 0.5, **kwargs):
+        """Plot the light curves in a grid of subplots.
+
+        The panels share their y limits so the transit depths can be compared by eye, but not
+        their x limits, since the light curves generally cover different times. Each panel's
+        time axis is offset by its own zero point by default, keeping the tick labels short.
+
+        Parameters
+        ----------
+        ncols
+            Number of columns in the subplot grid, clipped to the number of light curves.
+        figsize
+            Figure size in inches. Defaults to a 13-inch-wide figure 2.5 inches per row tall.
+        passbands, instruments, sectors, pids
+            Plot only the light curves matching these criteria. Each takes a single value or a
+            sequence of accepted values, and `None` means no filtering. A `pids` criterion never
+            selects a light curve with unspecified transiting planets.
+        annotate
+            Show the instrument name and the passband in the upper right corner of each panel.
+        errorbars
+            Plot the flux uncertainties as error bars. The uncertainties fall back to the
+            estimated point-to-point scatter for the light curves without explicit errors, see
+            `LCData.error` and `has_errors`.
+        xoffset
+            Time subtracted from the plotted times. Defaults to `None` for a per-panel offset,
+            and `0.0` plots the times as they are.
+        ylim
+            Y limits shared by all the panels. Defaults to `None` for automatic limits.
+        alpha
+            Opacity of the plotted flux.
+        **kwargs
+            Passed to `matplotlib.axes.Axes.plot` or `matplotlib.axes.Axes.errorbar`.
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+
+        Raises
+        ------
+        ValueError
+            If the group is empty or nothing matches the given criteria.
+
+        Examples
+        --------
+        ::
+
+            lcs.plot(ncols=4, passbands=['g', 'r'], instruments='MuSCAT2')
+        """
+        if ncols < 1:
+            raise ValueError(f"'ncols' must be at least one, got {ncols!r}.")
+
+        lcs = self.select(passband=passbands, instrument=instruments, sector=sectors, pids=pids)
+        nlc = lcs.size
+        if nlc == 0:
+            given = {k: v for k, v in (('passbands', passbands), ('instruments', instruments),
+                                       ('sectors', sectors), ('pids', pids)) if v is not None}
+            raise ValueError(f"No light curves to plot matching {given}." if given else
+                             "No light curves to plot: the group is empty.")
+
+        ncols = min(ncols, nlc)
+        nrows = int(ceil(nlc / ncols))
+        fig, axs = subplots(nrows, ncols, figsize=figsize or (13, 2.5 * nrows),
+                            constrained_layout=True, sharey='all', squeeze=False)
+
+        kwargs.setdefault('marker', '.')
+        kwargs.setdefault('ls', '')
+
+        for i, lc in enumerate(lcs):
+            ax = axs.flat[i]
+            t0 = (floor(lc.time.min()) if lc.size else 0.0) if xoffset is None else xoffset
+            if errorbars:
+                ax.errorbar(lc.time - t0, lc.flux, lc.error, alpha=alpha, **kwargs)
+            else:
+                ax.plot(lc.time - t0, lc.flux, alpha=alpha, **kwargs)
+
+            if annotate:
+                label = '+'.join(lc.passband)
+                if lc.instrument:
+                    label = f"{lc.instrument}\n{label}"
+                ax.text(0.98, 0.95, label, ha='right', va='top', size='small', transform=ax.transAxes)
+
+            if xoffset is None:
+                setp(ax, xlabel=f"Time - {t0:.0f} [BJD]")
+
+        if xoffset is not None:
+            setp(axs[-1, :], xlabel="Time [BJD]" if xoffset == 0.0 else f"Time - {xoffset:.0f} [BJD]")
+        setp(axs[:, 0], ylabel='Normalised flux')
+        if ylim is not None:
+            setp(axs, ylim=ylim)
+
+        for ax in axs.flat[nlc:]:
+            ax.remove()
+        return fig
 
     def __repr__(self) -> str:
         return (f"LCDataGroup with {self.size} light curves, {int(self.npts.sum())} points, "

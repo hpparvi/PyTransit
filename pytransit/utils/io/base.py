@@ -156,6 +156,15 @@ def _validate_pids(pids, name: str = 'pids') -> Optional[tuple]:
     return pl
 
 
+# Selection
+# ---------
+def _as_value_set(v) -> tuple:
+    """Return `v` as a tuple of accepted values, treating a string or a scalar as one value."""
+    if isinstance(v, str) or not isinstance(v, (Sequence, ndarray, set, frozenset)):
+        return (v,)
+    return tuple(v)
+
+
 class _Data:
     """Addition algebra shared by the single-dataset containers.
 
@@ -308,8 +317,12 @@ class _DataGroup:
         """Return a new group with the datasets matching all the given criteria.
 
         Each keyword names an attribute of the contained objects. A tuple-valued attribute
-        such as `passband` or `pids` matches by membership, everything else by equality.
-        Criteria given as `None` are ignored.
+        such as `passband` or `pids` matches by membership, everything else by equality. A
+        criterion can be a single value or a sequence of accepted values, in which case a
+        dataset matches if it matches any of them, so `pids=[0, 2]` selects the datasets
+        with a transiting planet 0 or 2, and an empty sequence selects nothing. A dataset
+        with unspecified pids (`None`) is never selected by a `pids` criterion. Criteria
+        given as `None` are ignored.
         """
         def matches(d) -> bool:
             for k, v in criteria.items():
@@ -318,11 +331,11 @@ class _DataGroup:
                 if not hasattr(d, k):
                     raise ValueError(f"Unknown selection criterion {k!r} for "
                                      f"{self._item_type.__name__}.")
-                a = getattr(d, k)
+                a, vs = getattr(d, k), _as_value_set(v)
                 if isinstance(a, tuple):
-                    if v not in a:
+                    if not any(x in a for x in vs):
                         return False
-                elif a != v:
+                elif a not in vs:
                     return False
             return True
         return type(self)([d for d in self.data if matches(d)])

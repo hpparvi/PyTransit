@@ -14,9 +14,14 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import matplotlib
 import pytest
+
+matplotlib.use('Agg')  # A headless backend, set before pytransit imports pyplot.
+
+from matplotlib.pyplot import close
 from numpy import (linspace, ones, zeros, full, array, arange, diff, nanstd, sqrt, nan, isnan,
-                   isfinite, unique, float64)
+                   isfinite, unique, float64, floor, concatenate)
 from numpy.random import default_rng
 from numpy.testing import assert_allclose, assert_array_equal
 
@@ -26,13 +31,14 @@ from pytransit.utils.io import LCData, LCDataGroup
 NPT = 100
 
 
-def make_lc(npt=NPT, t0=0.0, ncov=2, passband='TESS', instrument='TESS', sector=1, segment=0, seed=0):
+def make_lc(npt=NPT, t0=0.0, ncov=2, passband='TESS', instrument='TESS', sector=1, segment=0, seed=0,
+            pids=None, error=None):
     rng = default_rng(seed)
     t = linspace(t0 + 0.9, t0 + 1.1, npt)
     f = 1.0 + rng.normal(0.0, 1e-3, npt)
     cv = rng.normal(0.0, 1.0, (npt, ncov)) if ncov else None
-    return LCData(t, f, covariates=cv, passband=passband, instrument=instrument,
-                          sector=sector, segment=segment)
+    return LCData(t, f, error=error, covariates=cv, passband=passband, instrument=instrument,
+                          sector=sector, segment=segment, pids=pids)
 
 
 def make_group():
@@ -393,6 +399,29 @@ class TestGroupProperties:
         assert_array_equal(g.piis, [0, 0, 1, 2])
 
 
+class TestLCSlices:
+    def test_slices_split_a_concatenated_array(self):
+        g = make_group()
+        timea = concatenate(g.times)
+        for sl, t in zip(g.lcslices, g.times):
+            assert_array_equal(timea[sl], t)
+
+    def test_slices_are_slice_objects_covering_the_array(self):
+        g = make_group()
+        assert all(isinstance(sl, slice) for sl in g.lcslices)
+        assert len(g.lcslices) == g.size
+        assert g.lcslices[0].start == 0
+        assert g.lcslices[-1].stop == int(g.npts.sum())
+
+    def test_slices_follow_uneven_light_curve_lengths(self):
+        g = LCDataGroup([make_lc(npt=10, seed=0), make_lc(npt=25, t0=1.0, seed=1),
+                         make_lc(npt=5, t0=2.0, seed=2)])
+        assert g.lcslices == [slice(0, 10), slice(10, 35), slice(35, 40)]
+
+    def test_empty_group_has_no_slices(self):
+        assert LCDataGroup().lcslices == []
+
+
 class TestMultiPassband:
     def test_composite_passband_is_stored(self):
         lc = make_lc(passband=['g', 'r', 'i', 'z'])
@@ -469,6 +498,23 @@ class TestContainerProtocol:
         assert g.select(passband='g').size == 2
         assert g.select(instrument='MuSCAT2', segment=1).size == 2
 
+    def test_select_with_a_sequence_of_values(self):
+        g = make_group()
+        assert g.select(passband=['g', 'r']).size == 3
+        assert g.select(instrument=['TESS', 'MuSCAT2']).size == 4
+        assert g.select(sector=array([1, 5])).size == 1
+        assert g.select(passband=('g', 'r'), instrument='MuSCAT2').size == 3
+
+    def test_select_with_an_empty_sequence_selects_nothing(self):
+        assert make_group().select(passband=[]).size == 0
+
+    def test_select_pids_with_a_sequence(self):
+        g = LCDataGroup([make_lc(pids=(0, 1), seed=0), make_lc(pids=2, t0=1.0, seed=1),
+                         make_lc(t0=2.0, seed=2)])
+        assert g.select(pids=[0]).size == 1
+        assert g.select(pids=[0, 2]).size == 2
+        assert g.select(pids=[3]).size == 0
+
     def test_sorted_by_time(self):
         g = make_group()
         assert g.sorted_by('time')[0] is g[0]
@@ -490,6 +536,12 @@ class TestEmptyGroup:
 
 
 class TestLPFIntegration:
+    def test_group_slices_match_the_lpf_slices(self):
+        lcs = (make_lc(npt=10, seed=0) + make_lc(npt=25, t0=1.0, seed=1) + make_lc(npt=5, t0=2.0, seed=2))
+        lpf = BaseLPF('test', passbands=lcs.passband_names, times=lcs.times, fluxes=lcs.fluxes,
+                      pbids=lcs.pbids, tm=RoadRunnerModel('quadratic'))
+        assert lcs.lcslices == lpf.lcslices
+
     def test_group_feeds_baselpf(self):
         lcs = (make_lc(passband='TESS', instrument='TESS', sector=1, seed=0)
                + make_lc(passband='g', instrument='MuSCAT2', t0=1.0, seed=1)
@@ -524,3 +576,139 @@ class TestLPFIntegration:
         names = [p.name for p in lpf.ps]
         assert any('MuSCAT2' in n for n in names)
         assert any('TESS' in n for n in names)
+
+
+class TestPlotting:
+    def test_returns_a_figure_with_one_axis_per_light_curve(self):
+        fig = make_group().plot()
+        assert len(fig.axes) == 4
+        close(fig)
+
+    def test_grid_geometry(self):
+        fig = make_group().plot(ncols=2)
+        assert fig.axes[0].get_subplotspec().get_gridspec().get_geometry() == (2, 2)
+        close(fig)
+
+    def test_ncols_is_clipped_to_the_light_curve_count(self):
+        fig = make_group().plot(ncols=10)
+        assert fig.axes[0].get_subplotspec().get_gridspec().get_geometry() == (1, 4)
+        close(fig)
+
+    def test_leftover_axes_are_removed(self):
+        fig = make_group()[:3].plot(ncols=2)
+        assert fig.axes[0].get_subplotspec().get_gridspec().get_geometry() == (2, 2)
+        assert len(fig.axes) == 3
+        close(fig)
+
+    def test_y_limits_are_shared(self):
+        fig = make_group().plot()
+        assert fig.axes[0].get_ylim() == fig.axes[-1].get_ylim()
+        close(fig)
+
+    def test_ylim_is_honoured(self):
+        fig = make_group().plot(ylim=(0.99, 1.01))
+        assert all(ax.get_ylim() == (0.99, 1.01) for ax in fig.axes)
+        close(fig)
+
+    def test_passband_filtering(self):
+        g = make_group()
+        fig = g.plot(passbands='g')
+        assert len(fig.axes) == 2
+        close(fig)
+        fig = g.plot(passbands=['g', 'r'])
+        assert len(fig.axes) == 3
+        close(fig)
+
+    def test_instrument_and_sector_filtering(self):
+        g = make_group()
+        fig = g.plot(instruments='MuSCAT2')
+        assert len(fig.axes) == 3
+        close(fig)
+        fig = g.plot(sectors=1)
+        assert len(fig.axes) == 1
+        close(fig)
+
+    def test_pid_filtering(self):
+        g = LCDataGroup([make_lc(pids=(0, 1), seed=0), make_lc(pids=2, t0=1.0, seed=1)])
+        fig = g.plot(pids=[0, 2])
+        assert len(fig.axes) == 2
+        close(fig)
+
+    def test_empty_selection_raises(self):
+        with pytest.raises(ValueError, match='No light curves to plot matching'):
+            make_group().plot(passbands='nonexistent')
+
+    def test_empty_group_raises(self):
+        with pytest.raises(ValueError, match='the group is empty'):
+            LCDataGroup().plot()
+
+    def test_invalid_ncols_raises(self):
+        with pytest.raises(ValueError, match="'ncols' must be at least one"):
+            make_group().plot(ncols=0)
+
+    def test_annotation_shows_the_instrument_and_the_passband(self):
+        fig = make_group().plot()
+        assert [t.get_text() for t in fig.axes[0].texts] == ['TESS\nTESS']
+        assert [t.get_text() for t in fig.axes[1].texts] == ['MuSCAT2\ng']
+        close(fig)
+
+    def test_annotation_can_be_switched_off(self):
+        fig = make_group().plot(annotate=False)
+        assert all(len(ax.texts) == 0 for ax in fig.axes)
+        close(fig)
+
+    def test_annotation_omits_an_empty_instrument(self):
+        fig = LCDataGroup([make_lc(instrument='')]).plot()
+        assert [t.get_text() for t in fig.axes[0].texts] == ['TESS']
+        close(fig)
+
+    def test_annotation_joins_multiple_passbands(self):
+        fig = LCDataGroup([make_lc(passband=('g', 'r'), instrument='')]).plot()
+        assert [t.get_text() for t in fig.axes[0].texts] == ['g+r']
+        close(fig)
+
+    def test_times_are_offset_per_panel_by_default(self):
+        g = make_group()
+        fig = g.plot()
+        for ax, lc in zip(fig.axes, g):
+            assert_allclose(ax.lines[0].get_xdata(), lc.time - floor(lc.time.min()))
+        assert fig.axes[0].get_xlabel() == 'Time - 0 [BJD]'
+        assert fig.axes[2].get_xlabel() == 'Time - 2 [BJD]'
+        close(fig)
+
+    def test_zero_offset_plots_the_times_as_they_are(self):
+        g = make_group()
+        fig = g.plot(xoffset=0.0)
+        assert_allclose(fig.axes[0].lines[0].get_xdata(), g[0].time)
+        assert fig.axes[0].get_xlabel() == 'Time [BJD]'
+        close(fig)
+
+    def test_common_offset_labels_the_bottom_row_only(self):
+        g = make_group()
+        fig = g.plot(ncols=2, xoffset=1.0)
+        assert_allclose(fig.axes[0].lines[0].get_xdata(), g[0].time - 1.0)
+        assert fig.axes[0].get_xlabel() == ''
+        assert fig.axes[2].get_xlabel() == 'Time - 1 [BJD]'
+        close(fig)
+
+    def test_errorbars(self):
+        fig = make_group().plot(errorbars=True)
+        assert len(fig.axes) == 4
+        assert fig.axes[0].containers
+        close(fig)
+
+    def test_errorbars_with_explicit_errors(self):
+        fig = LCDataGroup([make_lc(error=full(NPT, 1e-3))]).plot(errorbars=True)
+        assert fig.axes[0].containers
+        close(fig)
+
+    def test_kwargs_reach_the_plot_call(self):
+        fig = make_group().plot(marker='o', color='k')
+        assert fig.axes[0].lines[0].get_marker() == 'o'
+        close(fig)
+
+    def test_axis_labels(self):
+        fig = make_group().plot(ncols=2)
+        assert fig.axes[0].get_ylabel() == 'Normalised flux'
+        assert fig.axes[1].get_ylabel() == ''
+        close(fig)

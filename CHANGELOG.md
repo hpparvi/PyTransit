@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added `LCDataGroup.lcslices`, a list of slices splitting an array of concatenated per-light-curve values back into
+  a list of per-light-curve arrays, matching the slices `BaseLPF` stores under the same name.
+- Added `LCDataGroup.plot`, a utility method that plots the light curves in a grid of subplots sharing their y limits.
+  The number of columns and the figure size are given by `ncols` and `figsize`, the light curves can be filtered by
+  passband, instrument, sector, and transiting planet, and each panel can be annotated with its instrument name and
+  passband.
 - Added `ncores` and `start_method` arguments to `LogPosteriorFunction.optimize_global` and
   `LogPosteriorFunction.sample_mcmc`. Setting `ncores` creates a multiprocessing pool for the duration of the call and
   closes it afterwards, also if the run raises or is interrupted, while a pool given via `pool` is used as-is and left
@@ -13,6 +19,9 @@
 
 ### Changed
 
+- `LCDataGroup.select` and `RVDataGroup.select` now accept a sequence of values for any criterion, selecting the
+  datasets matching any of them, so `lcs.select(passband=['g', 'r'])` works as expected. A sequence used to be compared
+  as a single value, which silently selected nothing.
 - `optimize_global` and `sample_mcmc` now raise a `ValueError` if `pool` or `ncores` is combined with `vectorize=True`.
   Both `DiffEvol` and `emcee` bypass the pool when the log posterior function is vectorised, so the combination used to
   run everything in a single process without any indication that the pool was left unused.

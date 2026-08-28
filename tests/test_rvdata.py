@@ -317,6 +317,11 @@ class TestContainerProtocol:
         assert g.select(instrument='HARPS').size == 1
         assert g.select(instrument='nope').size == 0
 
+    def test_select_with_a_sequence_of_values(self):
+        g = make_group()
+        assert g.select(instrument=['HARPS', 'CARMENES']).size == 2
+        assert g.select(instrument=['nope', 'nada']).size == 0
+
     def test_sorted_by(self):
         g = make_group()
         assert g.sorted_by('time')[0] is g[0]
