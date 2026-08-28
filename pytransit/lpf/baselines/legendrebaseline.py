@@ -14,7 +14,7 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from numpy import atleast_2d, zeros, concatenate, ones, inf, full, squeeze, c_
+from numpy import atleast_2d, zeros, concatenate, ones, inf, full, squeeze, c_, ptp
 from numba import njit, prange
 
 from ...param import LParameter, NormalPrior as NP
@@ -52,7 +52,7 @@ class LegendreBaseline:
         """Baseline parameter initialisation.
         """
 
-        self._baseline_times = [(t - t.mean()) / t.ptp() for t in self.times]
+        self._baseline_times = [(t - t.mean()) / ptp(t) for t in self.times]
         self._baseline_timea = concatenate(self._baseline_times)
 
         if isinstance(self.nlegendre, int):

@@ -24,7 +24,7 @@ import numpy as np
 from matplotlib.pyplot import subplots, setp
 from numba import njit
 from numpy import inf, squeeze, atleast_2d, sqrt, zeros_like, \
-    ones, arange, argsort, arctan2, ndarray, median, percentile, ceil
+    ones, arange, argsort, arctan2, ndarray, median, percentile, ceil, ptp
 from numpy.random import permutation
 
 from .tesslpf import downsample_time
@@ -136,7 +136,7 @@ class TransitAnalysis(BaseLPF):
 
         if width is None:
             if self.nlc == 1:
-                width = 24 * self.timea.ptp()
+                width = 24 * ptp(self.timea)
             else:
                 width = 2.0
 

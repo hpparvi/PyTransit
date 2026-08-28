@@ -16,7 +16,7 @@
 
 
 from matplotlib.pyplot import subplots, setp
-from numpy import sqrt, array, inf, int, s_, percentile, median, mean, round, zeros, atleast_2d, ceil, poly1d, polyfit
+from numpy import sqrt, array, inf, s_, percentile, median, mean, round, zeros, atleast_2d, ceil, poly1d, polyfit
 from numpy.random.mtrand import permutation
 from uncertainties import ufloat, UFloat
 

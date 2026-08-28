@@ -15,8 +15,8 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from matplotlib.pyplot import subplots, setp
-from numpy import pi, sign, cos, sqrt, sin, array, arccos, inf, round, int, s_, percentile, concatenate, median, mean, \
-    arange
+from numpy import pi, sign, cos, sqrt, sin, array, arccos, inf, round, s_, percentile, concatenate, median, mean, \
+    arange, ptp
 
 import scipy.ndimage as ndi
 
@@ -74,7 +74,7 @@ class TDVLPF(TTVLPF):
         def create_tc_prior(t, f, p=5):
             m = f > percentile(f, p)
             m = ~ndi.binary_erosion(m, iterations=6, border_value=1)
-            return N(t[m].mean(), 0.25 * t[m].ptp())
+            return N(t[m].mean(), 0.25 * ptp(t[m]))
 
         self.tnumber = round((array([t.mean() for t in self.times]) - self.zero_epoch) / self.period).astype(int)
         for t, f, tn in zip(self.times, self.fluxes, self.tnumber):

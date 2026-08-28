@@ -58,6 +58,13 @@
 
 ### Fixed
 
+- Fixed the NumPy 2 incompatibilities in `pytransit.lpf`. The `ndarray.ptp()` method calls in `BaseLPF`,
+  `TransitAnalysis`, `LegendreBaseline`, `TDVLPF`, and `OCLTDVLPF` are replaced with `numpy.ptp`, and the removed
+  `numpy.int` alias is dropped from the `TDVLPF`, `OCLTDVLPF`, and `OCLTTVLPF` imports, which made those three modules
+  impossible to import.
+- Fixed `BaseLPF.plot_light_curves` for single-planet LPFs. It looked the zero epoch and the period up as `tc_1` and
+  `p_1`, which only the multiplanet LPFs define, and raised a `KeyError` for a plain `BaseLPF` whose parameters are
+  named `tc` and `p`. Both namings are now accepted.
 - Fixed `ParameterSet` unpickling. Pickle reconstructs `list` subclasses by calling `extend` before restoring the
   instance dictionary, so the overridden `extend` failed on the missing `frozen` attribute. This made every log
   posterior function unpicklable, and any run using a multiprocessing pool hung indefinitely because the worker died

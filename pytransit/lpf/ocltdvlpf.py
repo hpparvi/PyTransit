@@ -19,8 +19,8 @@ import pyopencl as cl
 import seaborn as sb
 
 from matplotlib.pyplot import subplots, setp
-from numpy import sqrt, array, inf, int, s_, percentile, median, mean, round, zeros, isfinite, where, atleast_2d, ceil, \
-    newaxis
+from numpy import sqrt, array, inf, s_, percentile, median, mean, round, zeros, isfinite, where, atleast_2d, ceil, \
+    newaxis, ptp
 
 from ..param.parameter import GParameter, LParameter
 from ..param.parameter import UniformPrior as UP, NormalPrior as NP
@@ -53,7 +53,7 @@ class OCLTDVLPF(OCLTTVLPF):
         def create_tc_prior(t, f, p=5):
             m = f > percentile(f, p)
             m = ~ndi.binary_erosion(m, iterations=6, border_value=1)
-            return NP(t[m].mean(), 0.25 * t[m].ptp())
+            return NP(t[m].mean(), 0.25 * ptp(t[m]))
 
         self.tnumber = round((array([t.mean() for t in self.times]) - self.zero_epoch) / self.period).astype(int)
         for t, f, tn in zip(self.times, self.fluxes, self.tnumber):

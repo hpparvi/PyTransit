@@ -26,7 +26,7 @@ from numba import njit, prange
 from numpy import (inf, sqrt, ones, zeros_like, concatenate, diff, log, ones_like, all,
                    clip, argsort, any, s_, zeros, arccos, nan, full, pi, sum, repeat, asarray, ndarray, log10,
                    array, atleast_2d, isscalar, atleast_1d, where, isfinite, arange, unique, squeeze, ceil, percentile,
-                   floor, diag, nanstd, seterr, median)
+                   floor, diag, nanstd, seterr, median, ptp)
 from numpy.random import uniform, normal, permutation, multivariate_normal
 from scipy.stats import norm
 
@@ -606,6 +606,20 @@ class BaseLPF(LogPosteriorFunction):
             dd.add_groups({'derived_parameters': ds})
             return dd
 
+    def _planet_pids(self, planet: int = 1):
+        """Parameter indices of a planet's zero epoch and period.
+
+        `BaseLPF` names its single planet's parameters `tc` and `p`, while the multiplanet LPFs
+        number theirs from one (`tc_1`, `p_1`, ...). Both are accepted, so that the plotting
+        methods work whichever parametrisation the LPF uses.
+        """
+        names = self.ps.names
+        if f'tc_{planet}' in names:
+            return self.ps.find_pid(f'tc_{planet}'), self.ps.find_pid(f'p_{planet}')
+        if planet == 1 and 'tc' in names:
+            return self.ps.find_pid('tc'), self.ps.find_pid('p')
+        raise KeyError(f'Could not find the zero epoch and the period of planet {planet}.')
+
     def plot_light_curves(self, method='de', ncol: int = 3, width: Optional[float] = None, planet: int = 1,
                           max_samples: int = 1000, figsize=None, data_alpha=0.5, ylim=None):
 
@@ -615,13 +629,13 @@ class BaseLPF(LogPosteriorFunction):
 
         if width is None:
             if self.nlc == 1:
-                width = 24 * self.timea.ptp()
+                width = 24 * ptp(self.timea)
             else:
                 width = 2.0
 
         ncol = min(ncol, self.nlc)
         nrow = int(ceil(self.nlc / ncol))
-        tid, pid = self.ps.find_pid(f"tc_{planet}"), self.ps.find_pid(f"p_{planet}")
+        tid, pid = self._planet_pids(planet)
         if method in ('mcmc', 'mc', 'posterior'):
             pvp = self.posterior_samples().posterior.to_array().values.copy().T.reshape([-1, len(self.ps)])
             t0, p = median(pvp[:, tid]), median(pvp[:, pid])
