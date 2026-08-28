@@ -19,9 +19,12 @@ import pandas as pd
 import xarray as xa
 import astropy.io.fits as pf
 
+from contextlib import contextmanager
+from multiprocessing import get_all_start_methods, get_context
 from pathlib import Path
 from time import strftime
 from typing import Union, Iterable
+from warnings import warn
 
 from astropy.table import Table
 from scipy.optimize import minimize
@@ -33,6 +36,57 @@ from tqdm.auto import tqdm
 
 from pytransit.utils.de import DiffEvol
 from pytransit.param import ParameterSet, UniformPrior as UP, NormalPrior as NP
+
+
+def _init_pool_worker():
+    """Initialise a worker process in a pool created by PyTransit.
+
+    Restricts Numba to a single thread per worker process. Without this, every worker
+    would spawn its own set of Numba threads, oversubscribing the machine badly (an
+    n-core pool would end up running n x n threads).
+    """
+    try:
+        from numba import set_num_threads
+        set_num_threads(1)
+    except (ImportError, ValueError):
+        pass
+
+
+def _check_parallelisation(pool, ncores, vectorize) -> None:
+    """Raise an error if a pool is requested together with a vectorised posterior.
+    """
+    if vectorize and (pool is not None or (ncores is not None and ncores > 1)):
+        raise ValueError("Parallelisation using a multiprocessing pool cannot be combined with a vectorised log "
+                         "posterior function because both DiffEvol and emcee bypass the pool when 'vectorize=True'. "
+                         "Either set 'vectorize=False' to parallelise the posterior evaluation over the population "
+                         "using the pool, or drop the 'pool' and 'ncores' arguments and rely on the vectorised "
+                         "posterior.")
+
+
+@contextmanager
+def _resolve_pool(pool=None, ncores: int = None, start_method: str = None):
+    """Yield the parallelisation pool to use, creating and closing one if necessary.
+
+    A user-provided pool takes precedence and is never closed here: its lifetime belongs
+    to whoever created it. A pool created from ``ncores`` is owned by this context
+    manager and is always terminated on exit, also if the run raises or is interrupted.
+    """
+    if pool is not None:
+        if ncores is not None:
+            warn("Both 'pool' and 'ncores' were given: using the user-provided pool and ignoring 'ncores'.")
+        yield pool
+    elif ncores is not None and ncores > 1:
+        if start_method is None:
+            methods = get_all_start_methods()
+            start_method = 'forkserver' if 'forkserver' in methods else 'spawn'
+        pool = get_context(start_method).Pool(ncores, initializer=_init_pool_worker)
+        try:
+            yield pool
+        finally:
+            pool.terminate()
+            pool.join()
+    else:
+        yield None
 
 
 class LogPosteriorFunction:
@@ -62,6 +116,27 @@ class LogPosteriorFunction:
 
         self._old_de_fitness = None
         self._old_de_population = None
+
+    def __getstate__(self):
+        """Return the picklable state of the log posterior function.
+
+        The DE optimiser and the MCMC sampler are excluded from the pickled state. Both
+        hold a reference to the parallelisation pool while running, and pool objects
+        cannot be pickled, which would make the whole log posterior function unpicklable
+        (and thus unusable with a multiprocessing pool) as soon as either exists. The
+        workers need only to evaluate the posterior, so neither is of any use to them.
+        """
+        state = self.__dict__.copy()
+        for key in ('de', 'sampler', '_old_de_population', '_old_de_fitness'):
+            state.pop(key, None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.de = None
+        self.sampler = None
+        self._old_de_population = None
+        self._old_de_fitness = None
 
     def print_parameters(self, columns: int = 2):
         columns = max(1, columns)
@@ -136,18 +211,56 @@ class LogPosteriorFunction:
 
     def optimize_global(self, niter=200, npop=50, population=None, pool=None, lnpost=None, vectorize=True,
                         label='Global optimisation', leave=False, plot_convergence: bool = True, use_tqdm: bool = True,
-                        plot_parameters: tuple = (0, 2, 3, 4), min_ptp: float = 1e-2):
+                        plot_parameters: tuple = (0, 2, 3, 4), min_ptp: float = 1e-2, ncores: int = None,
+                        start_method: str = None):
+        """Optimise the log posterior function globally using Differential Evolution.
 
+        Parameters
+        ----------
+        pool
+            A parallelisation pool providing a `map` method (`multiprocessing.Pool`,
+            `schwimmbad.MPIPool`, etc.). The pool is used only for the duration of this
+            call and is not closed: its lifetime belongs to the caller. Requires
+            `vectorize=False`.
+        ncores
+            Number of processes in a pool created for the duration of this call and
+            closed afterwards. Ignored if `pool` is given. Requires `vectorize=False`.
+        start_method
+            Multiprocessing start method used for a pool created from `ncores`. Defaults
+            to 'forkserver' if available and 'spawn' otherwise. Forking is avoided by
+            default because it is unsafe to fork a process that has already run
+            multithreaded Numba code or initialised an OpenCL context. Note that these
+            start methods import the calling script in the worker processes, so a script
+            using `ncores` must guard its main code with `if __name__ == '__main__':`.
+        vectorize
+            If True (default), the whole population is passed to the log posterior
+            function in a single call and the parallelisation is left to Numba. This is
+            usually the fastest option on a single machine, but it is incompatible with
+            `pool` and `ncores`.
+        """
         lnpost = lnpost or self.lnposterior
         if self.de is None:
+            _check_parallelisation(pool, ncores, vectorize)
             self.de = DiffEvol(lnpost, clip(self.ps.bounds, -1, 1), npop, maximize=True, vectorize=vectorize,
-                               pool=pool, min_ptp=min_ptp)
+                               min_ptp=min_ptp)
             if population is None:
                 self.de._population[:, :] = self.create_pv_population(npop)
             else:
                 self.de._population[:, :] = population
-        for _ in tqdm(self.de(niter), total=niter, desc=label, leave=leave, disable=(not use_tqdm)):
-            pass
+        else:
+            _check_parallelisation(pool, ncores, self.de.vectorize)
+
+        # The pool is attached to the optimiser only for the duration of the run. Storing
+        # it permanently would leave the optimiser holding a reference to a pool that may
+        # already have been closed by the caller, and would make the log posterior
+        # function unpicklable.
+        with _resolve_pool(pool, ncores, start_method) as run_pool:
+            self.de.pool = run_pool
+            try:
+                for _ in tqdm(self.de(niter), total=niter, desc=label, leave=leave, disable=(not use_tqdm)):
+                    pass
+            finally:
+                self.de.pool = None
 
         if plot_convergence:
             fig, axs = subplots(1, 1 + len(plot_parameters), figsize=(13, 2), constrained_layout=True)
@@ -174,8 +287,32 @@ class LogPosteriorFunction:
 
     def sample_mcmc(self, niter: int = 500, thin: int = 5, repeats: int = 1, npop: int = None, population=None,
                     label='MCMC sampling', reset=True, leave=True, save=False, use_tqdm: bool = True, pool=None,
-                    lnpost=None, vectorize: bool = True):
+                    lnpost=None, vectorize: bool = True, ncores: int = None, start_method: str = None):
+        """Sample the log posterior function using emcee.
 
+        Parameters
+        ----------
+        pool
+            A parallelisation pool providing a `map` method (`multiprocessing.Pool`,
+            `schwimmbad.MPIPool`, etc.). The pool is used only for the duration of this
+            call and is not closed: its lifetime belongs to the caller. Requires
+            `vectorize=False`.
+        ncores
+            Number of processes in a pool created for the duration of this call and
+            closed afterwards. Ignored if `pool` is given. Requires `vectorize=False`.
+        start_method
+            Multiprocessing start method used for a pool created from `ncores`. Defaults
+            to 'forkserver' if available and 'spawn' otherwise. Forking is avoided by
+            default because it is unsafe to fork a process that has already run
+            multithreaded Numba code or initialised an OpenCL context. Note that these
+            start methods import the calling script in the worker processes, so a script
+            using `ncores` must guard its main code with `if __name__ == '__main__':`.
+        vectorize
+            If True (default), the whole ensemble is passed to the log posterior function
+            in a single call and the parallelisation is left to Numba. This is usually the
+            fastest option on a single machine, but it is incompatible with `pool` and
+            `ncores`.
+        """
         if save and self.result_dir is None:
             raise ValueError('The MCMC sampler is set to save the results, but the result directory is not set.')
 
@@ -194,18 +331,31 @@ class LogPosteriorFunction:
                 pop0 = self.sampler.chain[:, -1, :].copy()
 
         if self.sampler is None:
-            self.sampler = EnsembleSampler(pop0.shape[0], pop0.shape[1], lnpost, vectorize=vectorize, pool=pool)
+            _check_parallelisation(pool, ncores, vectorize)
+            self.sampler = EnsembleSampler(pop0.shape[0], pop0.shape[1], lnpost, vectorize=vectorize)
+        else:
+            _check_parallelisation(pool, ncores, self.sampler.vectorize)
 
-        for i in tqdm(range(repeats), desc=label, disable=(not use_tqdm), leave=leave):
-            if (self.sampler is not None and reset) or i > 0:
-                self.sampler.reset()
-            for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin, skip_initial_state_check=False),
-                          total=niter, desc='Run {:d}/{:d}'.format(i + 1, repeats), leave=False,
-                          disable=(not use_tqdm)):
-                pass
-            if save:
-                self.save(self.result_dir)
-            pop0 = self.sampler.chain[:, -1, :].copy()
+        # The pool is attached to the sampler only for the duration of the run. Storing it
+        # permanently would leave the sampler holding a reference to a pool that may
+        # already have been closed by the caller, and would make the log posterior
+        # function unpicklable.
+        with _resolve_pool(pool, ncores, start_method) as run_pool:
+            self.sampler.pool = run_pool
+            try:
+                for i in tqdm(range(repeats), desc=label, disable=(not use_tqdm), leave=leave):
+                    if (self.sampler is not None and reset) or i > 0:
+                        self.sampler.reset()
+                    for _ in tqdm(self.sampler.sample(pop0, iterations=niter, thin=thin,
+                                                      skip_initial_state_check=False),
+                                  total=niter, desc='Run {:d}/{:d}'.format(i + 1, repeats), leave=False,
+                                  disable=(not use_tqdm)):
+                        pass
+                    if save:
+                        self.save(self.result_dir)
+                    pop0 = self.sampler.chain[:, -1, :].copy()
+            finally:
+                self.sampler.pool = None
 
     def posterior_samples(self, burn: int = 0, thin: int = 1):
         fc = self.sampler.chain[:, burn::thin, :].reshape([-1, len(self.ps)])

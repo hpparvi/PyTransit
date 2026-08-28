@@ -107,6 +107,12 @@ class LParameterBlock(GParameterBlock):
 
 
 class ParameterSet(list):
+    # `frozen` needs to be a class attribute because ParameterSet is a list subclass. Pickle
+    # reconstructs list subclasses by creating an empty instance and calling `extend` with the
+    # items before restoring the instance dictionary, and the overridden `append` and `extend`
+    # would fail on a missing `self.frozen` if it existed only as an instance attribute.
+    frozen = False
+
     def __init__(self, *args):
         super().__init__(*args)
         self.blocks = []

@@ -129,13 +129,9 @@ class DiffEvol(object):
         self.bl = tile(self.bounds[:, 0], [npop, 1])
         self.bw = tile(self.bounds[:, 1] - self.bounds[:, 0], [npop, 1])
         self.m = -1 if maximize else 1
-        self.pool = pool
+        self.vectorize = vectorize
         self.args = args
-
-        if self.pool is not None:
-            self.map = self.pool.map
-        else:
-            self.map = map
+        self.pool = pool
 
         self.periodic = []
         self.min_ptp = min_ptp
@@ -162,6 +158,22 @@ class DiffEvol(object):
             self._eval = self._eval_vfun
         else:
             self._eval = self._eval_sfun
+
+    @property
+    def pool(self):
+        """The parallelisation pool used to evaluate the population, or None.
+
+        The pool needs only to provide a `map` method. Setting the pool also updates
+        the mapping function used to evaluate the population, so the pool can safely be
+        attached and detached between the optimisation runs. Note that the pool is used
+        only if the optimiser is not vectorised.
+        """
+        return self._pool
+
+    @pool.setter
+    def pool(self, pool):
+        self._pool = pool
+        self.map = map if pool is None else pool.map
 
     @property
     def population(self):

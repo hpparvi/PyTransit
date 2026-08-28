@@ -1,5 +1,39 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added `ncores` and `start_method` arguments to `LogPosteriorFunction.optimize_global` and
+  `LogPosteriorFunction.sample_mcmc`. Setting `ncores` creates a multiprocessing pool for the duration of the call and
+  closes it afterwards, also if the run raises or is interrupted, while a pool given via `pool` is used as-is and left
+  for the caller to close. The pool is created using the 'forkserver' or 'spawn' start method rather than 'fork', which
+  is unsafe after multithreaded Numba code has been run or an OpenCL context has been initialized, and each worker is
+  restricted to a single Numba thread to avoid oversubscribing the machine.
+
+### Changed
+
+- `optimize_global` and `sample_mcmc` now raise a `ValueError` if `pool` or `ncores` is combined with `vectorize=True`.
+  Both `DiffEvol` and `emcee` bypass the pool when the log posterior function is vectorised, so the combination used to
+  run everything in a single process without any indication that the pool was left unused.
+- `optimize_global` and `sample_mcmc` now attach the pool to the DE optimiser and the MCMC sampler only for the
+  duration of the call. Previously the pool was stored permanently when the optimiser or the sampler was created, which
+  left them holding a reference to a pool the caller had already closed, and made the `pool` argument silently
+  ineffective on all the subsequent calls.
+- `DiffEvol.pool` is now a property that also updates the mapping function when set, so the pool can be attached and
+  detached between the optimisation runs.
+
+### Fixed
+
+- Fixed `ParameterSet` unpickling. Pickle reconstructs `list` subclasses by calling `extend` before restoring the
+  instance dictionary, so the overridden `extend` failed on the missing `frozen` attribute. This made every log
+  posterior function unpicklable, and any run using a multiprocessing pool hung indefinitely because the worker died
+  while unpickling the task.
+- `LogPosteriorFunction` no longer includes the DE optimiser and the MCMC sampler in its pickled state. Both hold a
+  reference to an unpicklable pool while running, which made the log posterior function impossible to send to the pool
+  workers.
+
+
 ## [2.9.1] - 2026-08-24
 
 ### Added
