@@ -38,7 +38,8 @@ from typing import Optional, Union
 
 from matplotlib.pyplot import subplots, setp
 from numpy import (ndarray, full, array, diff, nanstd, sqrt, nan, isfinite, ceil, floor, s_,
-                   median, zeros, atleast_1d)
+                   median, zeros, atleast_1d, ones, hstack, where, ptp)
+from numpy.linalg import lstsq
 from scipy.signal import medfilt
 
 from .base import (_Data, _DataGroup, _as_float, _as_int, _validate_time, _validate_series,
@@ -75,6 +76,39 @@ def _running_median(flux: ndarray, width: int) -> ndarray:
 def _mad_sigma(residuals: ndarray) -> float:
     """Robust scatter estimate, 1.4826 times the median absolute deviation from the median."""
     return float(1.4826 * median(abs(residuals - median(residuals))))
+
+
+# Covariates
+# ----------
+def _standardise(covariates: ndarray) -> ndarray:
+    """Standardise the covariate columns to zero mean and unit standard deviation.
+
+    Mixing a column on an arbitrary scale with an intercept column of ones makes the design matrix
+    badly conditioned, and the least-squares solution numerically poor. Constant columns carry no
+    information and are only centred, since scaling them would divide by zero. This is the same
+    standardisation `LSTSQBaseline.normalize_covariates` applies.
+    """
+    cs = covariates.std(0)
+    return (covariates - covariates.mean(0)) / where(cs > 0.0, cs, 1.0)
+
+
+# Default line styles for the overlays `LCDataGroup.plot` draws on top of the flux. The zorder is
+# above the data points, which matplotlib draws at zorder 2.
+_MEDIAN_STYLE = dict(c='k', lw=1, alpha=1.0, zorder=10)
+_LINEAR_MODEL_STYLE = dict(c='C1', lw=1, alpha=1.0, zorder=10)
+
+
+def _line_style(defaults: dict, overrides: Optional[dict]) -> dict:
+    """Merge user-given line properties over the defaults."""
+    return {**defaults, **(overrides or {})}
+
+
+def _normalised_time(time: ndarray) -> ndarray:
+    """Time mapped linearly onto -1 ... 1. A light curve with no time span maps onto zeros."""
+    if time.size == 0:
+        return time.copy()
+    span = ptp(time)
+    return zeros(time.size) if span == 0.0 else 2.0 * (time - time.min()) / span - 1.0
 
 
 class LCData(_Data):
@@ -286,6 +320,39 @@ class LCData(_Data):
         if not self._noise_given:
             self.noise = self._estimate_noise()
         return int((~m).sum())
+
+    # Covariates
+    # ----------
+    def add_time_covariates(self, order: int = 1) -> None:
+        """Add the normalised time and its powers as covariates, in place.
+
+        The time is mapped linearly onto -1 ... 1 and its powers 1 ... `order` are appended to the
+        existing covariates, so that a linear-in-covariates baseline can absorb a polynomial trend
+        in time. The powers start from one because the intercept is added by the baseline model
+        itself, and a constant column would only make the design matrix singular.
+
+        Parameters
+        ----------
+        order
+            Highest power of the normalised time to add. Must be a positive integer.
+        """
+        o = _as_int(order, 'order')
+        if o < 1:
+            raise ValueError(f"'order' must be a positive integer, got {order!r}.")
+        tn = _normalised_time(self.time)
+        self.covariates = hstack([self.covariates] + [(tn ** i)[:, None] for i in range(1, o + 1)])
+
+    def linear_model(self) -> ndarray:
+        """Least-squares linear model of the flux in terms of the covariates.
+
+        The covariate columns are standardised and an intercept is added, and the flux is fitted
+        against them by linear least squares. The result is the part of the flux variability the
+        covariates can explain, which is what `LCDataGroup.plot` overlays with `show_linear_model`.
+        A light curve with no covariates gives its mean flux.
+        """
+        x = ones((self.size, 1)) if self.ncov == 0 else hstack([ones((self.size, 1)),
+                                                                _standardise(self.covariates)])
+        return x @ lstsq(x, self.flux, rcond=None)[0]
 
     def __repr__(self) -> str:
         marked = ', marked' if self.marked else ''
@@ -530,6 +597,21 @@ class LCDataGroup(_DataGroup):
         """
         return sum(d.remove_outliers(nsigma, width) for d in self.data)
 
+    # Covariates
+    # ----------
+    def add_time_covariates(self, order: int = 1) -> None:
+        """Add the normalised time and its powers as covariates to every light curve, in place.
+
+        Each light curve's time is mapped onto -1 ... 1 separately, see `LCData.add_time_covariates`.
+
+        Parameters
+        ----------
+        order
+            Highest power of the normalised time to add. Must be a positive integer.
+        """
+        for d in self.data:
+            d.add_time_covariates(order)
+
     # Plotting
     # --------
     def plot(self, ncols: int = 5, figsize: Optional[tuple] = None,
@@ -539,7 +621,8 @@ class LCDataGroup(_DataGroup):
              pids: Optional[Union[int, Sequence[int]]] = None,
              annotate: bool = True, show_index: bool = True, show_xticks: bool = True,
              show_median: bool = False, median_width: int = 15,
-             nsigma: Union[float, Sequence[float]] = 3.0,
+             nsigma: Union[float, Sequence[float]] = 3.0, show_linear_model: bool = False,
+             median_kwargs: Optional[dict] = None, linear_model_kwargs: Optional[dict] = None,
              errorbars: bool = False, xoffset: Optional[float] = None,
              ylim: Optional[tuple] = None, alpha: float = 0.5, **kwargs):
         """Plot the light curves in a grid of subplots.
@@ -547,8 +630,9 @@ class LCDataGroup(_DataGroup):
         The panels share their y limits so the transit depths can be compared by eye, but not
         their x limits, since the light curves generally cover different times. Each panel's
         time axis is offset by its own zero point by default, keeping the tick labels short. The
-        light curves marked for removal are drawn on a light gray background, and `show_median`
-        overlays the running median with its n-sigma limits for spotting outlying points.
+        light curves marked for removal are drawn on a light gray background, `show_median` overlays
+        the running median with its n-sigma limits for spotting outlying points, and
+        `show_linear_model` overlays the variability the covariates can explain.
 
         Parameters
         ----------
@@ -578,6 +662,15 @@ class LCDataGroup(_DataGroup):
             Limits to draw around the running median, as a multiple of the robust MAD scatter of
             the residuals from it. Either a single number or a sequence of them, in which case one
             band is drawn per value.
+        show_linear_model
+            Overlay the least-squares linear model of the flux in terms of the covariates, showing
+            how much of the variability the covariates can explain. Light curves without covariates
+            are left alone, see `LCData.linear_model`.
+        median_kwargs, linear_model_kwargs
+            Line properties (`c`, `lw`, `alpha`, `zorder`, and anything else
+            `matplotlib.axes.Axes.plot` takes) for the running median and the linear model. They
+            override the defaults, which draw both lines on top of the flux points. The n-sigma
+            bands take their colour from `median_kwargs`.
         errorbars
             Plot the flux uncertainties as error bars. The uncertainties fall back to the
             estimated point-to-point scatter for the light curves without explicit errors, see
@@ -651,16 +744,21 @@ class LCDataGroup(_DataGroup):
                     label = f"{lc.instrument}\n{label}"
                 ax.text(0.98, 0.95, label, ha='right', va='top', size='small', transform=ax.transAxes)
 
-            # Drawn after the flux so that the data stays the panel's first line, and behind it so
-            # that the points remain visible.
+            # Drawn after the flux so that the data stays the panel's first line, and with a zorder
+            # above it so that the overlays stay visible over dense points.
             if show_median and lc.size:
-                tp = lc.time - t0
+                style = _line_style(_MEDIAN_STYLE, median_kwargs)
                 m = lc.running_median(median_width)
                 sigma = _mad_sigma(lc.flux - m)
+                fc = style.get('color', style.get('c', 'k'))
                 for n in atleast_1d(nsigma):
-                    ax.fill_between(tp, m - n * sigma, m + n * sigma, fc='k', alpha=0.15, zorder=-100)
-                ax.plot(tp, m, 'w', lw=3, zorder=-50)
-                ax.plot(tp, m, 'k', lw=1, zorder=-50)
+                    ax.fill_between(lc.time - t0, m - n * sigma, m + n * sigma, fc=fc, alpha=0.15,
+                                    zorder=-100)
+                ax.plot(lc.time - t0, m, **style)
+
+            if show_linear_model and lc.size and lc.ncov:
+                ax.plot(lc.time - t0, lc.linear_model(),
+                        **_line_style(_LINEAR_MODEL_STYLE, linear_model_kwargs))
 
             if xoffset is None:
                 setp(ax, xlabel=f"Time - {t0:.0f} [BJD]")

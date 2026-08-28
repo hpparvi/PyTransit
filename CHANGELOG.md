@@ -4,6 +4,10 @@
 
 ### Added
 
+- Added `LCData.add_time_covariates` and `LCDataGroup.add_time_covariates`, which append the time normalised to
+  -1 ... 1 and its powers to the existing covariates, so that a linear-in-covariates baseline can absorb a polynomial
+  trend in time.
+- Added `LCData.linear_model`, the least-squares linear model of the flux in terms of the covariates.
 - Added `LCData.running_median`, `LCData.outlier_mask`, `LCData.remove_outliers`, and
   `LCDataGroup.remove_outliers` for weeding out outlying flux points. The points are clipped against a running median
   computed with `scipy.signal.medfilt`, using a robust MAD estimate of the residual scatter so that the outliers cannot
@@ -29,6 +33,11 @@
 
 ### Changed
 
+- `LCDataGroup.plot` takes `show_linear_model` for overlaying the least-squares linear model of the flux in terms of
+  the covariates, showing how much of the variability the covariates can explain.
+- `LCDataGroup.plot` takes `median_kwargs` and `linear_model_kwargs` for setting the line properties of the running
+  median and the linear model overlays. Both overlays are now drawn on top of the flux points rather than behind them,
+  and the n-sigma bands take their colour from `median_kwargs`.
 - `LCDataGroup.plot` takes `show_median`, `median_width`, and `nsigma` for overlaying the running median of the flux
   with its n-sigma limits, for spotting the points `remove_outliers` would clip. `nsigma` accepts either a single
   number or a sequence of them, in which case one band is drawn per value.

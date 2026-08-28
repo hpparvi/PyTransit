@@ -21,6 +21,7 @@ import pytest
 
 matplotlib.use('Agg')  # A headless backend, set before pytransit imports pyplot.
 
+from matplotlib.colors import to_rgba
 from matplotlib.pyplot import close
 from numpy import (linspace, ones, zeros, full, array, arange, diff, nanstd, sqrt, nan, isnan,
                    isfinite, unique, float64, floor, concatenate, median)
@@ -687,6 +688,98 @@ class TestOutlierRemoval:
         assert g.lcslices == [slice(0, NPT - 1), slice(NPT - 1, 2 * NPT - 3)]
 
 
+class TestTimeCovariates:
+    def test_time_covariates_are_added(self):
+        lc = make_lc(ncov=0)
+        lc.add_time_covariates(3)
+        assert lc.ncov == 3
+
+    def test_the_first_column_is_the_time_normalised_to_pm_one(self):
+        lc = make_lc(ncov=0)
+        lc.add_time_covariates(1)
+        tn = lc.covariates[:, 0]
+        assert_allclose([tn.min(), tn.max()], [-1.0, 1.0])
+        assert_allclose(tn, 2 * (lc.time - lc.time.min()) / (lc.time.max() - lc.time.min()) - 1)
+
+    def test_the_columns_are_the_powers_of_the_normalised_time(self):
+        lc = make_lc(ncov=0)
+        lc.add_time_covariates(4)
+        tn = lc.covariates[:, 0]
+        for i in range(1, 4):
+            assert_allclose(lc.covariates[:, i], tn ** (i + 1))
+
+    def test_the_columns_are_concatenated_with_the_existing_covariates(self):
+        lc = make_lc(ncov=2)
+        original = lc.covariates.copy()
+        lc.add_time_covariates(2)
+        assert lc.ncov == 4
+        assert_array_equal(lc.covariates[:, :2], original)
+
+    def test_repeated_calls_append(self):
+        lc = make_lc(ncov=2)
+        lc.add_time_covariates(1)
+        lc.add_time_covariates(1)
+        assert lc.ncov == 4
+        assert_array_equal(lc.covariates[:, 2], lc.covariates[:, 3])
+
+    def test_a_constant_time_gives_a_zero_column(self):
+        lc = LCData(full(5, 2.0), ones(5))
+        lc.add_time_covariates(1)
+        assert_array_equal(lc.covariates[:, 0], zeros(5))
+
+    def test_an_invalid_order_raises(self):
+        with pytest.raises(ValueError, match="'order' must be a positive integer"):
+            make_lc().add_time_covariates(0)
+        with pytest.raises(ValueError, match="'order' must be an integer"):
+            make_lc().add_time_covariates(1.5)
+
+    def test_the_group_adds_them_to_every_light_curve(self):
+        g = make_group()
+        g.add_time_covariates(2)
+        assert_array_equal(g.ncovs, array([4, 4, 4, 4]))
+        for lc in g:                        # Each light curve is normalised on its own time.
+            assert_allclose([lc.covariates[:, 2].min(), lc.covariates[:, 2].max()], [-1.0, 1.0])
+
+    def test_the_columns_are_filtered_by_an_outlier_removal(self):
+        lc = make_spiked_lc(spikes=(42,))
+        lc.add_time_covariates(1)
+        lc.remove_outliers(5.0, 15)
+        assert lc.covariates.shape == (NPT - 1, 2)
+        assert_array_equal(lc.covariates[40:44, 0], array([40.0, 41.0, 43.0, 44.0]))
+
+
+class TestLinearModel:
+    def test_a_flux_linear_in_the_covariates_is_reproduced(self):
+        rng = default_rng(0)
+        cv = rng.normal(0.0, 1.0, (NPT, 2))
+        f = 1.0 + 0.01 * cv[:, 0] - 0.005 * cv[:, 1]
+        lc = LCData(linspace(0.9, 1.1, NPT), f, covariates=cv)
+        assert_allclose(lc.linear_model(), f, atol=1e-12)
+
+    def test_the_model_is_insensitive_to_the_covariate_scaling(self):
+        """The columns are standardised, so a badly scaled covariate gives the same fit."""
+        rng = default_rng(0)
+        cv = rng.normal(0.0, 1.0, (NPT, 2))
+        f = 1.0 + 0.01 * cv[:, 0] - 0.005 * cv[:, 1]
+        t = linspace(0.9, 1.1, NPT)
+        scaled = cv.copy()
+        scaled[:, 0] = 2.46e6 + 1e4 * scaled[:, 0]
+        assert_allclose(LCData(t, f, covariates=cv).linear_model(),
+                        LCData(t, f, covariates=scaled).linear_model(), atol=1e-10)
+
+    def test_a_constant_covariate_column_is_handled(self):
+        cv = ones((NPT, 1))
+        lc = LCData(linspace(0.9, 1.1, NPT), 1.0 + default_rng(0).normal(0, 1e-3, NPT), covariates=cv)
+        assert_allclose(lc.linear_model(), lc.flux.mean(), atol=1e-12)
+
+    def test_without_covariates_the_model_is_the_mean_flux(self):
+        lc = make_lc(ncov=0)
+        assert_allclose(lc.linear_model(), lc.flux.mean())
+
+    def test_the_model_has_one_value_per_point(self):
+        assert make_lc().linear_model().size == NPT
+
+
 class TestMarking:
     def test_light_curves_are_unmarked_by_default(self):
         g = make_group()
@@ -1042,6 +1135,53 @@ class TestPlotting:
             assert_allclose(ax.lines[0].get_xdata(), lc.time - floor(lc.time.min()))   # Data first.
             assert_allclose(ax.lines[-1].get_ydata(), lc.running_median(15))
             assert_allclose(ax.lines[-1].get_xdata(), lc.time - floor(lc.time.min()))
+        close(fig)
+
+    def test_show_linear_model_draws_the_covariate_fit(self):
+        g = make_group()
+        fig = g.plot(show_linear_model=True)
+        for ax, lc in zip(fig.axes, g):
+            assert len(ax.lines) == 2                                      # Data plus the model.
+            assert_allclose(ax.lines[0].get_ydata(), lc.flux)              # The data stays first.
+            assert_allclose(ax.lines[-1].get_ydata(), lc.linear_model())
+        close(fig)
+
+    def test_show_linear_model_skips_light_curves_without_covariates(self):
+        g = LCDataGroup([make_lc(ncov=0)])
+        fig = g.plot(show_linear_model=True)
+        assert len(fig.axes[0].lines) == 1
+        close(fig)
+
+    def test_the_overlays_are_drawn_above_the_data(self):
+        fig = make_group().plot(show_median=True, show_linear_model=True)
+        for ax in fig.axes:
+            data, overlays = ax.lines[0], ax.lines[1:]
+            assert len(overlays) == 2
+            assert all(o.get_zorder() > data.get_zorder() for o in overlays)
+        close(fig)
+
+    def test_the_overlay_line_properties_can_be_customised(self):
+        fig = make_group().plot(show_median=True, show_linear_model=True,
+                                median_kwargs=dict(c='C0', lw=2, alpha=0.6),
+                                linear_model_kwargs=dict(c='r', lw=3, alpha=0.8, zorder=20))
+        med, lm = fig.axes[0].lines[1], fig.axes[0].lines[2]
+        assert (med.get_color(), med.get_linewidth(), med.get_alpha()) == ('C0', 2.0, 0.6)
+        assert (lm.get_color(), lm.get_linewidth(), lm.get_alpha()) == ('r', 3.0, 0.8)
+        assert lm.get_zorder() == 20
+        close(fig)
+
+    def test_the_bands_follow_the_median_colour(self):
+        fig = make_group().plot(show_median=True, median_kwargs=dict(c='C0'))
+        assert_allclose(fig.axes[0].collections[0].get_facecolor()[0],
+                        to_rgba('C0', 0.15))
+        close(fig)
+
+    def test_the_default_overlay_styles_are_not_shared_between_calls(self):
+        """The defaults are merged into a new dict, so an override cannot leak into the next call."""
+        g = make_group()
+        close(g.plot(show_median=True, median_kwargs=dict(c='r')))
+        fig = g.plot(show_median=True)
+        assert fig.axes[0].lines[1].get_color() == 'k'
         close(fig)
 
     def test_axis_labels(self):
