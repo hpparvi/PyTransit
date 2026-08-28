@@ -6,7 +6,7 @@ from meepmeep.numba2d import solve2d_d, sep_cd, bounding_box
 from meepmeep.backends.numba.utils import eclipse_time_offset
 
 from numba import njit, prange
-from numpy import pi, zeros
+from numpy import floor, pi, zeros
 
 from ._utils import _folded_time
 from .ccintersection import ccia_and_grad
@@ -174,6 +174,14 @@ def semodel_grad(times, k, t0, p, a, i, e, w, rstar, lcids, pbids, epids, nsampl
                 g_t0 = dflux[ipv, ipt, 1]
                 for j in range(5):
                     dflux[ipv, ipt, 2 + j] += g_t0 * dltts[iep, j]
+
+                # Period folding correction, as in udmodel_grad/rrmodel_grad: the
+                # folded time t - te - epoch*p depends on the period via the
+                # -epoch*p term, so the total period derivative (slot 2) gains
+                # epoch times the eclipse-centre derivative (slot 1). The epoch is
+                # counted around the eclipse centre te, matching `_folded_time`.
+                epoch = floor((times[ipt] - te + 0.5 * p[ipv, iep]) / p[ipv, iep])
+                dflux[ipv, ipt, 2] += epoch * g_t0
             else:
                 # Out of eclipse the flux is the constant planet flux pi*k**2,
                 # which only depends on the radius ratio.

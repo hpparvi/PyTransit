@@ -187,3 +187,35 @@ class TestSemodelGradFiniteDiff:
         assert mask.any(), "Should have partial-overlap points"
         np.testing.assert_allclose(anal[mask], fd[mask], rtol=1e-3, atol=1e-8,
                                    err_msg=f"{name} gradient ({label})")
+
+
+class TestPeriodFoldingEpochRegression:
+    """Regression: the period gradient at eclipses beyond epoch 0.
+
+    ``semodel_grad`` was missing the period-folding chain term
+    ``dflux[..., 2] += epoch * dflux[..., 1]`` that ``udmodel_grad`` and
+    ``rrmodel_grad`` both apply: the folded time ``t - te - epoch*p`` depends
+    on the period through the ``-epoch*p`` term, so the p-gradient was wrong
+    at every eclipse edge with a nonzero epoch, with an error growing
+    linearly in the epoch number. Epoch 0 (covered by the other tests) is
+    blind to the term, hence this test evaluates eclipses several orbits
+    away from ``t0`` on both sides.
+    """
+
+    @pytest.mark.parametrize("epoch", [-3, 1, 7])
+    def test_period_gradient_at_later_epochs(self, epoch):
+        times = ECL + epoch * P + np.linspace(-0.1, 0.1, 201)
+        flux, dflux = _call_semodel_grad(times)
+        fd = _finite_diff_grad(times, "p", 1e-6, k=0.1, t0=T0, p=P, a=A, inc=I, e=E, w=W)
+        scale = np.abs(fd).max()
+        assert scale > 0.0  # the window must actually contain eclipse edges
+        # A period perturbation shifts the eclipse centre by epoch*eps, so a
+        # sample sitting within that distance of the bounding-box cutoff sees
+        # a one-sided FD artifact; require the bulk of the points to agree
+        # instead of every single one. The missing epoch term broke every
+        # ingress/egress point, growing linearly with the epoch number.
+        err = np.abs(dflux[0][:, 2] - fd)
+        ok = err <= 1e-3 * np.abs(fd) + 1e-5 * scale
+        assert ok.mean() >= 0.98, (
+            f"epoch {epoch}: only {ok.mean():.1%} of points within tolerance; "
+            f"max violation {err[~ok].max():.3e}")
