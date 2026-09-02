@@ -1,3 +1,5 @@
+.. title:: PyTransit docs
+
 PyTransit
 =========
 
@@ -10,6 +12,58 @@ observed in different passbands with different instruments*, or *transmission sp
 Development began in 2009 to fill the need for a fast and reliable exoplanet transit modelling
 toolkit for Python. PyTransit has since gone through several iterations, always aiming to be *the
 fastest and most versatile* exoplanet transit modelling tool for Python.
+
+Features
+--------
+
+.. grid:: 3
+    :gutter: 3
+
+    .. grid-item-card:: Highlights
+        :link: highlights
+        :link-type: doc
+
+        Light curve, passband and epoch indices: variable supersampling, multicolour photometry
+        and TTVs, straight out of the box.
+
+    .. grid-item-card:: RoadRunner model
+        :link: features/roadrunner
+        :link-type: doc
+
+        A fast transit model that works with *any* radially symmetric limb darkening profile.
+
+    .. grid-item-card:: Transmission spectroscopy
+        :link: features/tsmodel
+        :link-type: doc
+
+        Thousands of wavelength bins sharing one transit geometry, computed once.
+
+    .. grid-item-card:: Oblate planet
+        :link: features/opmodel
+        :link-type: doc
+
+        Tens-of-ppm oblateness signals, with the model accuracy dialled to match.
+
+    .. grid-item-card:: Gravity-darkened star
+        :link: features/gdmodel
+        :link-type: doc
+
+        Transits across a flattened, gravity-darkened fast rotator, and the spin-orbit angle
+        their asymmetry reveals.
+
+    .. grid-item-card:: Chromosphere
+        :link: features/chromosphere
+        :link-type: doc
+
+        Transits over a limb-*brightened* optically thin shell, which inverts the usual shape.
+
+.. toctree::
+    :hidden:
+
+    features/index
+
+Documentation
+-------------
 
 .. grid:: 2
     :gutter: 3
@@ -38,74 +92,9 @@ fastest and most versatile* exoplanet transit modelling tool for Python.
 
         The transit model base class, limb darkening laws, stellar spectra, contamination, and I/O.
 
-
-A first example
----------------
-
-Model initialisation is straightforward. At its simplest, the model needs only an array of
-mid-exposure times
-
-.. code-block:: python
-
-    from pytransit import RoadRunnerModel
-
-    tm = RoadRunnerModel('quadratic')
-    tm.set_data(times)
-
-after which it is ready to be evaluated
-
-.. code-block:: python
-
-    tm.evaluate(k=0.1, ldc=[0.2, 0.1], t0=0.0, p=1.0, a=3.0, i=0.5*pi)
-
-.. image:: basic_example_1.svg
-
-To complicate things a little, consider modelling several transits observed in different
-passbands. Stellar limb darkening varies from passband to passband, so we need a set of limb
-darkening coefficients for each passband, and we may also want the radius ratio to vary between
-passbands. We initialise the model with per-exposure light curve indices (`lcids`) and
-per-light-curve passband indices (`pbids`) -- both simple integer arrays -- after which the model
-can be evaluated with a passband-dependent radius ratio and limb darkening
-
-.. code-block:: python
-
-    tm.set_data(times, lcids=lcids, pbids=pbids)
-    tm.evaluate(k=[0.10, 0.12], ldc=[[0.2, 0.1, 0.5, 0.1]], t0=0.0, p=1.0, a=3.0, i=0.5*pi)
-
-.. image:: basic_example_2.svg
-
-We made both the radius ratio and the limb darkening passband-dependent above, but we could just
-as well have passed a single scalar radius ratio, in which case only the limb darkening would vary
-between passbands.
-
-We often want to evaluate the model for a large set of parameters at once, such as when sampling
-with *emcee* or using any other population-based sampler or optimiser. Give `evaluate` an array of
-parameters
-
-.. code-block:: python
-
-    tm.evaluate(k=[[0.10, 0.12], [0.11, 0.13]],
-                ldc=[[0.2, 0.1, 0.5, 0.1],[0.4, 0.2, 0.75, 0.1]],
-                t0=[0.0, 0.01], p=[1, 1], a=[3.0, 2.9], i=[.5*pi, .5*pi])
-
-.. image:: basic_example_3.svg
-
-and PyTransit calculates the models for the whole parameter set in parallel.
-
-
-Citing PyTransit
-----------------
-
-If PyTransit contributes to a publication, please cite Parviainen (MNRAS 450, 3233, 2015). The
-individual models carry their own references, listed on each model's page under
-:doc:`models/index`.
-
-
-Contents
---------
-
 .. toctree::
     :maxdepth: 2
+    :hidden:
     :caption: Getting started
 
     installation
@@ -114,18 +103,21 @@ Contents
 
 .. toctree::
     :maxdepth: 2
+    :hidden:
     :caption: User guide
 
     guide/index
 
 .. toctree::
     :maxdepth: 2
+    :hidden:
     :caption: Transit models
 
     models/index
 
 .. toctree::
     :maxdepth: 2
+    :hidden:
     :caption: Supporting modules
 
     stars
@@ -134,10 +126,29 @@ Contents
 
 .. toctree::
     :maxdepth: 2
+    :hidden:
     :caption: Reference
 
     api/index
 
+Citing PyTransit
+----------------
+
+If PyTransit contributes to a publication, please cite Parviainen (MNRAS 450, 3233, 2015). The
+individual models carry their own references, listed on each model's page under
+:doc:`models/index`.
+
+Support
+-------
+
+If you run into difficulties with PyTransit, please open an issue on the
+`GitHub repository <https://github.com/hpparvi/PyTransit/issues>`_. Suggestions and feature
+requests are welcome through the same route.
+
+License
+-------
+
+PyTransit is licensed under the `GPLv3 <https://www.gnu.org/licenses/gpl-3.0.en.html>`_ license.
 
 Indices and tables
 ==================

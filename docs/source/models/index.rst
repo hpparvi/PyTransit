@@ -37,7 +37,8 @@ Choosing a model
       - :doc:`the OpenCL models <opencl>`
 
 **Start with RoadRunner.** It supports any radially symmetric limb darkening law, is fast, and is
-accurate to sub-ppm with its default settings. The specialised models above exist because they
+accurate to a few ppm with its default settings for typical radius ratios. The specialised models
+above exist because they
 model something RoadRunner does not (an oblate planet, a gravity-darkened star, an eclipse) or
 because they exploit structure RoadRunner cannot (the shared geometry of a spectroscopic time
 series).

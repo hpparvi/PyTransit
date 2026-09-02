@@ -25,8 +25,11 @@ Two things follow:
   same as a linear one, because the expensive part -- the geometry -- is shared.
 
 Accuracy is controlled by the discretisation of the stellar disk: `nzin` nodes across the inner
-disk, `nzlimb` nodes across the limb, split at `zcut`, and `ng` grazing-geometry nodes. The
-defaults give sub-ppm accuracy for ordinary transit geometries.
+disk, `nzlimb` nodes across the limb, split at `zcut`, and `ng` grazing-geometry nodes. The error
+grows with the radius ratio: measured against the analytic Mandel & Agol solution, the defaults
+give roughly 1 ppm at :math:`k = 0.02`, a few ppm around :math:`k = 0.1`, and tens of ppm above
+:math:`k = 0.2`. See :doc:`../features/roadrunner` for the measured curve and for which settings
+to raise.
 
 Usage
 -----

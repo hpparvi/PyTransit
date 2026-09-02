@@ -67,8 +67,11 @@ class RoadRunnerModel(TransitModel):
     - **The evaluation cost is nearly independent of the limb darkening law.** A four-parameter
       non-linear law is about as fast as a linear one.
 
-    Accuracy is set by the discretization parameters `nzin`, `nzlimb`, `zcut`, and `ng`. The
-    defaults give sub-ppm accuracy for typical transit geometries.
+    Accuracy is set by the discretization parameters `nzin`, `nzlimb`, `zcut`, `ng` and `nk`, and
+    the error grows with the radius ratio. Measured against the analytic Mandel & Agol solution,
+    the defaults give roughly 1 ppm at k = 0.02, a few ppm around k = 0.1, and tens of ppm above
+    k = 0.2. The parameters interact: at large radius ratios, raising `nzin` and `nzlimb` alone
+    does little, and `ng` and `nk` need raising with them.
 
     Attributes
     ----------
