@@ -1,20 +1,49 @@
 PyTransit
 =========
 
-Welcome to PyTransit documentation! PyTransit is a package for exoplanet transit light curve modelling
-that offers optimised CPU and GPU implementations of exoplanet transit models with a unified interface (API). Transit model
-evaluation is trivial for simple use-cases, such as homogeneous light curves observed in a single passband, but also
-straightforward for more complex use-cases, such as when dealing with *heterogeneous light curves containing transits
-observed in different passbands and different instruments*, or with *transmission spectroscopy*.
+PyTransit is a package for exoplanet transit light curve modelling. It offers optimised CPU and
+GPU implementations of exoplanet transit models behind a unified interface. Evaluating a model is
+trivial for simple cases, such as a homogeneous light curve observed in a single passband, and
+stays straightforward for complex ones, such as *heterogeneous light curves containing transits
+observed in different passbands with different instruments*, or *transmission spectroscopy*.
 
-The development of PyTransit began in 2009 to fill the need for a fast and reliable
-exoplanet transit modelling toolkit for Python. Since then, PyTransit has gone through several
-iterations, always thriving to be *the fastest and most versatile* exoplanet transit modelling tool for Python.
+Development began in 2009 to fill the need for a fast and reliable exoplanet transit modelling
+toolkit for Python. PyTransit has since gone through several iterations, always aiming to be *the
+fastest and most versatile* exoplanet transit modelling tool for Python.
 
-Example
--------
+.. grid:: 2
+    :gutter: 3
 
-The transit model initialization is straightforward. At its simplest, the model takes an array the mid-exposure times,
+    .. grid-item-card:: Getting started
+        :link: installation
+        :link-type: doc
+
+        Install PyTransit and evaluate your first transit model.
+
+    .. grid-item-card:: User guide
+        :link: guide/index
+        :link-type: doc
+
+        The model interface, data setup, evaluation, limb darkening, and the OpenCL backend.
+
+    .. grid-item-card:: Transit models
+        :link: models/index
+        :link-type: doc
+
+        The model catalogue: what each model does, when to use it, and its full API.
+
+    .. grid-item-card:: API reference
+        :link: api/index
+        :link-type: doc
+
+        The transit model base class, limb darkening laws, stellar spectra, contamination, and I/O.
+
+
+A first example
+---------------
+
+Model initialisation is straightforward. At its simplest, the model needs only an array of
+mid-exposure times
 
 .. code-block:: python
 
@@ -31,12 +60,12 @@ after which it is ready to be evaluated
 
 .. image:: basic_example_1.svg
 
-To complicate the situation a bit, we can consider a case where we want to model several transits observed in different
-passbands. The stellar limb darkening varies from passband to passband, so we need to give a set of limb darkening
-coefficients for each passband, and we may also want to allow the radius ratio to vary from passband to passband.
-Now, we will only need to initialise the model with per-exposure light curve indices (`lcids`) and per-light-curve
-passband indices (`pbids`) (don't worry, these are simple integer arrays), after which we are ready to evaluate the
-model with passband-dependent radius ratio and limb darkening
+To complicate things a little, consider modelling several transits observed in different
+passbands. Stellar limb darkening varies from passband to passband, so we need a set of limb
+darkening coefficients for each passband, and we may also want the radius ratio to vary between
+passbands. We initialise the model with per-exposure light curve indices (`lcids`) and
+per-light-curve passband indices (`pbids`) -- both simple integer arrays -- after which the model
+can be evaluated with a passband-dependent radius ratio and limb darkening
 
 .. code-block:: python
 
@@ -45,13 +74,13 @@ model with passband-dependent radius ratio and limb darkening
 
 .. image:: basic_example_2.svg
 
-We made both the radius ratio and limb darkening passband-dependent in the example above, but we could just as well
-evaluate the model with a single scalar radius ratio (as in the first example), in which case only the limb darkening
-would be passband-dependent.
+We made both the radius ratio and the limb darkening passband-dependent above, but we could just
+as well have passed a single scalar radius ratio, in which case only the limb darkening would vary
+between passbands.
 
-We may often want to evaluate the model for a large set of parameters at the same time (such as when doing MCMC
-sampling with *emcee*, or using some other population-based sampling or minimization method). Give `evaluate` an array
-of parameters
+We often want to evaluate the model for a large set of parameters at once, such as when sampling
+with *emcee* or using any other population-based sampler or optimiser. Give `evaluate` an array of
+parameters
 
 .. code-block:: python
 
@@ -61,7 +90,15 @@ of parameters
 
 .. image:: basic_example_3.svg
 
-and PyTransit will calculate the models for the whole parameter set in parallel.
+and PyTransit calculates the models for the whole parameter set in parallel.
+
+
+Citing PyTransit
+----------------
+
+If PyTransit contributes to a publication, please cite Parviainen (MNRAS 450, 3233, 2015). The
+individual models carry their own references, listed on each model's page under
+:doc:`models/index`.
 
 
 Contents
@@ -69,13 +106,37 @@ Contents
 
 .. toctree::
     :maxdepth: 2
+    :caption: Getting started
 
     installation
+    highlights
     notebooks/quickstart
-    notebooks/models/roadrunner/rrmodel
-..    notebooks/roadrunner/roadrunner_model_example_1
-..    api/modules
 
+.. toctree::
+    :maxdepth: 2
+    :caption: User guide
+
+    guide/index
+
+.. toctree::
+    :maxdepth: 2
+    :caption: Transit models
+
+    models/index
+
+.. toctree::
+    :maxdepth: 2
+    :caption: Supporting modules
+
+    stars
+    contamination
+    io
+
+.. toctree::
+    :maxdepth: 2
+    :caption: Reference
+
+    api/index
 
 
 Indices and tables

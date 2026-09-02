@@ -25,11 +25,18 @@ from pyopencl import CompilerWarning
 from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, \
     concatenate, empty
 
+from ._deprecation import deprecated_evaluation_method
 from .transitmodel import TransitModel
 
 warnings.filterwarnings('ignore', category=CompilerWarning)
 
 class QPower2ModelCL(TransitModel):
+    """OpenCL implementation of the power-2 transit model (Maxted & Gill, A&A 622, A33, 2019).
+
+    A GPU implementation of :class:`~pytransit.models.qpower2.QPower2Model`. See
+    :class:`~pytransit.models.qpower2.QPower2Model` for the model itself, and the OpenCL section
+    of the user guide for how the OpenCL models differ from their Numba counterparts.
+    """
     """
     """
 
@@ -189,6 +196,7 @@ class QPower2ModelCL(TransitModel):
         else:
             return None
 
+    @deprecated_evaluation_method()
     def evaluate_ps(self, k, ldc, t0, p, a, i, e=0., w=0., copy=True) -> ndarray:
         """Evaluate the transit model for a set of scalar parameters.
 
@@ -227,8 +235,9 @@ class QPower2ModelCL(TransitModel):
             pv = array([[k, t0, p, a, i, e, w]], float32)
         else:
             pv = concatenate([k, [t0, p, a, i, e, w]]).astype(float32)
-        return self.evaluate_pv(pv, ldc, copy)
+        return self._evaluate_pv(pv, ldc, copy)
 
+    @deprecated_evaluation_method()
     def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
         """Evaluate the transit model for a 2D parameter array.
 
@@ -249,6 +258,11 @@ class QPower2ModelCL(TransitModel):
            ndarray
                Modelled flux either as a 1D or 2D ndarray.
            """
+        return self._evaluate_pv(pvp, ldc, copy)
+
+    def _evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
+        # Implementation shared with the supported `evaluate` method, so that calling
+        # `evaluate` does not raise the deprecation warning.
         pvp = atleast_2d(pvp)
         ldc = atleast_2d(ldc).astype(float32)
         self.npv = uint32(pvp.shape[0])
@@ -288,4 +302,3 @@ class QPower2ModelCL(TransitModel):
             return squeeze(self.f)
         else:
             return None
-
