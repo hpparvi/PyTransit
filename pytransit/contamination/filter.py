@@ -20,6 +20,23 @@ from scipy.interpolate import interp1d
 
 
 class Filter:
+    """Base class for the passband transmission profiles.
+
+    A filter is a callable that maps a wavelength in nanometres to a transmission between 0 and
+    1. Subclasses implement `__call__` and `sample`; this class only defines the interface.
+
+    Parameters
+    ----------
+    name : str
+        Passband name. Used as the passband identifier by :class:`~pytransit.contamination.instrument.Instrument`.
+
+    Attributes
+    ----------
+    bbox : ndarray
+        Wavelength bounding box ``[wl_min, wl_max]`` in nm, outside which the transmission is
+        zero.
+    """
+
     def __init__(self, name: str):
         self.name: str = name
         self.bbox: ndarray = array([250, 1000], dtype='d')
@@ -32,6 +49,19 @@ class Filter:
 
 
 class DeltaFilter(Filter):
+    """Monochromatic filter transmitting at a single wavelength.
+
+    Useful for modeling spectroscopic bins narrow enough that the transmission profile does
+    not matter, and as the default passband of the gravity-darkened model.
+
+    Parameters
+    ----------
+    name : str
+        Passband name.
+    wl : float
+        Central wavelength in nm.
+    """
+
     def __init__(self, name: str, wl: float):
         super().__init__(name)
         self.wl: float = wl
@@ -60,9 +90,12 @@ class BoxcarFilter(Filter):
         """
         Parameters
         ----------
-        :param name: passband name
-        :param wl_min: minimum wavelength
-        :param wl_max: maximum wavelength
+        name : str
+            Passband name.
+        wl_min : float
+            Minimum wavelength in nm.
+        wl_max : float
+            Maximum wavelength in nm.
         """
         super().__init__(name)
         self.bbox = array([wl_min, wl_max], dtype='d')
@@ -84,10 +117,18 @@ class TabulatedFilter(Filter):
         """
         Parameters
         ----------
+        name : str
+            Passband name.
+        wl : array-like
+            Wavelengths in nm. Must increase monotonically.
+        tm : array-like
+            Transmission values in [0, 1], one per wavelength. Interpolated with a cubic spline.
 
-        name  : string      passband name
-        wl    : array_like  a list of wavelengths
-        tm    : array_like  a list of transmission values
+        Raises
+        ------
+        AssertionError
+            If the arrays differ in size, the wavelengths are not monotonically increasing, or
+            a transmission value falls outside [0, 1].
         """
         super().__init__(name)
         self.wl = array(wl)

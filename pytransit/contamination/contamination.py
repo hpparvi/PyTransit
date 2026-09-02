@@ -194,8 +194,9 @@ class BBContamination(_BaseContamination):
         self._delta_l = delta_l
         self._wl_grids = []
         for f in self.instrument.filters:
-            nwl = int(ceil((f.wl_max - f.wl_min) / self._delta_l))
-            self._wl_grids.append(linspace(f.wl_min, f.wl_max, nwl))
+            wl_min, wl_max = f.bbox
+            nwl = int(ceil((wl_max - wl_min) / self._delta_l))
+            self._wl_grids.append(linspace(wl_min, wl_max, nwl))
 
     @staticmethod
     def absolute_flux(teff: float, wl: Union[float, Iterable]) -> ndarray:
@@ -294,9 +295,17 @@ class SMContamination(_BaseContamination):
         Parameters
         ----------
         instrument
-            Instrument configuration
+            Instrument configuration.
         ref_pb
-            name of the reference passband
+            Name of the reference passband, i.e. the passband in which the contamination is
+            parametrised.
+        data
+            Stellar spectrum grid to use, either ``'BT-SETTL'`` (default) or ``'Husser2013'``.
+
+        Raises
+        ------
+        ValueError
+            If `data` is neither ``'BT-SETTL'`` nor ``'Husser2013'``.
         """
         super().__init__(instrument, ref_pb)
 

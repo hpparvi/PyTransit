@@ -49,6 +49,51 @@ __all__ = ['RoadRunnerModel']
 
 
 class RoadRunnerModel(TransitModel):
+    """The RoadRunner transit model (Parviainen, MNRAS 499, 1633, 2020).
+
+    RoadRunner is PyTransit's recommended general-purpose transit model. Unlike the classical
+    models, which are analytic solutions derived for one specific limb darkening law,
+    RoadRunner separates the *geometry* of the transit from the *stellar intensity profile*.
+    The planet-star overlap geometry is solved numerically once and tabulated, and the limb
+    darkening enters only as a profile sampled on a fixed grid of normalized distances from the
+    disk center. This has two consequences:
+
+    - **Any radially symmetric limb darkening model works.** Besides the eleven built-in
+      profiles listed in `ldmodels`, the model accepts a plain Python callable, a pair of
+      callables giving the profile and its disk integral, or an
+      :class:`~pytransit.models.ldmodel.LDModel` instance backed by a stellar atmosphere
+      grid. Switching from a quadratic law to a numerically tabulated one costs nothing in
+      accuracy or, largely, in speed.
+    - **The evaluation cost is nearly independent of the limb darkening law.** A four-parameter
+      non-linear law is about as fast as a linear one.
+
+    Accuracy is set by the discretization parameters `nzin`, `nzlimb`, `zcut`, and `ng`. The
+    defaults give sub-ppm accuracy for typical transit geometries.
+
+    Attributes
+    ----------
+    ldmodels : dict
+        The built-in limb darkening models, keyed by name: ``'uniform'``, ``'linear'``,
+        ``'quadratic'``, ``'quadratic-tri'``, ``'nonlinear'``, ``'general'``, ``'square_root'``,
+        ``'logarithmic'``, ``'exponential'``, ``'power-2'``, and ``'power-2-pm'``. Each value is
+        a ``(profile, disk_integral)`` pair of Numba-compiled functions.
+
+    Examples
+    --------
+    ::
+
+        from pytransit import RoadRunnerModel
+
+        tm = RoadRunnerModel('power-2')
+        tm.set_data(time)
+        flux = tm.evaluate(k=0.1, ldc=[0.6, 0.5], t0=0.0, p=1.0, a=3.0, i=0.5*pi)
+
+    See Also
+    --------
+    TransmissionSpectroscopyModel : RoadRunner specialised for spectroscopic time series.
+    OblatePlanetModel : RoadRunner for planets with an elliptical sky projection.
+    """
+
     ldmodels = {'uniform': (ld_uniform, ldi_uniform),
                 'linear': (ld_linear, ldi_linear),
                 'quadratic': (ld_quadratic, ldi_quadratic),
@@ -176,6 +221,24 @@ class RoadRunnerModel(TransitModel):
         self.nep = unique(self.epids).size
 
     def init_integration(self, nzin, nzlimb, zcut, ng, nk):
+        """Rebuild the stellar disk discretisation and the limb darkening weight tables.
+
+        Called by the initialiser, and useful afterwards for changing the model's accuracy without
+        creating a new model. The arguments have the same meaning as in the initialiser.
+
+        Parameters
+        ----------
+        nzin : int
+            Number of discretisation nodes covering the inner stellar disk.
+        nzlimb : int
+            Number of discretisation nodes covering the stellar limb.
+        zcut : float
+            Normalised distance separating the inner disk from the limb.
+        ng : int
+            Size of the grazing value table.
+        nk : int
+            Radius ratio grid size for the precomputed weight table.
+        """
         self.nk = nk
         self.ng = ng
         self.nzin = nzin

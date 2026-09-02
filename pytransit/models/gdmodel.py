@@ -25,6 +25,7 @@ from numpy.linalg import norm
 from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation
 
+from ._deprecation import deprecated_evaluation_method
 from .transitmodel import TransitModel
 from .numba.gdmodel import create_star_xy, create_planet_xy, map_osm, xy_taylor_vt, oblate_model_s, \
     luminosity_v2, planck, create_star_luminosity
@@ -169,6 +170,38 @@ class GravityDarkenedModel(TransitModel):
 
     def visualize(self, k, p, rho, b, e, w, alpha, rperiod, tpole, istar, beta, ldc, figsize=(5, 5), ax=None,
                   ntheta=18, vmin: float = 0.0, vmax: float = 1.0, passband: int = 0):
+        """Plot the gravity-darkened stellar disk with the planet's path across it.
+
+        The quickest way to check that a parameter set means what you think it does: the plot shows
+        the oblateness of the star, the temperature gradient from the hot poles to the cool
+        equator, and where the planet crosses.
+
+        Parameters
+        ----------
+        k, p, rho, rperiod, tpole, beta, ldc, e, w
+            Physical parameters, as in `evaluate_ps`.
+        b : float
+            Impact parameter, used in place of the inclination.
+        alpha : float
+            Projected spin-orbit angle in radians.
+        istar : float
+            Stellar inclination in radians.
+        figsize : tuple, optional
+            Figure size in inches, used only when `ax` is not given.
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw into. A new figure is created if this is `None`.
+        ntheta : int, optional
+            Number of azimuthal samples used to draw the stellar surface.
+        vmin, vmax : float, optional
+            Colour scale limits for the surface brightness.
+        passband : int, optional
+            Index of the passband to draw.
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+            The figure, or `None` when drawing into supplied axes.
+        """
         if ax is None:
             fig, ax = subplots(figsize=figsize)
             ax.set_aspect(1.)
@@ -238,6 +271,7 @@ class GravityDarkenedModel(TransitModel):
             fig.tight_layout()
         return ax
 
+    @deprecated_evaluation_method()
     def evaluate_ps(self, k: Union[float, ndarray], rho: float, rperiod: float, tpole: float, phi: float,
                     beta: float, ldc: ndarray, t0: float, p: float, a: float, i: float, l: float = 0.0,
                     e: float = 0.0, w: float = 0.0, copy: bool = True) -> ndarray:
@@ -307,6 +341,34 @@ class GravityDarkenedModel(TransitModel):
     def evaluate_brute(self, k: Union[float, ndarray], rho: float, rperiod: float, tpole: float, phi: float,
                        beta: float, ldc: ndarray, t0: float, p: float, a: float, i: float, l: float = 0.0,
                        e: float = 0.0, w: float = 0.0, copy: bool = True, plot: bool = False, res: int = 300) -> ndarray:
+        """Evaluate the model by brute-force integration over a rendered stellar image.
+
+        Renders the gravity-darkened stellar disk onto a ``res`` x ``res`` image and sums the
+        pixels the planet covers at each time. This is far slower than `evaluate_ps` but makes no
+        approximations beyond the image resolution, which makes it the reference for checking the
+        fast model.
+
+        The physical parameters are the same as in `evaluate_ps`.
+
+        Parameters
+        ----------
+        res : int, optional
+            Side length of the rendered stellar image in pixels. Higher is more accurate and
+            slower.
+        plot : bool, optional
+            Draw the rendered star with the planet's path across it.
+        copy : bool, optional
+            Kept for compatibility with the transit model API; currently unused.
+
+        Returns
+        -------
+        ndarray
+            Modelled flux as a 1D array.
+
+        See Also
+        --------
+        evaluate_ps : the fast model this one validates.
+        """
         mstar, ostar, gpole, f, feff = map_osm(self.rstar, rho, rperiod, phi)
         sphi, cphi = sin(phi), cos(phi)
         ldc = atleast_2d(ldc)

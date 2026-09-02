@@ -37,6 +37,7 @@ from typing import Union, Optional
 from numpy import squeeze, ndarray, array, asarray, zeros, isscalar
 
 from .numba.qpower2_nb import qpower2_model_s, qpower2_model_v
+from ._deprecation import deprecated_evaluation_method
 from .transitmodel import TransitModel
 
 __all__ = ['QPower2Model']
@@ -104,6 +105,7 @@ class QPower2Model(TransitModel):
             flux = qpower2_model_v(self.time, k, ldc, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes)
         return squeeze(flux)
 
+    @deprecated_evaluation_method()
     def evaluate_ps(self, k: float, ldc: ndarray, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0.) -> ndarray:
         """Evaluate the transit model for a set of scalar parameters.
 

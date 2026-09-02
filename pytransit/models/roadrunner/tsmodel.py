@@ -42,6 +42,46 @@ __all__ = ['TransmissionSpectroscopyModel']
 
 
 class TransmissionSpectroscopyModel(RoadRunnerModel):
+    """RoadRunner transit model specialized for transmission spectroscopy.
+
+    A transmission spectroscopy dataset is a set of spectroscopic light curves that share a
+    single transit: every wavelength bin is observed at the *same* times, through the *same*
+    orbit, and differs only in its radius ratio and limb darkening. Evaluating a general model
+    passband by passband would recompute the identical transit geometry once per bin.
+
+    This model exploits the shared geometry. The projected planet-star distances and the
+    overlap weights are computed once and reused across all `npb` wavelength bins, which makes
+    the evaluation scale far better with the number of bins than a loop over
+    :class:`RoadRunnerModel` would.
+
+    The interface differs from the other models in two ways:
+
+    - **The number of passbands comes from the limb darkening array**, not from `set_data`. The
+      model reads ``npb`` from the shape of `ldc` on every call, so a dataset can be re-binned
+      in wavelength without touching the data setup.
+    - **`evaluate` returns a 3D array** with shape ``(npv, npb, npt)``: one light curve per
+      parameter vector per wavelength bin.
+
+    Because all the bins share one time array, `set_data` is called with the times only;
+    `lcids` and `pbids` play no role here.
+
+    Examples
+    --------
+    ::
+
+        from pytransit import TSModel
+
+        tm = TSModel()
+        tm.set_data(time)
+
+        # 100 wavelength bins, each with its own radius ratio and quadratic limb darkening
+        flux = tm.evaluate(k=k_per_bin, ldc=ldc_per_bin, t0=0.0, p=1.0, a=3.0, i=0.5*pi)
+        # flux.shape == (1, 100, time.size)
+
+    See Also
+    --------
+    EclipseSpectroscopyModel : the equivalent model for secondary eclipse spectroscopy.
+    """
 
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],

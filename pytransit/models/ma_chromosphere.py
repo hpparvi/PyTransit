@@ -17,12 +17,43 @@ from typing import Union
 
 from numpy import ndarray, array, squeeze, asarray, zeros, isscalar
 
+from ..orbits.orbits_py import ta_ip_calculate_table
 from .numba.ma_chromosphere_nb import chromosphere_model_v, chromosphere_model_s
+from ._deprecation import deprecated_evaluation_method
 from .transitmodel import TransitModel
 
 __all__ = ['ChromosphereModel']
 
 class ChromosphereModel(TransitModel):
+    """Transit over an optically thin shell (Schlawin et al., ApJL 722, L75, 2010).
+
+    A transit model for an optically thin, spherically symmetric emitting shell such as a
+    stellar chromosphere observed in a chromospheric emission line. The surface brightness of
+    such a shell is *limb brightened* rather than limb darkened: the line of sight near the
+    limb passes through a longer path of emitting material, so the projected disk is brightest
+    at its edge and faintest at its centre. This inverts the usual transit shape, and a model
+    built for a limb-darkened photosphere cannot reproduce it.
+
+    The profile is fixed by the geometry of the shell, so the model takes no limb darkening
+    coefficients.
+
+    Examples
+    --------
+    ::
+
+        from pytransit import ChromosphereModel
+
+        tm = ChromosphereModel()
+        tm.set_data(time)
+        flux = tm.evaluate(k=0.1, t0=0.0, p=1.0, a=3.0, i=0.5*pi)
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        # Interpolation tables for the true anomaly. The model computes the projected
+        # star-planet distance with `z_ip_s`, which needs them.
+        self._tae, self._es, self._ms = ta_ip_calculate_table()
 
     def evaluate(self, k: Union[float, ndarray], t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = None, w: Union[float, ndarray] = None,
@@ -81,6 +112,7 @@ class ChromosphereModel(TransitModel):
                                    self.exptimes, self._es, self._ms, self._tae)
         return squeeze(flux)
 
+    @deprecated_evaluation_method()
     def evaluate_ps(self, k: float, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0.) -> ndarray:
         """Evaluate the transit model for a set of scalar parameters.
 

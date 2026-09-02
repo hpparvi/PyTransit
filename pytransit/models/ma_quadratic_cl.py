@@ -39,6 +39,7 @@ from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, a
     concatenate
 
 from .numba.ma_quadratic_nb import calculate_interpolation_tables
+from ._deprecation import deprecated_evaluation_method
 from .transitmodel import TransitModel
 
 warnings.filterwarnings('ignore', category=CompilerWarning)
@@ -263,6 +264,7 @@ class QuadraticModelCL(TransitModel):
         else:
             return None
 
+    @deprecated_evaluation_method()
     def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
                     e: float = 0.0, w: float = 0.0, copy: bool = True):
         """Evaluate the transit model for a set of scalar parameters.
@@ -295,8 +297,9 @@ class QuadraticModelCL(TransitModel):
             pv = array([[k, t0, p, a, i, e, w]], float32)
         else:
             pv = concatenate([k, [t0, p, a, i, e, w]]).astype(float32)
-        return self.evaluate_pv(pv, ldc, copy)
+        return self._evaluate_pv(pv, ldc, copy)
 
+    @deprecated_evaluation_method()
     def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True):
         """Evaluate the transit model for 2D parameter array.
 
@@ -320,6 +323,11 @@ class QuadraticModelCL(TransitModel):
          ndarray
              Modelled flux either as a 1D or 2D ndarray.
          """
+        return self._evaluate_pv(pvp, ldc, copy)
+
+    def _evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True):
+        # Implementation shared with the supported `evaluate` method, so that calling
+        # `evaluate` does not raise the deprecation warning.
         pvp = atleast_2d(pvp)
         ldc = atleast_2d(ldc).astype(float32)
         self.npv = uint32(pvp.shape[0])
@@ -370,7 +378,37 @@ class QuadraticModelCL(TransitModel):
         else:
             return None
 
-    def evaluate_pv_ttv(self, pvp: ndarray, ldc: ndarray, copy: bool = True, tdv: bool = False):
+    @deprecated_evaluation_method()
+    def evaluate_pv_ttv(self, pvp: ndarray, ldc: ndarray, copy: bool = True, tdv: bool = False) -> ndarray:
+        """Evaluate the model with a separate transit centre for each light curve.
+
+        A transit timing variation (TTV) version of `evaluate_pv` in which every light curve gets
+        its own mid-transit time instead of sharing a single zero epoch and period. This is the
+        OpenCL equivalent of the `epids` mechanism the Numba models use, which the OpenCL
+        `set_data` does not support.
+
+        Parameters
+        ----------
+        pvp : ndarray
+            Parameter vector population as a 2D array with one row per parameter vector. The
+            parameters are packed as ``[k, tc_0, ..., tc_(nlc-1), p, a, i]`` when `tdv` is `False`,
+            giving one transit centre per light curve, and as
+            ``[k, tc_0, ..., tc_(nlc-1), p_0, ..., p_(nlc-1), a, i]`` when `tdv` is `True`, giving
+            each light curve its own period as well.
+        ldc : ndarray
+            Limb darkening coefficients as a 2D array with a shape ``(npv, 2*npb)``.
+        copy : bool, optional
+            Copy the model from the GPU memory to a NumPy array. Set to `False` to leave the model
+            on the device.
+        tdv : bool, optional
+            Also give each light curve its own orbital period, which changes the transit duration
+            from one transit to the next (transit duration variations).
+
+        Returns
+        -------
+        ndarray
+            Modelled flux with a shape ``(npv, npt)``.
+        """
         pvp = atleast_2d(pvp)
         ldc = atleast_2d(ldc).astype(float32)
         self.npv = uint32(pvp.shape[0])

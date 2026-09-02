@@ -31,6 +31,7 @@ from typing import Union, Optional, List
 from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, inf, isscalar
 
 from .numba.ma_quadratic_nb import calculate_interpolation_tables, quadratic_model_v, quadratic_model_s
+from ._deprecation import deprecated_evaluation_method
 from .transitmodel import TransitModel
 
 __all__ = ['QuadraticModel']
@@ -112,7 +113,7 @@ class QuadraticModel(TransitModel):
         if isscalar(p):
             e = 0. if e is None else e
             w = 0. if w is None else w
-            return self.evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
+            return self._evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
 
         # Parameter population branch
         # ---------------------------
@@ -139,6 +140,7 @@ class QuadraticModel(TransitModel):
 
         return squeeze(flux)
 
+    @deprecated_evaluation_method()
     def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: float, a: float, i: float,
                     e: float = 0.0, w: float = 0.0, copy: bool = True) -> ndarray:
         """Evaluate the transit model for a set of scalar parameters.
@@ -173,6 +175,12 @@ class QuadraticModel(TransitModel):
         ndarray
             Modelled flux as a 1D ndarray.
         """
+        return self._evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
+
+    def _evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: float, a: float, i: float,
+                    e: float = 0.0, w: float = 0.0, copy: bool = True) -> ndarray:
+        # Implementation shared with the supported `evaluate` method, so that calling
+        # `evaluate` does not raise the deprecation warning.
 
         ldc = asarray(ldc)
         k = asarray(k)
@@ -190,7 +198,6 @@ class QuadraticModel(TransitModel):
                                  self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes, self.npb,
                                  self.ed, self.ld, self.le, self.kt, self.zt, self.interpolate)
         return squeeze(flux)
-
 
     def to_opencl(self):
         """Creates an OpenCL clone (`QuadraticModelCL`) of the transit model.

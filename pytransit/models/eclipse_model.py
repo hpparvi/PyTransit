@@ -19,6 +19,7 @@ from typing import Union, Optional
 from numba import njit
 from numpy import ndarray, squeeze, zeros, asarray, ones
 from .numba.ma_uniform_nb import uniform_model_v, uniform_model_s
+from ._deprecation import deprecated_evaluation_method
 from .transitmodel import TransitModel
 
 __all__ = ['EclipseModel']
@@ -27,6 +28,33 @@ npfloat = Union[float, ndarray]
 
 
 class EclipseModel(TransitModel):
+    """Secondary eclipse (occultation) model with an explicit planet-star flux ratio.
+
+    Models the occultation of the planet by the star. The planet is treated as a uniform disk,
+    which is a good approximation for the dayside emission of most planets, and the eclipse
+    geometry is the transit geometry with the sign of the projected distance reversed.
+
+    The depth of the event is set by the planet-star flux ratio `fr` passed to `evaluate`. With
+    `fr` given, the model returns a light curve normalised to unity out of eclipse and dipping
+    to ``1 - fr`` at its bottom, so it can be multiplied straight into a transit model. Without
+    `fr`, the model returns the raw uniform-disk occultation profile, which is useful when the
+    flux ratio is applied later or fitted separately per passband.
+
+    Examples
+    --------
+    ::
+
+        from pytransit import EclipseModel
+
+        em = EclipseModel()
+        em.set_data(time)
+        flux = em.evaluate(k=0.1, t0=0.0, p=1.0, a=3.0, i=0.5*pi, fr=1e-3)
+
+    See Also
+    --------
+    UniformModel : the same geometry without the flux ratio, via ``eclipse=True``.
+    EclipseSpectroscopyModel : eclipse model for spectroscopic time series.
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -98,6 +126,7 @@ class EclipseModel(TransitModel):
 
         return squeeze(flux)
 
+    @deprecated_evaluation_method()
     def evaluate_ps(self, k: float, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0., fr: Optional[float] = None) -> ndarray:
         """Evaluate the transit model for a set of scalar parameters.
 

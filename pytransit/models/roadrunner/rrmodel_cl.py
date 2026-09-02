@@ -28,6 +28,7 @@ from ..ldmodel import LDModel
 
 from .common import create_z_grid
 
+from .._deprecation import deprecated_evaluation_method
 from ..transitmodel import TransitModel
 from ..limb_darkening import (ld_uniform, ldi_uniform, ld_linear, ldi_linear, ld_quadratic, ldi_quadratic,
                               ld_quadratic_tri, ldi_quadratic_tri, ld_nonlinear, ldi_nonlinear, ld_general, ldi_general,
@@ -40,6 +41,16 @@ warnings.filterwarnings('ignore', category=CompilerWarning)
 __all__ = ['RoadRunnerModelCL']
 
 class RoadRunnerModelCL(TransitModel):
+    """OpenCL implementation of the RoadRunner transit model (Parviainen, MNRAS 499, 1633, 2020).
+
+    A GPU implementation of :class:`~pytransit.models.roadrunner.rrmodel.RoadRunnerModel`. The
+    limb darkening profile is evaluated on the host and uploaded to the device, so the model
+    supports the same built-in limb darkening laws as the Numba version.
+
+    This class is not exported at the package top level; import it from its module::
+
+        from pytransit.models.roadrunner.rrmodel_cl import RoadRunnerModelCL
+    """
     ldmodels = {'uniform': (ld_uniform, ldi_uniform),
                 'linear': (ld_linear, ldi_linear),
                 'quadratic': (ld_quadratic, ldi_quadratic),
@@ -141,6 +152,22 @@ class RoadRunnerModelCL(TransitModel):
         self.init_siwft_arrays(self.zcut, self.ng, self.nzin, self.nzlimb)
 
     def init_siwft_arrays(self, zcut: float = 0.7, ng: int = 50, nzin: int = 30, nzlimb: int = 30):
+        """Build the stellar disk discretisation arrays and upload them to the device.
+
+        Called by the initialiser. The arguments set the accuracy of the model the same way they do
+        in :class:`~pytransit.models.roadrunner.rrmodel.RoadRunnerModel`.
+
+        Parameters
+        ----------
+        zcut : float, optional
+            Normalised distance separating the inner stellar disk from the limb.
+        ng : int, optional
+            Size of the grazing value table.
+        nzin : int, optional
+            Number of discretisation nodes covering the inner stellar disk.
+        nzlimb : int, optional
+            Number of discretisation nodes covering the stellar limb.
+        """
         mf = cl.mem_flags
 
         self.ze, self.zm = create_z_grid(zcut, nzin, nzlimb)
@@ -243,8 +270,9 @@ class RoadRunnerModelCL(TransitModel):
         pvp[:, nk + 4] = e
         pvp[:, nk + 5] = w
 
-        return self.evaluate_pv(pvp, ldc, copy)
+        return self._evaluate_pv(pvp, ldc, copy)
 
+    @deprecated_evaluation_method()
     def evaluate_ps(self, k, ldc, t0, p, a, i, e=0., w=0., copy=True) -> ndarray:
         """Evaluate the transit model for a set of scalar parameters.
 
@@ -282,8 +310,9 @@ class RoadRunnerModelCL(TransitModel):
             pv = array([[k, t0, p, a, i, e, w]], float32)
         else:
             pv = concatenate([k, [t0, p, a, i, e, w]]).astype(float32)
-        return self.evaluate_pv(pv, ldc, copy)
+        return self._evaluate_pv(pv, ldc, copy)
 
+    @deprecated_evaluation_method()
     def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
         """Evaluate the transit model for a 2D parameter array.
 
@@ -304,6 +333,11 @@ class RoadRunnerModelCL(TransitModel):
            ndarray
                Modelled flux either as a 1D or 2D ndarray.
            """
+        return self._evaluate_pv(pvp, ldc, copy)
+
+    def _evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
+        # Implementation shared with the supported `evaluate` method, so that calling
+        # `evaluate` does not raise the deprecation warning.
         pvp = atleast_2d(pvp)
         ldc = asarray(ldc)
         nk = pvp.shape[1] - 6

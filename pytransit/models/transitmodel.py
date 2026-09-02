@@ -34,7 +34,47 @@ from ..orbits.orbits_py import ta_ip_calculate_table
 
 
 class TransitModel(object):
-    """Exoplanet transit light curve model 
+    """Base class for the PyTransit exoplanet transit light curve models.
+
+    `TransitModel` defines the data-setup half of the interface that every PyTransit transit
+    model shares, and declares the evaluation half that the subclasses implement. Using any
+    model follows the same three steps
+
+    1. create the model, giving it any model-specific settings,
+    2. call `set_data` to tell the model *when* the observations were made, and
+    3. call `evaluate` to compute the fluxes for a set of physical parameters.
+
+    The data setup is separated from the evaluation because the observation times change
+    rarely while the parameters change constantly. Everything that can be precomputed from
+    the times alone -- index arrays, supersampling offsets, and so on -- is computed once in
+    `set_data` and reused by every subsequent `evaluate` call. This is what makes the models
+    efficient inside an optimiser or a sampler.
+
+    Attributes
+    ----------
+    time : ndarray
+        Mid-exposure times, set by `set_data`.
+    lcids : ndarray
+        Light curve index for each exposure, one per element of `time`.
+    pbids : ndarray
+        Passband index for each light curve, one per light curve.
+    epids : ndarray
+        Epoch index for each light curve, one per light curve.
+    nsamples : ndarray
+        Number of supersamples per exposure, one per light curve.
+    exptimes : ndarray
+        Exposure time in days, one per light curve.
+    npt : int
+        Number of exposures.
+    nlc : int
+        Number of light curves.
+    npb : int
+        Number of passbands.
+
+    Notes
+    -----
+    This class is not meant to be used directly. See :class:`~pytransit.models.roadrunner.rrmodel.RoadRunnerModel`
+    for the recommended general-purpose model.
     """
 
     def __init__(self) -> None:

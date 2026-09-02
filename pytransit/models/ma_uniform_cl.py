@@ -38,6 +38,7 @@ from typing import Union, Optional
 import pyopencl as cl
 from pyopencl import CompilerWarning
 from numpy import array, uint32, float32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, empty, concatenate
+from ._deprecation import deprecated_evaluation_method
 from .transitmodel import TransitModel
 from ..orbits.taylor_z import vajs_from_paiew_v
 
@@ -168,8 +169,9 @@ class UniformModelCL(TransitModel):
         pvp[:, nk + 3] = i
         pvp[:, nk + 4] = e
         pvp[:, nk + 5] = w
-        return self.evaluate_pv(pvp, copy)
+        return self._evaluate_pv(pvp, copy)
 
+    @deprecated_evaluation_method()
     def evaluate_ps(self, k, t0, p, a, i, e=0., w=0., copy=True):
         """Evaluate the transit model for a set of scalar parameters.
 
@@ -205,8 +207,9 @@ class UniformModelCL(TransitModel):
             pv = array([[k, t0, p, a, i, e, w]], float32)
         else:
             pv = concatenate([k, [t0, p, a, i, e, w]]).astype(float32)
-        return self.evaluate_pv(pv, copy)
+        return self._evaluate_pv(pv, copy)
 
+    @deprecated_evaluation_method()
     def evaluate_pv(self, pvp, copy=True):
         """Evaluate the transit model for 2D parameter array.
 
@@ -230,6 +233,11 @@ class UniformModelCL(TransitModel):
         ndarray
             Modelled flux either as a 1D or 2D ndarray.
         """
+        return self._evaluate_pv(pvp, copy)
+
+    def _evaluate_pv(self, pvp, copy=True):
+        # Implementation shared with the supported `evaluate` method, so that calling
+        # `evaluate` does not raise the deprecation warning.
         pvp = atleast_2d(pvp)
         self.npv = uint32(pvp.shape[0])
         self.spv = uint32(pvp.shape[1])

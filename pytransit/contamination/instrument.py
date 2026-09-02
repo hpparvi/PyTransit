@@ -19,6 +19,32 @@ from .filter import Filter, BoxcarFilter
 
 
 class Instrument:
+    """A set of passbands with optional detector quantum efficiency curves.
+
+    An `Instrument` bundles the passbands a contamination model integrates stellar spectra
+    over. The order of `filters` fixes the passband order used everywhere downstream: the
+    columns of the contamination arrays and the passband indices (`pbids`) given to a transit
+    model refer to this order.
+
+    Parameters
+    ----------
+    name : str
+        Instrument name.
+    filters : sequence of Filter
+        The passband transmission profiles, one per passband.
+    qes : Filter or sequence of Filter, optional
+        Detector quantum efficiency profiles. A single `Filter` is applied to every passband,
+        a sequence gives one profile per passband. Defaults to a flat unit response over
+        0-10000 nm, i.e. no quantum efficiency weighting.
+
+    Attributes
+    ----------
+    pb_n : int
+        Number of passbands.
+    pb_names : list of str
+        Passband names, taken from the filter names, in the order given.
+    """
+
     def __init__(self, name, filters, qes=None):
         self.name = name
 

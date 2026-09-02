@@ -30,25 +30,58 @@ from typing import Union, Optional, List
 
 from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray
 
+from ..orbits.orbits_py import ta_ip_calculate_table
 from .numba.general_nb import init_arrays, general_model_s, general_model_v, general_model_pv
 
+from ._deprecation import deprecated_evaluation_method
 from .transitmodel import TransitModel
 
 __all__ = ['GeneralModel']
 
 class GeneralModel(TransitModel):
-    """Transit model with general limb darkening (Giménez, A&A 450, 1231–1237, 2006).
+    r"""Transit model with general limb darkening (Giménez, A&A 450, 1231–1237, 2006).
 
     Transit model with general limb darkening (Giménez, A&A 450, 1231–1237, 2006) with optimizations described in
     Parviainen (MNRAS 450, 3233–3238, 2015).
 
     The general limb darkening law is
 
-    .. math:: I(\mu) = I(1) (1 - \sum_{n=1}^N u_n(1-\mu^n) )
+    .. math::
 
+        I(\mu) = I(1) \left(1 - \sum_{n=1}^N u_n(1-\mu^n)\right)
+
+    and the model is evaluated as a series of Jacobi polynomials. The number of polynomials
+    `npol` sets the accuracy of the transit model, while the number of limb darkening
+    coefficients `nldc` sets the flexibility of the limb darkening law. Increasing `nldc` costs
+    little, but increasing `npol` costs computation time directly.
+
+    Notes
+    -----
+    The four-coefficient non-linear law of Mandel & Agol (2002) is not implemented separately in
+    PyTransit because the Giménez law offers the same functionality with arbitrary flexibility.
+    For new work, :class:`~pytransit.models.roadrunner.rrmodel.RoadRunnerModel` is generally the
+    better choice: it supports the general law among many others and is faster to evaluate.
     """
 
     def __init__(self, npol: int = 50, nldc: int = 2, mode: int = 0):
+        """
+        Parameters
+        ----------
+        npol : int, optional
+            Number of Jacobi polynomials used in the series expansion. Higher values give a more
+            accurate transit model at a directly proportional computational cost.
+        nldc : int, optional
+            Number of limb darkening coefficients the model expects. Increasing this does not
+            significantly increase the evaluation time.
+        mode : int, optional
+            Evaluation mode: 0 for normal evaluation, 1 for the transmission spectroscopy mode
+            that accelerates the evaluation when many passbands share a single transit geometry.
+
+        Raises
+        ------
+        ValueError
+            If `npol` is not positive, `nldc` is not positive, or `mode` is not 0 or 1.
+        """
         if npol < 1:
             raise ValueError(f"`npol` has to be positive, now {npol}")
         if nldc <= 0:
@@ -61,6 +94,10 @@ class GeneralModel(TransitModel):
         self.nldc = nldc
         self.mode = mode
         self._anm, self._avl, self._ajd, self._aje = init_arrays(npol, nldc)
+
+        # Interpolation tables for the true anomaly. The model computes the projected
+        # star-planet distance with `z_ip_s`, which needs them.
+        self._tae, self._es, self._ms = ta_ip_calculate_table()
 
 
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List], t0: Union[float, ndarray], p: Union[float, ndarray],
@@ -104,7 +141,7 @@ class GeneralModel(TransitModel):
         if isinstance(t0, float):
             if e is None:
                 e, w = 0.0, 0.0
-            return self.evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
+            return self._evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
 
         # Parameter population branch
         # ---------------------------
@@ -123,6 +160,7 @@ class GeneralModel(TransitModel):
                                    self._anm, self._avl, self._ajd, self._aje)
         return squeeze(flux)
 
+    @deprecated_evaluation_method()
     def evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
                     e: float = 0.0, w: float = 0.0, copy: bool = True) -> ndarray:
         """Evaluate the transit model for a set of scalar parameters.
@@ -157,6 +195,12 @@ class GeneralModel(TransitModel):
         ndarray
             Modelled flux as a 1D ndarray.
         """
+        return self._evaluate_ps(k, ldc, t0, p, a, i, e, w, copy)
+
+    def _evaluate_ps(self, k: Union[float, ndarray], ldc: ndarray, t0: float, p: float, a: float, i: float,
+                    e: float = 0.0, w: float = 0.0, copy: bool = True) -> ndarray:
+        # Implementation shared with the supported `evaluate` method, so that calling
+        # `evaluate` does not raise the deprecation warning.
 
         ldc = asarray(ldc)
         k = asarray(k)
@@ -173,6 +217,7 @@ class GeneralModel(TransitModel):
                                self._anm, self._avl, self._ajd, self._aje)
         return squeeze(flux)
 
+    @deprecated_evaluation_method()
     def evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
         """Evaluate the transit model for a 2D parameter array.
 

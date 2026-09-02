@@ -99,9 +99,9 @@ def _jplot(hte, cte, cnr, imp, rho, fw=10, nb=30, gs=25, simulation=False, **kwa
     ax_rm.hist(rho, bins=nb, alpha=0.5, range=rlim)
     ax_cnm.hist(cnr, bins=nb, alpha=0.5, range=clim, orientation='horizontal')
 
-    pl.setp(ax_tt, xlabel='Host $T_\mathrm{Eff}$', ylabel='Contaminant $T_\mathrm{Eff}$')
-    pl.setp(ax_chj, xlabel='Host $T_\mathrm{Eff}$', ylabel='Contamination in $i\'$')
-    pl.setp(ax_ccj, xlabel='Contaminant $T_\mathrm{Eff}$')
+    pl.setp(ax_tt, xlabel=r'Host $T_\mathrm{Eff}$', ylabel=r'Contaminant $T_\mathrm{Eff}$')
+    pl.setp(ax_chj, xlabel=r'Host $T_\mathrm{Eff}$', ylabel=r"Contamination in $i'$")
+    pl.setp(ax_ccj, xlabel=r'Contaminant $T_\mathrm{Eff}$')
     pl.setp(ax_cbj, xlabel='Impact parameter')
     pl.setp(ax_crj, xlabel='Stellar density')
 

@@ -17,6 +17,7 @@
 from typing import Union
 from numpy import ndarray, squeeze, zeros, asarray, isscalar
 from .numba.ma_uniform_nb import uniform_model_v, uniform_model_s
+from ._deprecation import deprecated_evaluation_method
 from .transitmodel import TransitModel
 
 __all__ = ['UniformModel']
@@ -24,8 +25,47 @@ __all__ = ['UniformModel']
 npfloat = Union[float, ndarray]
 
 class UniformModel(TransitModel):
+    """Transit over a uniform (unlimb-darkened) stellar disk (Mandel & Agol, ApJ 580, L171-L175, 2002).
+
+    The uniform model gives the flux blocked by an opaque circular planet crossing a disk of
+    constant surface brightness. Because there is no limb darkening, the model takes no limb
+    darkening coefficients and reduces to the analytic overlap area of two circles, which makes
+    it the fastest model in PyTransit.
+
+    The model is used for two things in practice:
+
+    - **Secondary eclipses**, where the planet's dayside is occulted by the star. The planet
+      disk really is close to uniform in this geometry, so the model is physically correct
+      rather than merely convenient. Pass ``eclipse=True`` to shift the modelled event to the
+      secondary eclipse.
+    - **Transits where limb darkening is negligible or irrelevant**, such as very low-precision
+      photometry or transit-search applications where speed matters more than a ppm-accurate
+      shape.
+
+    Examples
+    --------
+    ::
+
+        from pytransit import UniformModel
+
+        tm = UniformModel()
+        tm.set_data(time)
+        flux = tm.evaluate(k=0.1, t0=0.0, p=1.0, a=3.0, i=0.5*pi)
+
+    See Also
+    --------
+    EclipseModel : secondary eclipse model with an explicit planet-star flux ratio.
+    UniformModelCL : OpenCL implementation of the same model.
+    """
 
     def __init__(self, eclipse: bool = False) -> None:
+        """
+        Parameters
+        ----------
+        eclipse : bool, optional
+            If `True`, the model reproduces a secondary eclipse (an occultation of the planet
+            by the star) rather than a transit. Defaults to `False`.
+        """
         super().__init__()
         self.is_eclipse = eclipse
         self._zsign = -1.0 if self.is_eclipse else 1.0
@@ -85,6 +125,7 @@ class UniformModel(TransitModel):
             flux = uniform_model_v(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes, zsign=self._zsign)
         return squeeze(flux)
 
+    @deprecated_evaluation_method()
     def evaluate_ps(self, k: float, t0: float, p: float, a: float, i: float, e: float = 0., w: float = 0.) -> ndarray:
         """Evaluate the transit model for a set of scalar parameters.
 

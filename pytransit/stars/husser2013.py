@@ -123,6 +123,25 @@ def write_table(df):
 
 
 def read_husser2013_table():
+    """Read the wavelength-binned Husser et al. (2013) PHOENIX stellar spectrum table shipped with PyTransit.
+
+    Reads the precomputed spectrum table from ``husser2013_file``. The table holds spectra
+    averaged over surface gravity and metallicity and binned to a uniform 1 nm wavelength grid
+    covering 300-2500 nm at 73 effective temperatures from 2300 K to 12000 K. The binning keeps
+    the table small enough to distribute with the package while remaining accurate enough for
+    broadband flux ratios. The temperature coverage extends to hotter stars than the BT-Settl
+    grid, but the wavelength coverage is narrower.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Spectra with the effective temperatures in K as the index and the wavelengths in nm as
+        the columns.
+
+    See Also
+    --------
+    create_husser2013_interpolator : an interpolator over the same table.
+    """
     spectra = pf.getdata(husser2013_file).astype('d')
     teff = pf.getdata(husser2013_file, 1)['TEff'].astype('d')
     wl = pf.getval(husser2013_file, 'CRVAL1') + arange(spectra.shape[1]) * pf.getval(husser2013_file, 'CDELT1')
@@ -130,12 +149,42 @@ def read_husser2013_table():
 
 
 def create_husser2013_interpolator():
+    """Create a 2D interpolator over the Husser et al. (2013) PHOENIX spectrum table.
+
+    Returns
+    -------
+    scipy.interpolate.RegularGridInterpolator
+        Interpolator over (effective temperature [K], wavelength [nm]) returning the flux.
+
+    Examples
+    --------
+    ::
+
+        from pytransit.stars import create_husser2013_interpolator
+
+        ip = create_husser2013_interpolator()
+        flux = ip([[5500.0, 650.0]])
+    """
     df = read_husser2013_table()
     rgi = RegularGridInterpolator((df.index.values, df.columns.values.astype('d')), df.values)
     return rgi
 
 
 def compute_averaged_husser2013_table(datadir):
+    """Recompute the binned Husser et al. (2013) PHOENIX spectrum table from the original spectra.
+
+    Reads the original Husser et al. (2013) PHOENIX spectra from `datadir`, averages them over surface gravity
+    and metallicity for each effective temperature, bins them to a 1 nm grid, and overwrites the
+    table at ``husser2013_file``.
+
+    This is a package maintenance function: PyTransit ships with a precomputed table, so it only
+    needs to be run to rebuild that table from a locally downloaded spectrum grid.
+
+    Parameters
+    ----------
+    datadir : pathlib.Path
+        Directory holding the original spectra as ``*.fits.gz`` files.
+    """
     files = gather_files(datadir)
     df = create_table(files)
     write_table(df)

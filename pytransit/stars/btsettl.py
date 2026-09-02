@@ -112,6 +112,25 @@ def write_table(df):
 
 
 def read_bt_settl_table():
+    """Read the wavelength-binned BT-Settl stellar spectrum table shipped with PyTransit.
+
+    Reads the precomputed spectrum table from ``bt_settl_file``. The table holds spectra
+    averaged over surface gravity and metallicity and binned to a uniform 1 nm wavelength grid
+    covering 10-30000 nm at 68 effective temperatures from 1200 K to 7000 K. The binning keeps
+    the table small enough to distribute with the package while remaining accurate enough for
+    broadband flux ratios. The temperature coverage makes this the grid of choice for cool
+    stars, M dwarfs, and brown dwarfs.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Spectra with the effective temperatures in K as the index and the wavelengths in nm as
+        the columns.
+
+    See Also
+    --------
+    create_bt_settl_interpolator : an interpolator over the same table.
+    """
     spectra = pf.getdata(bt_settl_file).astype('d')
     teff = pf.getdata(bt_settl_file, 1)['TEff'].astype('d')
     wl = pf.getval(bt_settl_file, 'CRVAL1') + arange(spectra.shape[1]) * pf.getval(bt_settl_file, 'CDELT1')
@@ -119,12 +138,33 @@ def read_bt_settl_table():
 
 
 def create_bt_settl_interpolator():
+    """Create a 2D interpolator over the BT-Settl spectrum table.
+
+    Returns
+    -------
+    scipy.interpolate.RegularGridInterpolator
+        Interpolator over (effective temperature [K], wavelength [nm]) returning the flux.
+    """
     df = read_bt_settl_table()
     rgi = RegularGridInterpolator((df.index.values, df.columns.values.astype('d')), df.values)
     return rgi
 
 
 def compute_averaged_bt_settl_table(datadir):
+    """Recompute the binned BT-Settl spectrum table from the original spectra.
+
+    Reads the original BT-Settl spectra from `datadir`, averages them over surface gravity
+    and metallicity for each effective temperature, bins them to a 1 nm grid, and overwrites the
+    table at ``bt_settl_file``.
+
+    This is a package maintenance function: PyTransit ships with a precomputed table, so it only
+    needs to be run to rebuild that table from a locally downloaded spectrum grid.
+
+    Parameters
+    ----------
+    datadir : pathlib.Path
+        Directory holding the original spectra as ``*.fits.gz`` files.
+    """
     files = gather_files(datadir)
     df = create_table(files)
     write_table(df)

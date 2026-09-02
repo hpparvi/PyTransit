@@ -38,6 +38,37 @@ __all__ = ['EclipseSpectroscopyModel']
 
 
 class EclipseSpectroscopyModel(TransitModel):
+    """Secondary eclipse model specialised for spectroscopic time series.
+
+    The eclipse counterpart of :class:`TransmissionSpectroscopyModel`. It models the
+    occultation of the planet by the star for many wavelength bins that share a single event,
+    computing the eclipse geometry once and reusing it across all bins.
+
+    The quantity of interest in eclipse spectroscopy is the wavelength-dependent planet-star
+    flux ratio, so it is a *parameter* here rather than something folded into the depth: the
+    per-bin flux ratios are passed as the first argument `f` of `evaluate`.
+
+    The model also applies the light travel time correction between the transit and the
+    secondary eclipse, which shifts the eclipse by roughly ``2 a R_star / c`` (about 40 s for a
+    hot Jupiter). The correction needs a physical stellar radius, given through the `rstar`
+    argument of `evaluate` in solar radii.
+
+    Parameters
+    ----------
+    parallel : bool, optional
+        Compile the model with Numba's parallel backend. Worth enabling for large numbers of
+        wavelength bins.
+
+    Examples
+    --------
+    ::
+
+        from pytransit import ESModel
+
+        em = ESModel()
+        em.set_data(time)
+        flux = em.evaluate(f=fr_per_bin, k=0.1, t0=0.0, p=1.0, a=3.0, i=0.5*pi, rstar=1.2)
+    """
 
     def __init__(self, parallel: bool = False):
         self.parallel = parallel
