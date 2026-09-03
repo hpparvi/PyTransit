@@ -11,73 +11,86 @@
  *     contributes `(ldi - Ip*A)/ldi`. It is not a deficit accumulated from zero.
  *  2. There is a per-parameter-vector validity guard. An invalid vector yields
  *     an all-NaN flux and gradient row.
- *  3. Limb darkening reaches the device only as `ldm`, the mean intensity under
- *     the planet disk tabulated against the grazing parameter g = z/(1+k), and
- *     contracted on the host. The device code is therefore independent of which
- *     limb-darkening profile was used.
+ *  3. Limb darkening reaches the device only as split cubic tables of the mean
+ *     intensity under the planet disk against the grazing parameter g = z/(1+k),
+ *     built on the host by `backends.numba.ldquad.rr_tables`. The device code is
+ *     therefore independent of which limb-darkening profile was used.
  *
  *  NLDC (the number of limb-darkening coefficients) is a build option, so the
  *  private gradient accumulator has a static size.
  */
 
 
-/* Linear interpolation of a mean limb-darkening table at the grazing parameter.
+/* Split cubic table lookup at the grazing parameter g.
 
-   Port of `backends.numba.rrmodel.interpolate_mean_limb_darkening`, with one
-   deliberate difference: the index is clamped to `ng - 2`. Because
-   dg = (1 - 1e-7)/(ng - 1), a g within ~1e-7 of 1.0 gives floor(g/dg) == ng - 1
-   and the reference reads `lda[ng]`, one past the end. Numba returns whatever
-   follows the array; on a device that is an out-of-bounds global read, so it is
-   clamped here. The JAX backend clamps likewise.
+   Port of `backends.numba.ldquad.ldm_lookup`. The table has ng/2 uniform nodes
+   from 0 to the limb contact gc and ng - ng/2 from gc to 1, stored as per-interval
+   cubic coefficients (ng - 2 rows of 4). `ldm_locate` returns the row, the local
+   coordinate a in [0, 1) and the interval width h.
+
+   g > 1 returns 0 so that an untransiting sample degenerates to (ldi-0)/ldi = 1;
+   the numba kernels guard the same case with `z >= 1 + k`.
 
    NaN g needs its own handling and cannot be folded into the range tests: NaN
-   compares false against both, and `(int)floor(NaN)` is INT_MIN on at least
-   NVIDIA, which slips under the upper clamp and indexes the table at a -16 GB
-   offset. That is a memory fault, and it takes the shared context down for the
-   rest of the process, not just the one evaluation. `k` is not covered by the
-   parameter-vector validity guard, so a NaN radius ratio reaches here routinely
-   from a sampler.
+   compares false against both, and `(int)NaN` is INT_MIN on at least NVIDIA,
+   which would index the table at a -16 GB offset. That is a memory fault, and it
+   takes the shared context down for the rest of the process. `k` is not covered
+   by the parameter-vector validity guard, so a NaN radius ratio reaches here
+   routinely from a sampler. The `isnan` test and the lower clamp both guard this;
+   both are kept deliberately. */
+inline int ldm_locate(REAL g, REAL gc, int ng, REAL *a, REAL *h) {
+    const int n1 = ng / 2;
+    const int n2 = ng - n1;
+    REAL x;
+    int i;
+    if (g < gc) {
+        x = g / gc * (REAL)(n1 - 1);
+        i = (int)x;
+        if (i < 0) i = 0;
+        if (i > n1 - 2) i = n1 - 2;
+        *a = x - (REAL)i;
+        *h = gc / (REAL)(n1 - 1);
+        return i;
+    }
+    x = (g - gc) / ((REAL)1.0 - gc) * (REAL)(n2 - 1);
+    i = (int)x;
+    if (i < 0) i = 0;
+    if (i > n2 - 2) i = n2 - 2;
+    *a = x - (REAL)i;
+    *h = ((REAL)1.0 - gc) / (REAL)(n2 - 1);
+    return i + n1 - 1;
+}
 
-   Both the `isnan` test and the lower clamp guard this, and either alone is
-   sufficient -- the clamp turns INT_MIN into 0 and the NaN then propagates
-   through the interpolation anyway. Both are kept deliberately: the `isnan`
-   states the intent, the clamp is a structural backstop for any other route to
-   a negative index. Neither is dead code; removing both faults the device. */
-inline REAL interp_ldm(REAL g, REAL dg, int ng, __global const REAL *ldm) {
+inline REAL ldm_lookup(REAL g, REAL gc, int ng, __global const REAL *coef) {
     if (isnan(g)) return NAN;
     if (g < (REAL)0.0) return NAN;
     if (g > (REAL)1.0) return (REAL)0.0;
-    int i = (int)floor(g / dg);
-    if (i < 0) i = 0;
-    if (i > ng - 2) i = ng - 2;
-    REAL a = (g - (REAL)i * dg) / dg;
-    return ((REAL)1.0 - a) * ldm[i] + a * ldm[i + 1];
+    REAL a, h;
+    const int i = ldm_locate(g, gc, ng, &a, &h);
+    __global const REAL *c = coef + i * 4;
+    return c[0] + a * (c[1] + a * (c[2] + a * c[3]));
 }
 
-
-/* As `interp_ldm`, also returning the derivative with respect to g.
-
-   The interpolant is piecewise linear, so its derivative is piecewise constant:
-   (ldm[i+1] - ldm[i]) / dg. */
-inline REAL interp_ldm_and_grad(REAL g, REAL dg, int ng, __global const REAL *ldm, REAL *dv) {
-    if (isnan(g)) { *dv = (REAL)0.0; return NAN; }   /* see `interp_ldm` */
+/* As `ldm_lookup`, also returning the derivative with respect to g: the analytic
+   derivative of the interval's cubic. */
+inline REAL ldm_lookup_and_grad(REAL g, REAL gc, int ng, __global const REAL *coef, REAL *dv) {
+    if (isnan(g)) { *dv = (REAL)0.0; return NAN; }
     if (g < (REAL)0.0) { *dv = (REAL)0.0; return NAN; }
     if (g > (REAL)1.0) { *dv = (REAL)0.0; return (REAL)0.0; }
-    int i = (int)floor(g / dg);
-    if (i < 0) i = 0;
-    if (i > ng - 2) i = ng - 2;
-    REAL a = (g - (REAL)i * dg) / dg;
-    *dv = (ldm[i + 1] - ldm[i]) / dg;
-    return ((REAL)1.0 - a) * ldm[i] + a * ldm[i + 1];
+    REAL a, h;
+    const int i = ldm_locate(g, gc, ng, &a, &h);
+    __global const REAL *c = coef + i * 4;
+    *dv = (c[1] + a * ((REAL)2.0 * c[2] + (REAL)3.0 * a * c[3])) / h;
+    return c[0] + a * (c[1] + a * (c[2] + a * c[3]));
 }
-
 
 __kernel void rrmodel(__global const REAL *times,      /* (npt,)          */
                       __global const REAL *k,          /* (npv, npb)      */
                       __global const REAL *t0,         /* (npv, ntc)      */
                       __global const REAL *p,          /* (npv, nor)      */
                       __global const REAL *xyc,        /* (npv, nor, 10)  */
-                      __global const REAL *ldm,        /* (npv, npb, ng)  */
+                      __global const REAL *gcs,        /* (npv, npb)             */
+                      __global const REAL *coef,       /* (npv, npb, ng - 2, 4)  */
                       __global const REAL *ldi,        /* (npv, npb)      */
                       __global const REAL *bt1,        /* (npv,)          */
                       __global const REAL *bt4,        /* (npv,)          */
@@ -88,7 +101,7 @@ __kernel void rrmodel(__global const REAL *times,      /* (npt,)          */
                       __global const int  *nsamples,   /* (nlc,)          */
                       __global const REAL *exptimes,   /* (nlc,)          */
                       const int npt, const int npb, const int ntc, const int nor,
-                      const int ng, const REAL dg,
+                      const int ng,
                       __global REAL *flux)             /* (npv, npt)      */
 {
     const int ipt = get_global_id(0);
@@ -118,15 +131,16 @@ __kernel void rrmodel(__global const REAL *times,      /* (npt,)          */
         const REAL ldiv = ldi[ipv * npb + ipb];
         const int  ns  = nsamples[ilc];
         __global const REAL *cf  = xyc + (ipv * nor + iep) * 10;
-        __global const REAL *ldm_pb = ldm + (ipv * npb + ipb) * ng;
+        const REAL gcv = gcs[ipv * npb + ipb];
+        __global const REAL *coef_pb = coef + (size_t)(ipv * npb + ipb) * (ng - 2) * 4;
 
         f = (REAL)0.0;
         for (int is = 1; is <= ns; is++) {
             REAL toff = et * (((REAL)is - (REAL)0.5) / (REAL)ns - (REAL)0.5);
             REAL z = sep_c(t + toff, cf);
-            /* No `z <= 1+k` guard: ccia returns 0 and the interpolation returns 0
+            /* No `z <= 1+k` guard: ccia returns 0 and the lookup returns 0
                for g > 1, so an untransiting sample degenerates to (ldi-0)/ldi = 1. */
-            REAL ip = interp_ldm(z / ((REAL)1.0 + kv), dg, ng, ldm_pb);
+            REAL ip = ldm_lookup(z / ((REAL)1.0 + kv), gcv, ng, coef_pb);
             REAL ap = ccia((REAL)1.0, kv, z);
             f += (ldiv - ip * ap) / ldiv;
         }
@@ -142,8 +156,10 @@ __kernel void rrmodel_grad(__global const REAL *times,      /* (npt,)           
                            __global const REAL *p,          /* (npv, nor)            */
                            __global const REAL *xyc,        /* (npv, nor, 10)        */
                            __global const REAL *dxyc,       /* (npv, nor, NORB, 10)  */
-                           __global const REAL *ldm,        /* (npv, npb, ng)        */
-                           __global const REAL *dldm,       /* (npv, npb, NLDC, ng)  */
+                           __global const REAL *gcs,        /* (npv, npb)                  */
+                           __global const REAL *coef,       /* (npv, npb, ng - 2, 4)       */
+                           __global const REAL *kcoef,      /* (npv, npb, ng - 2, 4)       */
+                           __global const REAL *dcoef,      /* (npv, npb, NLDC, ng - 2, 4) */
                            __global const REAL *ldi,        /* (npv, npb)            */
                            __global const REAL *dldi,       /* (npv, npb, NLDC)      */
                            __global const REAL *bt1,        /* (npv,)                */
@@ -155,7 +171,7 @@ __kernel void rrmodel_grad(__global const REAL *times,      /* (npt,)           
                            __global const int  *nsamples,   /* (nlc,)                */
                            __global const REAL *exptimes,   /* (nlc,)                */
                            const int npt, const int npb, const int ntc, const int nor,
-                           const int ng, const REAL dg,
+                           const int ng,
                            __global REAL *flux,             /* (npv, npt)            */
                            __global REAL *dflux)            /* (npv, npt, 7+npb*NLDC)*/
 {
@@ -197,8 +213,12 @@ __kernel void rrmodel_grad(__global const REAL *times,      /* (npt,)           
         const int  ns   = nsamples[ilc];
         __global const REAL *cf  = xyc  + (ipv * nor + iep) * 10;
         __global const REAL *dcf = dxyc + (ipv * nor + iep) * NORB * 10;
-        __global const REAL *ldm_pb  = ldm  + (ipv * npb + ipb) * ng;
-        __global const REAL *dldm_pb = dldm + (size_t)(ipv * npb + ipb) * NLDC * ng;
+        const REAL gcv = gcs[ipv * npb + ipb];
+        /* Rate of change of the limb contact with k. */
+        const REAL dgc_dk = (REAL)-2.0 / (((REAL)1.0 + kv) * ((REAL)1.0 + kv));
+        __global const REAL *coef_pb  = coef  + (size_t)(ipv * npb + ipb) * (ng - 2) * 4;
+        __global const REAL *kcoef_pb = kcoef + (size_t)(ipv * npb + ipb) * (ng - 2) * 4;
+        __global const REAL *dcoef_pb = dcoef + (size_t)(ipv * npb + ipb) * NLDC * (ng - 2) * 4;
 
         f = (REAL)0.0;
         for (int is = 1; is <= ns; is++) {
@@ -211,15 +231,17 @@ __kernel void rrmodel_grad(__global const REAL *times,      /* (npt,)           
 
             REAL g = z / ((REAL)1.0 + kv);
             REAL dip_dg;
-            REAL ip = interp_ldm_and_grad(g, dg, ng, ldm_pb, &dip_dg);
+            REAL ip = ldm_lookup_and_grad(g, gcv, ng, coef_pb, &dip_dg);
 
             f += (ldiv - ip * ap) / ldiv;
 
-            /* dg/dz = 1/(1+k) and dg/dk = -z/(1+k)^2 at fixed z. The k derivative
-               neglects dldm/dk, i.e. the weight table's own k-dependence; the
-               Numba tests allow rtol=0.1 on this column for that reason. */
+            /* dg/dz = 1/(1+k) and dg/dk = -z/(1+k)^2 at fixed z. The tabulated k
+               derivative follows the node trajectory g(k); removing the part due
+               to the node moving gives the derivative at fixed g. */
             REAL dip_dz = dip_dg / ((REAL)1.0 + kv);
-            REAL dip_dk = dip_dg * (-z / (((REAL)1.0 + kv) * ((REAL)1.0 + kv)));
+            REAL dg_dk = (g < gcv) ? g * dgc_dk / gcv : dgc_dk * ((REAL)1.0 - g) / ((REAL)1.0 - gcv);
+            REAL dip_dk_fixed_g = ldm_lookup(g, gcv, ng, kcoef_pb) - dip_dg * dg_dk;
+            REAL dip_dk = dip_dg * (-z / (((REAL)1.0 + kv) * ((REAL)1.0 + kv))) + dip_dk_fixed_g;
             df[0] += -(dip_dk * ap + ip * dadk) / ldiv;
 
             REAL dflux_dz = -(dip_dz * ap + ip * dadz) / ldiv;
@@ -232,7 +254,7 @@ __kernel void rrmodel_grad(__global const REAL *times,      /* (npt,)           
             df[2] += epoch * dflux_dz * dz[0];
 
             for (int j = 0; j < NLDC; j++)
-                df[7 + j] += -ap * interp_ldm(g, dg, ng, dldm_pb + j * ng) / ldiv;
+                df[7 + j] += -ap * ldm_lookup(g, gcv, ng, dcoef_pb + j * (ng - 2) * 4) / ldiv;
         }
 
         f /= (REAL)ns;

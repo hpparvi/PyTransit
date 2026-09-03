@@ -1,18 +1,24 @@
 from meepmeep.numba2d import solve2d_d, sep_cd, bounding_box
 from numba import prange
-from numpy import ndarray, isnan, any, full, nan, zeros, floor, dot
+from numpy import ndarray, isnan, any, nan, zeros, floor
 
 from .ccintersection import ccia_and_grad
-from .rrmodel import calculate_weights_2d, interpolate_mean_limb_darkening_and_grad, interpolate_mean_limb_darkening
+from .ldquad import rr_tables_grad, ldm_lookup, ldm_lookup_and_grad
 from ._utils import _folded_time
 
 
 def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
                  lcids: ndarray, pbids: ndarray, epids: ndarray, nsamples: ndarray, exptimes: ndarray,
                  ldp: ndarray, ldg: ndarray, ldi: ndarray, dldi: ndarray,
-                 weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray,
-                 npb: int, nep: int):
+                 rules: ndarray, pt0: float, pdt: float, ng: int, npb: int, nep: int):
     """RoadRunner model with analytical gradients supporting heterogeneous light curves.
+
+    The mean intensity under the planet and its derivatives with respect to the limb darkening
+    coefficients are tabulated against the grazing parameter with the quadrature in `ldquad`. Its
+    derivative with respect to g is the analytic derivative of the tabulated cubic, and its
+    derivative with respect to the radius ratio at fixed g comes from a forward difference on k,
+    taken along each node's own trajectory so that no difference straddles the limb contact,
+    where the derivative jumps (see `ldquad.rr_tables_grad`).
 
     Parameters
     ----------
@@ -43,7 +49,7 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
     exptimes : ndarray
         Exposure time per light curve.
     ldp : ndarray
-        Limb darkening profiles, shape (npv, npb, nmu).
+        Limb darkening profiles on the `ldquad.profile_grid` mu grid, shape (npv, npb, nmu).
     ldg : ndarray
         Per-passband LD profile and its derivatives, shape (npv, npb, 1+nldc, nmu).
         Row 0: dI/dmu, rows 1..: dI/dc_j.
@@ -51,18 +57,14 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
         Disk-integrated intensity, shape (npv, npb).
     dldi : ndarray
         Derivative of ldi w.r.t. each LD coefficient, shape (npv, npb, nldc).
-    weights : ndarray
-        3D weight table, shape (nk, ng, nmu).
-    dk : float
-        k step size in weight table.
-    kmin : float
-        Minimum k in weight table.
-    kmax : float
-        Maximum k in weight table.
-    dg : float
-        Grazing parameter step size.
-    z_edges : ndarray
-        Radial zone edges for weight computation.
+    rules : ndarray
+        Quadrature rules from `ldquad.quadrature_rules`, shape (2, 2, nq).
+    pt0 : float
+        First sqrt(mu) node of the profile grid.
+    pdt : float
+        The sqrt(mu) spacing of the profile grid.
+    ng : int
+        Number of grazing parameter nodes.
     npb : int
         Number of passbands.
     nep : int
@@ -80,11 +82,18 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
     """
     npv = k.shape[0]
     npt = times.size
-    ng = weights.shape[1]
+    n1 = ng // 2
     nldc = ldg.shape[2] - 1
-
     flux = zeros((npv, npt))
     dflux = zeros((npv, npt, 7 + npb * nldc))
+
+    # Per passband: the mean intensity under the planet (coef), its total derivative with
+    # respect to k along the node trajectory g_nodes(k) (kcoef), and its derivatives with
+    # respect to the LD coefficients (dcoef), all as split cubic tables in g.
+    gcs = zeros(npb)
+    coef = zeros((npb, ng - 2, 4))
+    kcoef = zeros((npb, ng - 2, 4))
+    dcoef = zeros((npb, nldc, ng - 2, 4))
 
     for ipv in range(npv):
         if isnan(a[ipv, 0]) or (a[ipv, 0] <= 1.0) or (e[ipv, 0] < 0.0) or any(isnan(ldp[ipv, 0])):
@@ -92,24 +101,7 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
             dflux[ipv, :, :] = nan
             continue
 
-        # Pre-compute LD means and their LD-coefficient derivatives per passband.
-        # Each passband uses its own radius ratio and limb darkening profile, so
-        # dldm_dc[ipb, j] = dot(W(k_ipb), dI_ipb/dc_j).
-        ldm_all = zeros((npb, ng))
-        dldm_dc = zeros((npb, nldc, ng))
-        for ipb in range(npb):
-            kv = k[ipv, ipb]
-            if kmin <= kv <= kmax:
-                ik = int(floor((kv - kmin) / dk))
-                ak = (kv - kmin - ik * dk) / dk
-                ldm_all[ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb]) + ak * dot(weights[ik + 1], ldp[ipv, ipb])
-                for j in range(nldc):
-                    dldm_dc[ipb, j, :] = (1.0 - ak) * dot(weights[ik], ldg[ipv, ipb, j + 1]) + ak * dot(weights[ik + 1], ldg[ipv, ipb, j + 1])
-            else:
-                _, _, wg = calculate_weights_2d(kv, z_edges, ng)
-                ldm_all[ipb, :] = dot(wg, ldp[ipv, ipb])
-                for j in range(nldc):
-                    dldm_dc[ipb, j, :] = dot(wg, ldg[ipv, ipb, j + 1])
+        rr_tables_grad(k[ipv], ldp[ipv], ldg[ipv], rules, pt0, pdt, ng, gcs, coef, kcoef, dcoef)
 
         # Pre-compute orbital coefficients and derivatives per epoch
         xyc = zeros((nep, 2, 5))
@@ -138,38 +130,48 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
             # this -epoch*p term, which the period derivative must account for.
             epoch = floor((times[ipt] - t0[ipv, itc] + 0.5 * pv) / pv)
             t = _folded_time(times[ipt], t0[ipv, itc], pv)
+
             if not ((bt1 - exptimes[ilc]) <= t <= (bt4 + exptimes[ilc])):
                 flux[ipv, ipt] = 1.0
             else:
                 kpb = k[ipv, ipb]
+                gc = gcs[ipb]
                 ldi_pb = ldi[ipv, ipb]
-
+                # Rate of change of the limb contact with k, and of g along the node trajectory.
+                dgc_dk = -2.0 / (1.0 + kpb) ** 2
                 for isample in range(1, nsamples[ilc] + 1):
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
                     t_eval = t + time_offset
-
                     z, dz = sep_cd(t_eval, xyc[iep], dxyc[iep])
+                    if z >= 1.0 + kpb:
+                        flux[ipv, ipt] += 1.0
+                        continue
                     aplanet, (dadk, dadz) = ccia_and_grad(1.0, kpb, z)
                     g = z / (1.0 + kpb)
-                    iplanet, dIp_dg = interpolate_mean_limb_darkening_and_grad(g, dg, ldm_all[ipb])
-
+                    iplanet, dIp_dg = ldm_lookup_and_grad(g, gc, n1, coef[ipb])
                     flux[ipv, ipt] += (ldi_pb - iplanet * aplanet) / ldi_pb
 
                     # dI_p/dz = (dI_p/dg) / (1+k)
                     dIp_dz = dIp_dg / (1.0 + kpb)
 
-                    # --- k derivative (dldm/dk ≈ 0) ---
-                    dIp_dk = dIp_dg * (-z / (1.0 + kpb) ** 2)
+                    # --- k derivative ---
+                    # The tabulated k derivative follows the node trajectory g(k); remove the
+                    # part due to the node moving to get the derivative at fixed g.
+                    if g < gc:
+                        dg_dk = g * dgc_dk / gc
+                    else:
+                        dg_dk = dgc_dk * (1.0 - g) / (1.0 - gc)
+                    dIp_dk_fixed_g = ldm_lookup(g, gc, n1, kcoef[ipb]) - dIp_dg * dg_dk
+                    dIp_dk = dIp_dg * (-z / (1.0 + kpb) ** 2) + dIp_dk_fixed_g
                     dflux[ipv, ipt, 0] += -(dIp_dk * aplanet + iplanet * dadk) / ldi_pb
 
                     # --- t0, p, a, i, e, w derivatives ---
-                    # dz is now the 7-element (tc, p, a, i, e, w, lan) gradient from
+                    # dz is the 7-element (tc, p, a, i, e, w, lan) gradient from
                     # sep_cd; slot 0 is the proper transit-centre derivative, so all
                     # six orbital terms share the same sign (lan, slot 6, is unused).
                     dflux_dz = -(dIp_dz * aplanet + iplanet * dadz) / ldi_pb
                     for ip in range(6):
                         dflux[ipv, ipt, ip + 1] += dflux_dz * dz[ip]
-
                     # Period folding correction. The separation derivatives dz are
                     # taken at fixed folded time, but the folded time itself depends
                     # on the period via -epoch*p. Since d_flux/d_t_eval = -d_flux/d_t0,
@@ -179,7 +181,7 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
 
                     # --- LD coefficient derivatives (only this point's passband) ---
                     for j in range(nldc):
-                        dIp_dcj = interpolate_mean_limb_darkening(g, dg, dldm_dc[ipb, j])
+                        dIp_dcj = ldm_lookup(g, gc, n1, dcoef[ipb, j])
                         dflux[ipv, ipt, 7 + ipb * nldc + j] += -aplanet * dIp_dcj / ldi_pb
 
                 flux[ipv, ipt] /= nsamples[ilc]

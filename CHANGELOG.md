@@ -1,5 +1,38 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- `RoadRunnerModel` no longer discretises the stellar disk into annuli on any backend. The mean intensity
+  under the planet is computed for every radius ratio by Gauss quadrature matched to the transit geometry
+  (`pytransit.backends.numba.ldquad`), tabulated against the grazing parameter in two segments split at the
+  limb contact, and read with a per-interval cubic. All three backends build their tables with the same
+  numba code (`ldquad.rr_tables`); the numba kernels read them directly, the OpenCL host uploads them to the
+  device, and the JAX backend re-implements the build in `jax.numpy` so that it can be differentiated. The
+  intensity profile is tabulated once per evaluation on a fixed grid uniform in the square root of mu. The
+  accuracy parameters are `nq`, the number of quadrature nodes per segment (default 8), and `ng` (default
+  100); the annulus parameters `nzin`, `nzlimb`, `zcut`, `precompute_weights`, `klims` and `nk` are removed
+  from `RoadRunnerModel` (`TransmissionSpectroscopyModel` keeps its own). Against exact integration of the
+  limb-darkened disk the defaults are accurate to 0.5-5 ppm for radius ratios from 0.02 to 0.3. The
+  per-evaluation setup costs more than the old weight-table interpolation (about 25 us per parameter vector
+  for the flux and 60 us for the gradient at the defaults), while the per-sample cost is unchanged.
+- The numba and OpenCL `RoadRunnerModel` gradients now include the dependence of the mean intensity under the
+  planet on the radius ratio, which the weight-table version neglected. The derivative with respect to the
+  grazing parameter is the analytic derivative of the tabulated cubic. The JAX backend differentiates through
+  the table build, so `jax.grad` of the JAX kernel agrees with the numba gradient.
+
+### Fixed
+
+- The RoadRunner radius ratio weight table (still used by the transmission spectroscopy model) was indexed with the wrong node spacing, `(kmax - kmin) / nk` instead of `(kmax - kmin) / (nk - 1)`,
+  which misplaced the interpolation between table nodes and read one row past the end of the table at `kmax`.
+- A NaN radius ratio, routine from a sampler, no longer relies on undefined behaviour to yield a NaN flux. The
+  numba `isnan` guards were compiled with `fastmath=True`, whose no-NaN assumption lets LLVM fold them away;
+  the old kernel only returned NaN because `int(nan)` happened to wrap the table read back to element 0. The
+  lookup and profile functions now keep fast math without the no-NaN and no-infinity flags, and the table
+  builders check the radius ratio before building anything, so a NaN radius ratio gives NaN tables and an
+  all-NaN row on every backend.
+
 ## [2.6.18] - 2026-01-28
 
 ### Changed

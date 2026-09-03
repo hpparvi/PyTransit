@@ -40,7 +40,8 @@ from .ldmodel import LDModel
 from .transitmodel import TransitModel
 from ..backends.numba.limb_darkening import *
 from ..backends.numba.limb_darkening.uniform import ldd_uniform
-from ..backends.numba.rrmodel import create_z_grid, calculate_weights_3d, rrmodel
+from ..backends.numba.rrmodel import rrmodel
+from ..backends.numba.ldquad import quadrature_rules, profile_grid
 from ..backends.numba.rrmodel_grad import rrmodel_grad
 from ..backends.jax.rrmodel import rrmodel as jax_model
 
@@ -68,27 +69,19 @@ class RoadRunnerModel(TransitModel):
     def __init__(self, backend: Literal["numba", "jax", "opencl"] = "numba", return_grad: bool = False,
                  parallel: bool = False, n_threads: int | None = None,
                  ldmodel: str | Callable | tuple[Callable, Callable] = 'quadratic',
-                 precompute_weights: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
-                 nzin: int = 20, nzlimb: int = 20, zcut: float = 0.7, ng: int = 100,
-                 small_planet_limit: float = 0.05, **kwargs):
+                 ng: int = 100, nq: int = 8, small_planet_limit: float = 0.05, **kwargs):
         """The RoadRunner transit model by Parviainen (2020).
+
+        All the backends compute the mean stellar intensity under the planet by Gauss quadrature
+        matched to the transit geometry (`pytransit.backends.numba.ldquad`), with `nq` nodes per
+        quadrature segment, and tabulate it against the grazing parameter with `ng` nodes.
 
         Parameters
         ----------
-        precompute_weights : bool, optional
-            Precompute a 3D weight table for radius ratio values set by `klims`.
-        klims : tuple, optional
-            Radius ratio limits (kmin, kmax) for the precomputed weight table.
-        nk : int, optional
-            Radius ratio grid size for the precomputed weight table.
-        nzin : int, optional
-            Normalized distance grid size for the inner disk.
-        nzlimb : int, optional
-            Normalized distance grid size for the limb.
-        zcut: float, optional
-            Normalized distance that separates the stellar disk into an inner disk and limb.
         ng : int, optional
-            Size of the grazing value table.
+            Number of grazing parameter nodes in the mean intensity table.
+        nq : int, optional
+            Number of quadrature nodes per segment.
         n_threads: int, optional
             Number of threads to use for the model computation.
         small_planet_limit: float, optional
@@ -100,8 +93,8 @@ class RoadRunnerModel(TransitModel):
             if return_grad:
                 raise NotImplementedError("Gradient computation is not implemented for the JAX backend.")
             # vmap over npv dimension: k, t0, p, a, i, e, w are per-PV (axis 0),
-            # lcids/pbids/epids/nsamples/exptimes/weights/etc are shared (None),
-            # ldp and ldi are per-PV (axis 0), ldg/dldi/ze unused but passed as None.
+            # lcids/pbids/epids/nsamples/exptimes/rules/etc are shared (None),
+            # ldp and ldi are per-PV (axis 0), ldg/dldi unused but passed as None.
             vmap_axes = (None,                          # times
                          0, 0, 0, 0, 0, 0, 0,          # k, t0, p, a, i, e, w
                          None, None, None, None, None,  # lcids, pbids, epids, nsamples, exptimes
@@ -109,9 +102,9 @@ class RoadRunnerModel(TransitModel):
                          None,                          # ldg
                          0,                             # ldi
                          None,                          # dldi
-                         None, None, None, None, None, None,  # weights, dk, kmin, kmax, dg, ze
-                         None, None, None)              # npb, nep, max_ns
-            self._model = jax.jit(jax.vmap(jax_model, in_axes=vmap_axes), static_argnums=(23, 24, 25))
+                         None, None, None,              # rules, pt0, pdt
+                         None, None, None, None)        # ng, npb, nep, max_ns
+            self._model = jax.jit(jax.vmap(jax_model, in_axes=vmap_axes), static_argnums=(20, 21, 22, 23))
         elif backend == "numba":
             if return_grad:
                 self._model = numba.njit(rrmodel_grad, parallel=parallel)
@@ -132,7 +125,6 @@ class RoadRunnerModel(TransitModel):
         else:
             raise ValueError(f"Unknown backend: {backend}")
 
-        self.interpolate: bool = precompute_weights
         self.splimit: float = small_planet_limit
 
         # Set up the limb darkening model
@@ -161,28 +153,15 @@ class RoadRunnerModel(TransitModel):
         else:
             raise NotImplementedError
 
-        # Set the basic variable
-        # ----------------------
-        self.klims = klims
-        self.nk = nk
+        # Set the basic variables
+        # -----------------------
         self.ng = ng
-        self.nzin = nzin
-        self.nzlimb = nzlimb
-        self.zcut = zcut
-
-        # Declare the basic arrays
-        # ------------------------
-        self.ze = None
-        self.zm = None
+        self.nq = nq
         self.mu = None
-        self.dk = None
-        self.dg = None
-        self.weights = None
-
         self._ldmu = linspace(1, 0, 200)
         self._ldz = sqrt(1 - self._ldmu ** 2)
 
-        self.init_integration(nzin, nzlimb, zcut, ng, nk)
+        self.init_integration(ng, nq)
 
     def _init_model(self):
         pass
@@ -197,15 +176,14 @@ class RoadRunnerModel(TransitModel):
             self._model.set_data(self.times, self.lcids, self.pbids, self.epids,
                                  self.nsamples, self.exptimes)
 
-    def init_integration(self, nzin: int, nzlimb: int, zcut: float, ng: int, nk: int):
-        self.nk = nk
+    def init_integration(self, ng: int, nq: int = 8):
+        """Set up the quadrature rules and the profile grid for `ng` table nodes and `nq` quadrature nodes."""
         self.ng = ng
-        self.nzin = nzin
-        self.nzlimb = nzlimb
-        self.zcut = zcut
-        self.ze, self.zm = create_z_grid(zcut, nzin, nzlimb)
-        self.mu = sqrt(1 - self.zm ** 2)
-        self.dk, self.dg, self.weights = calculate_weights_3d(nk, self.klims[0], self.klims[1], self.ze, ng)
+        self.nq = nq
+        # The profiles are tabulated on a fixed grid uniform in sqrt(mu), and the mean
+        # intensity under the planet is integrated by quadrature for every radius ratio.
+        self._rules = quadrature_rules(nq)
+        self.mu, self._pt0, self._pdt = profile_grid()
 
     def evaluate(self, k: PType, t0: PType, p: PType, a: PType, i: PType, e: PType = 0.0, w: PType = 0.0,
                  ldc: ArrayLike | None = None, copy: bool = True
@@ -309,15 +287,14 @@ class RoadRunnerModel(TransitModel):
             result = self._model(self.times, k, t0, p, a, i, e, w,
                                self.lcids, self.pbids, self.epids,
                                self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
-                               self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
-                               self.npb, self.nor, int(self.nsamples.max()))
+                               self._rules, self._pt0, self._pdt, self.ng, self.npb, self.nor,
+                               int(self.nsamples.max()))
         else:
             kwargs = {} if self.backend != 'opencl' else {'copy': copy}
             result = self._model(self.times, k, t0, p, a, i, e, w,
                                self.lcids, self.pbids, self.epids,
                                self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
-                               self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
-                               self.npb, self.nor, **kwargs)
+                               self._rules, self._pt0, self._pdt, self.ng, self.npb, self.nor, **kwargs)
 
         if result is None:
             return None

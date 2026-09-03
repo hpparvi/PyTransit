@@ -4,6 +4,7 @@ from numpy import ndarray, zeros, sqrt, linspace, nan, floor, isnan, full, dot, 
 
 from .ccintersection import ccia
 from ._utils import _folded_time
+from .ldquad import rr_tables, ldm_lookup
 
 
 @njit
@@ -98,7 +99,7 @@ def calculate_weights_3d(nk: int, k0: float, k1: float, ze: ndarray, ng: int):
                 s += weights[ik, ig, i]
             for i in range(nz):
                 weights[ik, ig, i] /= s
-    return (k1-k0)/nk, gs[1] - gs[0], weights
+    return (k1 - k0) / (nk - 1), gs[1] - gs[0], weights
 
 
 @njit(fastmath=True)
@@ -128,9 +129,12 @@ def interpolate_mean_limb_darkening_and_grad(g, dg, lda):
 def rrmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
             lcids: ndarray, pbids: ndarray, epids: ndarray, nsamples: ndarray, exptimes: ndarray,
             ldp: ndarray, ldg: ndarray, ldi: ndarray, dldi: ndarray,
-            weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray,
-            npb: int, nep: int):
+            rules: ndarray, pt0: float, pdt: float, ng: int, npb: int, nep: int):
     """RoadRunner transit model supporting heterogeneous light curves.
+
+    The mean intensity under the planet is computed for each parameter vector and passband by
+    the geometry-matched quadrature in `ldquad`, tabulated against the grazing parameter and
+    read with a per-interval cubic.
 
     Parameters
     ----------
@@ -161,25 +165,21 @@ def rrmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
     exptimes : ndarray
         Exposure time per light curve.
     ldp : ndarray
-        Limb darkening profiles, shape (npv, npb, nmu).
+        Limb darkening profiles on the `ldquad.profile_grid` mu grid, shape (npv, npb, nmu).
     ldg : ndarray
         LD profile derivatives (unused in forward model).
     ldi : ndarray
         Disk-integrated intensity, shape (npv, npb).
     dldi : ndarray
         Derivative of ldi (unused in forward model).
-    weights : ndarray
-        3D weight table, shape (nk, ng, nmu).
-    dk : float
-        k step size in weight table.
-    kmin : float
-        Minimum k in weight table.
-    kmax : float
-        Maximum k in weight table.
-    dg : float
-        Grazing parameter step size.
-    z_edges : ndarray
-        Radial zone edges for weight computation.
+    rules : ndarray
+        Quadrature rules from `ldquad.quadrature_rules`, shape (2, 2, nq).
+    pt0 : float
+        First sqrt(mu) node of the profile grid.
+    pdt : float
+        The sqrt(mu) spacing of the profile grid.
+    ng : int
+        Number of grazing parameter nodes.
     npb : int
         Number of passbands.
     nep : int
@@ -192,38 +192,28 @@ def rrmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
     """
     npv = k.shape[0]
     npt = times.size
-    ng = weights.shape[1]
-
+    n1 = ng // 2
     flux = zeros((npv, npt))
+
+    # Mean intensity under the planet as a split cubic table in g, per passband
+    gcs = zeros(npb)
+    coef = zeros((npb, ng - 2, 4))
 
     for ipv in range(npv):
         if isnan(a[ipv, 0]) or (a[ipv, 0] <= 1.0) or (e[ipv, 0] < 0.0) or any(isnan(ldp[ipv, 0])):
             flux[ipv, :] = nan
             continue
 
-        # Pre-compute LD means per passband
-        ldm_all = zeros((npb, ng))
-        for ipb in range(npb):
-            kv = k[ipv, ipb]
-            if kmin <= kv <= kmax:
-                ik = int(floor((kv - kmin) / dk))
-                ak = (kv - kmin - ik * dk) / dk
-                ldm_all[ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb]) + ak * dot(weights[ik + 1], ldp[ipv, ipb])
-            else:
-                _, _, wg = calculate_weights_2d(kv, z_edges, ng)
-                ldm_all[ipb, :] = dot(wg, ldp[ipv, ipb])
+        rr_tables(k[ipv], ldp[ipv], rules, pt0, pdt, ng, gcs, coef)
 
-        # Pre-compute orbital coefficients per epoch
         xyc = zeros((nep, 2, 5))
         for iep in range(nep):
             xyc[iep, :, :] = solve2d(0.0, p[ipv, iep], a[ipv, iep], i[ipv, iep], e[ipv, iep], w[ipv, iep])
 
-        # Bounding box (using first epoch)
         bt1, bt4 = bounding_box(k[ipv, 0], xyc[0])
         bt1 -= 0.003
         bt4 += 0.003
 
-        # Calculate the light curve
         for ipt in prange(npt):
             ilc = lcids[ipt]
             ipb = pbids[ilc]
@@ -237,11 +227,15 @@ def rrmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
             if not ((bt1 - exptimes[ilc]) <= t <= (bt4 + exptimes[ilc])):
                 flux[ipv, ipt] = 1.0
             else:
+                kpb = k[ipv, ipb]
                 for isample in range(1, nsamples[ilc] + 1):
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
                     z = sep_c(t + time_offset, xyc[iep])
-                    iplanet = interpolate_mean_limb_darkening(z / (1.0 + k[ipv, ipb]), dg, ldm_all[ipb])
-                    aplanet = ccia(1.0, k[ipv, ipb], z)
-                    flux[ipv, ipt] += (ldi[ipv, ipb] - iplanet * aplanet) / ldi[ipv, ipb]
+                    if z >= 1.0 + kpb:
+                        flux[ipv, ipt] += 1.0
+                    else:
+                        iplanet = ldm_lookup(z / (1.0 + kpb), gcs[ipb], n1, coef[ipb])
+                        aplanet = ccia(1.0, kpb, z)
+                        flux[ipv, ipt] += (ldi[ipv, ipb] - iplanet * aplanet) / ldi[ipv, ipb]
                 flux[ipv, ipt] /= nsamples[ilc]
     return flux

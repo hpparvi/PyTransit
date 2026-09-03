@@ -33,10 +33,11 @@ class RRModelCL(CLModel):
     Numba.
 
     Limb darkening never reaches the device as a function. `RoadRunnerModel`
-    tabulates the profile on the host, and this class contracts it against the
-    weight table (`_host.rr_precompute`) into the mean intensity under the planet
-    disk. The kernels only interpolate that table, so any limb-darkening
-    profile -- including a user-supplied `LDModel` -- works without device code.
+    tabulates the profile on the host, and this class integrates it into the mean
+    intensity under the planet disk with the quadrature of `backends.numba.ldquad`
+    (`_host.rr_precompute`), tabulated against the grazing parameter as split cubic
+    tables. The kernels only read those tables, so any limb-darkening profile --
+    including a user-supplied `LDModel` -- works without device code.
 
     See `CLModel` for the constructor arguments and the buffer and time-shift
     handling.
@@ -64,8 +65,10 @@ class RRModelCL(CLModel):
         self._b_p = None
         self._b_xyc = None
         self._b_dxyc = None
-        self._b_ldm = None
-        self._b_dldm = None
+        self._b_gcs = None
+        self._b_coef = None
+        self._b_kcoef = None
+        self._b_dcoef = None
         self._b_ldi = None
         self._b_dldi = None
         self._b_bt1 = None
@@ -82,7 +85,7 @@ class RRModelCL(CLModel):
 
     def __call__(self, times, k, t0, p, a, i, e, w, lcids, pbids, epids,
                  nsamples, exptimes, ldp, ldg, ldi, dldi,
-                 weights, dk, kmin, kmax, dg, z_edges, npb, nep, copy: bool = True):
+                 rules, pt0, pdt, ng, npb, nep, copy: bool = True):
         """Evaluate the model.
 
         The signature matches `backends.numba.rrmodel` / `rrmodel_grad`. The data
@@ -95,47 +98,48 @@ class RRModelCL(CLModel):
         self._check_data(times, lcids, pbids, epids, nsamples, exptimes)
 
         npv, ntc = k.shape[0], t0.shape[1]
-        ng = weights.shape[1]
         nldc = ldg.shape[2] - 1 if self.return_grad else 0
         ngrad = 7 + npb * nldc
         self._allocate(npv, ngrad)
 
         if self.return_grad:
-            ldm, dldm, xyc, dxyc, bt1, bt4, valid = rr_precompute_d(
-                k, p, a, i, e, w, ldp, ldg, weights, dk, kmin, kmax, z_edges, ng, nldc, nep)
+            gcs, coef, kcoef, dcoef, xyc, dxyc, bt1, bt4, valid = rr_precompute_d(
+                k, p, a, i, e, w, ldp, ldg, rules, pt0, pdt, ng, nldc, nep)
             self._upload('_b_dxyc', asarray(dxyc, self.dtype).reshape(-1))
-            self._upload('_b_dldm', asarray(dldm, self.dtype).reshape(-1))
+            self._upload('_b_kcoef', asarray(kcoef, self.dtype).reshape(-1))
+            self._upload('_b_dcoef', asarray(dcoef, self.dtype).reshape(-1))
             self._upload('_b_dldi', asarray(dldi, self.dtype).reshape(-1))
         else:
-            ldm, xyc, bt1, bt4, valid = rr_precompute(
-                k, p, a, i, e, w, ldp, weights, dk, kmin, kmax, z_edges, ng, nep)
+            gcs, coef, xyc, bt1, bt4, valid = rr_precompute(
+                k, p, a, i, e, w, ldp, rules, pt0, pdt, ng, nep)
 
         self._upload('_b_k', asarray(k, self.dtype).reshape(-1))
         self._upload('_b_t0', asarray(t0 - self.tref, self.dtype).reshape(-1))
         self._upload('_b_p', asarray(p, self.dtype).reshape(-1))
         self._upload('_b_xyc', asarray(xyc, self.dtype).reshape(-1))
-        self._upload('_b_ldm', asarray(ldm, self.dtype).reshape(-1))
+        self._upload('_b_gcs', asarray(gcs, self.dtype).reshape(-1))
+        self._upload('_b_coef', asarray(coef, self.dtype).reshape(-1))
         self._upload('_b_ldi', asarray(ldi, self.dtype).reshape(-1))
         self._upload('_b_bt1', asarray(bt1, self.dtype))
         self._upload('_b_bt4', asarray(bt4, self.dtype))
         self._upload('_b_valid', asarray(valid, int32))
 
         shape = (self.npt, npv)  # time index first, so neighbouring items write neighbours
-        sizes = (int32(self.npt), int32(npb), int32(ntc), int32(nep),
-                 int32(ng), self.dtype(dg))
+        sizes = (int32(self.npt), int32(npb), int32(ntc), int32(nep), int32(ng))
         program = self._program(nldc)
 
         if self.return_grad:
             program.rrmodel_grad(self.queue, shape, None,
                                  self._b_times, self._b_k, self._b_t0, self._b_p,
-                                 self._b_xyc, self._b_dxyc, self._b_ldm, self._b_dldm,
+                                 self._b_xyc, self._b_dxyc, self._b_gcs, self._b_coef,
+                                 self._b_kcoef, self._b_dcoef,
                                  self._b_ldi, self._b_dldi, self._b_bt1, self._b_bt4,
                                  self._b_valid, *self.data_buffers, *sizes,
                                  self._b_flux, self._b_dflux)
         else:
             program.rrmodel(self.queue, shape, None,
                             self._b_times, self._b_k, self._b_t0, self._b_p,
-                            self._b_xyc, self._b_ldm, self._b_ldi,
+                            self._b_xyc, self._b_gcs, self._b_coef, self._b_ldi,
                             self._b_bt1, self._b_bt4, self._b_valid,
                             *self.data_buffers, *sizes, self._b_flux)
 

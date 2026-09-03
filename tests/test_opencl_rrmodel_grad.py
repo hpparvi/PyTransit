@@ -208,8 +208,8 @@ class TestGradientMatchesNumbaHeterogeneous:
 
 
 
-class TestOutOfKlimsGradient:
-    """The `calculate_weights_2d` fallback also feeds the coefficient derivatives."""
+class TestExtremeRadiusRatioGradient:
+    """The gradient tables at very large and very small radius ratios."""
 
     @pytest.mark.parametrize("k", [0.6, 0.002])
     def test_matches_numba(self, k):

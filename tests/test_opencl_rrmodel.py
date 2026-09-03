@@ -78,8 +78,7 @@ def _kernel_args(model, params, data, ld, npb, nor):
     return (params['k'], params['t0'], params['p'], params['a'], params['i'],
             params['e'], params['w'], data['lcids'], data['pbids'], data['epids'],
             data['nsamples'], data['exptimes'], ldp, ldg, ldi, dldi,
-            model.weights, model.dk, model.klims[0], model.klims[1], model.dg,
-            model.ze, npb, nor)
+            model._rules, model._pt0, model._pdt, model.ng, npb, nor)
 
 
 class TestForwardMatchesNumba:
@@ -241,12 +240,11 @@ class TestInvalidParameterVectors:
 
 
 
-class TestRadiusRatioOutsideWeightTable:
-    """k outside `klims` takes the `calculate_weights_2d` fallback in the host prep.
+class TestExtremeRadiusRatios:
+    """Very large and very small radius ratios, where the quadrature regimes are unusual.
 
-    The default table covers k in (0.005, 0.5), so every other test uses the
-    interpolated path and this branch -- including its gradient variant, where a
-    stride mistake would hide -- would otherwise never run.
+    A k of 0.6 keeps the planet crossing the limb over most of the transit, and a k of
+    0.002 makes the on-disk table segment tiny.
     """
 
     @pytest.mark.parametrize("k", [0.6, 0.002])
@@ -254,8 +252,6 @@ class TestRadiusRatioOutsideWeightTable:
         from pytransit.backends.opencl.rrmodel import RRModelCL
 
         model = _integration()
-        assert not (model.klims[0] <= k <= model.klims[1]), "k must be outside the table"
-
         params, data = _make_2d(k), _simple_data(TIMES.size)
         ld = _ld_inputs(model, np.array([0.3, 0.2]), npv=1)
         args = _kernel_args(model, params, data, ld, 1, 1)
@@ -265,8 +261,8 @@ class TestRadiusRatioOutsideWeightTable:
         cl_model.set_data(TIMES, **data)
         np.testing.assert_allclose(cl_model(TIMES, *args), expected, atol=1e-12)
 
-    def test_mixed_passbands_inside_and_outside_the_table(self):
-        """One passband interpolated, one on the fallback, in the same evaluation."""
+    def test_mixed_passbands_with_very_different_radius_ratios(self):
+        """A moderate and a very large radius ratio in the same evaluation."""
         from pytransit.backends.opencl.rrmodel import RRModelCL
 
         n = 200
@@ -276,7 +272,7 @@ class TestRadiusRatioOutsideWeightTable:
                     epids=np.zeros(2, dtype=np.int32),
                     nsamples=np.ones(2, dtype=np.int32), exptimes=np.zeros(2))
         params = _make_2d(0.1, npb=2)
-        params['k'] = np.array([[0.10, 0.60]])          # inside, then outside
+        params['k'] = np.array([[0.10, 0.60]])
 
         model = _integration()
         ld = _ld_inputs(model, np.array([[0.3, 0.2], [0.4, 0.1]]), npv=1)

@@ -14,7 +14,16 @@ import jax.lax as lax
 
 from meepmeep.backends.jax.ts2d import solve_xy_p5
 from .ccintersection import ccia
-from .rrmodel import _compute_half_window, _pd_t15, _interpolate_ldm
+from .rrmodel import _compute_half_window, _pd_t15
+
+
+def _interpolate_ldm(g, dg, ldm):
+    """Branchless linear interpolation of the mean limb darkening profile."""
+    ng = ldm.shape[0]
+    ig = jnp.clip(jnp.floor(g / dg).astype(int), 0, ng - 2)
+    alpha = jnp.clip((g - ig * dg) / dg, 0.0, 1.0)
+    val = (1.0 - alpha) * ldm[ig] + alpha * ldm[ig + 1]
+    return jnp.where((g >= 0.0) & (g <= 1.0), val, 0.0)
 
 
 def tsmodel(times, k, t0, p, a, i, e, w,
