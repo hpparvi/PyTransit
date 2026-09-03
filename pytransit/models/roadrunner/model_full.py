@@ -1,8 +1,8 @@
 from meepmeep.backends.numba.point2d import sep_c, solve2d, bounding_box
 from numba import njit, prange
-from numpy import zeros, dot, ndarray, isnan, nan, full, floor
+from numpy import zeros, dot, ndarray, isnan, nan, full, floor, empty, int64
 
-from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
+from .common import (g_nodes, ldm_nodes, ldm_table, split_cubic_coefficients, split_point, ldm_lookup)
 from .common import circle_circle_intersection_area_kite as ccia
 
 
@@ -10,7 +10,7 @@ from .common import circle_circle_intersection_area_kite as ccia
 def rr_full(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
             parallelize: bool, nlc: int, npb: int, nep: int,
             lcids: ndarray, pbids: ndarray, epids: ndarray, nsamples: ndarray, exptimes: ndarray,
-            ldp: ndarray, istar: ndarray, weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray):
+            ldp: ndarray, istar: ndarray, pt0: float, pdt: float, rules: ndarray, ng: int):
     """Full RoadRunner model for heterogeneous light curves.
 
     The evaluation is split into a serial per-parameter-vector precompute stage and a flux stage
@@ -18,28 +18,28 @@ def rr_full(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
     with ``parallel=True``: compiling the precompute stage in parallel would turn its many small
     array operations into per-iteration thread-pool launches, which costs far more than it saves.
     """
-    ks, pv_is_good, ldm, xyc, bbs = rr_precompute(k, p, a, i, e, w, nlc, npb, exptimes,
-                                                  ldp, weights, dk, kmin, kmax, z_edges)
+    ks, pv_is_good, gcs, n1s, coef, xyc, bbs = rr_precompute(k, p, a, i, e, w, nlc, npb, exptimes,
+                                                             ldp, pt0, pdt, rules, ng)
 
     if parallelize:
-        return rr_flux_parallel(times, t0, p, ks, pv_is_good, ldm, xyc, bbs,
-                                lcids, pbids, epids, nsamples, exptimes, istar, dg)
+        return rr_flux_parallel(times, t0, p, ks, pv_is_good, gcs, n1s, coef, xyc, bbs,
+                                lcids, pbids, epids, nsamples, exptimes, istar)
     else:
-        return rr_flux_serial(times, t0, p, ks, pv_is_good, ldm, xyc, bbs,
-                              lcids, pbids, epids, nsamples, exptimes, istar, dg)
+        return rr_flux_serial(times, t0, p, ks, pv_is_good, gcs, n1s, coef, xyc, bbs,
+                              lcids, pbids, epids, nsamples, exptimes, istar)
 
 
 @njit(parallel=False)
 def rr_precompute(k: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
-                  nlc: int, npb: int, exptimes: ndarray, ldp: ndarray, weights: ndarray,
-                  dk: float, kmin: float, kmax: float, z_edges: ndarray):
+                  nlc: int, npb: int, exptimes: ndarray, ldp: ndarray,
+                  pt0: float, pdt: float, rules: ndarray, ng: int):
     """Precompute the per-parameter-vector quantities needed by the flux stage.
 
     For each parameter vector: the mean limb darkening profiles, the Taylor series expansion
     coefficients for the planet position, and the transit bounding boxes.
     """
     npv = k.shape[0]
-    ng = weights.shape[1]
+    nq = rules.shape[2]
 
     if k.shape[1] > 1 and k.shape[1] != npb:
         raise ValueError('Radius ratios should be given either as an [npv, 1] or [npv, npb] array.')
@@ -53,7 +53,12 @@ def rr_precompute(k: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w:
         ks[:, :] = k[:, 0:npb]
 
     pv_is_good = full(npv, True)
-    ldm = zeros((npv, npb, ng))  # Limb darkening means
+    gcs = zeros(npv)                   # Split point of the mean intensity table, per pv
+    n1s = zeros(npv, int64)            # Nodes in the first segment of the table, per pv
+    coef = zeros((npv, npb, ng - 2, 4))  # Split cubic coefficients of the mean intensity table
+    mu = empty((ng, 2 * nq))
+    wf = zeros((ng, 2 * nq))
+    ldm = empty(ng)
     xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
     bbs = zeros((npv, nlc, 2))   # Bounding boxes per (pv, lc)
 
@@ -65,15 +70,13 @@ def rr_precompute(k: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w:
         # -----------------------------------#
         # Calculate the limb darkening means #
         # -----------------------------------#
-        if kmin <= ks[ipv, 0] <= kmax:
-            ik = int(floor((ks[ipv, 0] - kmin) / dk))
-            ak = (ks[ipv, 0] - kmin - ik * dk) / dk
-            for ipb in range(npb):
-                ldm[ipv, ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb]) + ak * dot(weights[ik + 1], ldp[ipv, ipb])
-        else:
-            _, _, wg = calculate_weights_2d(ks[ipv, 0], z_edges, ng)
-            for ipb in range(npb):
-                ldm[ipv, ipb, :] = dot(wg, ldp[ipv, ipb])
+        gs, n1 = g_nodes(ks[ipv, 0], ng)
+        gcs[ipv] = split_point(ks[ipv, 0])
+        n1s[ipv] = n1
+        ldm_nodes(ks[ipv, 0], gs, rules, mu, wf)
+        for ipb in range(npb):
+            ldm_table(mu, wf, pt0, pdt, ldp[ipv, ipb], ldm)
+            split_cubic_coefficients(ldm, n1, coef[ipv, ipb])
 
         # ------------------------------------------------------#
         # Calculate the Taylor series expansions for the orbits #
@@ -88,13 +91,13 @@ def rr_precompute(k: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w:
             bbs[ipv, ilc, 0] = bt1 - (0.003 + exptimes[ilc])
             bbs[ipv, ilc, 1] = bt4 + (0.003 + exptimes[ilc])
 
-    return ks, pv_is_good, ldm, xyc, bbs
+    return ks, pv_is_good, gcs, n1s, coef, xyc, bbs
 
 
 def _rr_flux(times: ndarray, t0: ndarray, p: ndarray,
-             ks: ndarray, pv_is_good: ndarray, ldm: ndarray, xyc: ndarray, bbs: ndarray,
+             ks: ndarray, pv_is_good: ndarray, gcs: ndarray, n1s: ndarray, coef: ndarray, xyc: ndarray, bbs: ndarray,
              lcids: ndarray, pbids: ndarray, epids: ndarray, nsamples: ndarray, exptimes: ndarray,
-             istar: ndarray, dg: float):
+             istar: ndarray):
     """Calculate the model fluxes for all (parameter vector, time sample) pairs.
 
     Compiled both in serial and in parallel; in the parallel version the flat loop over
@@ -104,7 +107,7 @@ def _rr_flux(times: ndarray, t0: ndarray, p: ndarray,
     # faster code for the flux loop with locally allocated arrays than with array arguments.
     ks = ks.copy()
     pv_is_good = pv_is_good.copy()
-    ldm = ldm.copy()
+    coef = coef.copy()
     xyc = xyc.copy()
     bbs = bbs.copy()
     istar = istar.copy()
@@ -133,7 +136,7 @@ def _rr_flux(times: ndarray, t0: ndarray, p: ndarray,
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
                 z = sep_c(tc + time_offset, xyc[ipv])
-                iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + ks[ipv, ipb]), dg, ldm[ipv, ipb])
+                iplanet = ldm_lookup(z / (1.0 + ks[ipv, ipb]), gcs[ipv], n1s[ipv], coef[ipv, ipb])
                 aplanet = ccia(1.0, ks[ipv, ipb], z)[0]
                 fsum += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
             flux[ipv, ipt] = fsum / nsamples[ilc]

@@ -26,6 +26,8 @@ from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, a
     concatenate, empty, linspace, diff, trapezoid, sqrt, pi
 from ..ldmodel import LDModel
 
+from warnings import warn
+
 from .common import create_z_grid
 
 from .._deprecation import deprecated_evaluation_method
@@ -65,9 +67,18 @@ class RoadRunnerModelCL(TransitModel):
 
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  interpolate: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
-                 nzin: int = 20, nzlimb: int = 20, zcut=0.7, ng: int = 50, parallel: bool = False,
-                 small_planet_limit: float = 0.05, cl_ctx=None, cl_queue=None) -> None:
+                 nzin: Optional[int] = None, nzlimb: Optional[int] = None, zcut: Optional[float] = None,
+                 ng: int = 50, parallel: bool = False, small_planet_limit: float = 0.05, cl_ctx=None,
+                 cl_queue=None, nz: int = 40) -> None:
         super().__init__()
+
+        if nzin is not None or nzlimb is not None:
+            warn("The 'nzin' and 'nzlimb' arguments have been replaced by 'nz', the total number of "
+                 "annuli, and will be removed in the future. Using nz = nzin + nzlimb.", FutureWarning)
+            nz = (nzin if nzin is not None else 20) + (nzlimb if nzlimb is not None else 20)
+        if zcut is not None:
+            warn("The 'zcut' argument is no longer used and will be removed in the future: the stellar "
+                 "disk is now discretised uniformly in the viewing angle.", FutureWarning)
 
         self.ctx = cl_ctx or cl.create_some_context()
         self.queue = cl_queue or cl.CommandQueue(self.ctx)
@@ -108,9 +119,7 @@ class RoadRunnerModelCL(TransitModel):
         self.klims = klims
         self.nk = nk
         self.ng = ng
-        self.nzin = nzin
-        self.nzlimb = nzlimb
-        self.zcut = zcut
+        self.nz = nz
 
         self.npv = None
         self.nptb  = 0
@@ -149,9 +158,9 @@ class RoadRunnerModelCL(TransitModel):
 
         self.prg = cl.Program(self.ctx, open(join(dirname(__file__), 'rrmodel.cl'), 'r').read()).build()
 
-        self.init_siwft_arrays(self.zcut, self.ng, self.nzin, self.nzlimb)
+        self.init_siwft_arrays(self.nz, self.ng)
 
-    def init_siwft_arrays(self, zcut: float = 0.7, ng: int = 50, nzin: int = 30, nzlimb: int = 30):
+    def init_siwft_arrays(self, nz: int = 40, ng: int = 50):
         """Build the stellar disk discretisation arrays and upload them to the device.
 
         Called by the initialiser. The arguments set the accuracy of the model the same way they do
@@ -159,18 +168,14 @@ class RoadRunnerModelCL(TransitModel):
 
         Parameters
         ----------
-        zcut : float, optional
-            Normalised distance separating the inner stellar disk from the limb.
+        nz : int, optional
+            Number of annuli the stellar disk is discretised into.
         ng : int, optional
             Size of the grazing value table.
-        nzin : int, optional
-            Number of discretisation nodes covering the inner stellar disk.
-        nzlimb : int, optional
-            Number of discretisation nodes covering the stellar limb.
         """
         mf = cl.mem_flags
 
-        self.ze, self.zm = create_z_grid(zcut, nzin, nzlimb)
+        self.ze, self.zm = create_z_grid(nz)
         self.mu = sqrt(1-self.zm**2).astype('float32')
         self.ze = self.ze.astype('float32')
         self.nz = int32(self.ze.size)

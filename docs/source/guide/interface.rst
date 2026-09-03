@@ -29,7 +29,7 @@ parameters that control its numerical accuracy
 
     from pytransit import RoadRunnerModel
 
-    tm = RoadRunnerModel('power-2', nzin=20, nzlimb=20)
+    tm = RoadRunnerModel('power-2', nq=12, ng=200)
 
 The arguments each model accepts are documented on its own page under :doc:`../models/index`.
 

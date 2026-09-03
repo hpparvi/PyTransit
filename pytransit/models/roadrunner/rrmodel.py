@@ -41,7 +41,7 @@ from ..limb_darkening import (ld_uniform, ldi_uniform, ld_linear, ldi_linear, ld
                               evaluate_ld, evaluate_ldi)
 from ..transitmodel import TransitModel
 
-from .common import create_z_grid, calculate_weights_3d
+from .common import population_arrays, quadrature_rules, profile_grid
 from .model_full import rr_full
 from .model_simple import rr_simple
 
@@ -54,9 +54,10 @@ class RoadRunnerModel(TransitModel):
     RoadRunner is PyTransit's recommended general-purpose transit model. Unlike the classical
     models, which are analytic solutions derived for one specific limb darkening law,
     RoadRunner separates the *geometry* of the transit from the *stellar intensity profile*.
-    The planet-star overlap geometry is solved numerically once and tabulated, and the limb
-    darkening enters only as a profile sampled on a fixed grid of normalized distances from the
-    disk center. This has two consequences:
+    The mean intensity under the planet is computed for every radius ratio by Gauss quadrature
+    matched to the transit geometry, tabulated against the grazing parameter, and read with a
+    cubic lookup during the evaluation; the limb darkening enters only as a profile tabulated
+    on a fixed grid of mu. This has two consequences:
 
     - **Any radially symmetric limb darkening model works.** Besides the eleven built-in
       profiles listed in `ldmodels`, the model accepts a plain Python callable, a pair of
@@ -67,11 +68,9 @@ class RoadRunnerModel(TransitModel):
     - **The evaluation cost is nearly independent of the limb darkening law.** A four-parameter
       non-linear law is about as fast as a linear one.
 
-    Accuracy is set by the discretization parameters `nzin`, `nzlimb`, `zcut`, `ng` and `nk`, and
-    the error grows with the radius ratio. Measured against the analytic Mandel & Agol solution,
-    the defaults give roughly 1 ppm at k = 0.02, a few ppm around k = 0.1, and tens of ppm above
-    k = 0.2. The parameters interact: at large radius ratios, raising `nzin` and `nzlimb` alone
-    does little, and `ng` and `nk` need raising with them.
+    Accuracy is set by the number of quadrature nodes `nq` and the mean intensity table size
+    `ng`, and the error grows with the radius ratio. See the initializer for the measured
+    defaults.
 
     Attributes
     ----------
@@ -110,27 +109,27 @@ class RoadRunnerModel(TransitModel):
                 'power-2-pm': (ld_power_2_pm, ldi_power_2_pm)}
 
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
-                 precompute_weights: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
-                 nzin: int = 20, nzlimb: int = 20, zcut: float = 0.7, ng: int = 100,
-                 nthreads: int = 1, small_planet_limit: float = 0.01, **kwargs):
+                 precompute_weights: Optional[bool] = None, klims: Optional[tuple] = None, nk: Optional[int] = None,
+                 nzin: Optional[int] = None, nzlimb: Optional[int] = None, zcut: Optional[float] = None,
+                 ng: int = 100, nthreads: int = 1, small_planet_limit: float = 0.01, nz: Optional[int] = None,
+                 nq: int = 8, **kwargs):
         """The RoadRunner transit model by Parviainen (2020).
 
         Parameters
         ----------
-        precompute_weights : bool, optional
-            Precompute a 3D weight table for radius ratio values set by `klims`.
-        klims : tuple, optional
-            Radius ratio limits (kmin, kmax) for the precomputed weight table.
-        nk : int, optional
-            Radius ratio grid size for the precomputed weight table.
-        nzin : int, optional
-            Normalized distance grid size for the inner disk.
-        nzlimb : int, optional
-            Normalized distance grid size for the limb.
-        zcut: float, optional
-            Normalized distance that separates the stellar disk into an inner disk and limb.
+        nq : int, optional
+            Number of quadrature nodes per segment used to integrate the intensity profile over
+            the planet's footprint. The mean intensity under the planet is computed by
+            Gauss quadrature matched to the geometry, so the profile is never discretised into
+            annuli; eight nodes give sub-ppm to few-ppm accuracy for typical radius ratios.
+        precompute_weights, klims, nk : optional
+            Deprecated and ignored: the limb darkening weights are always computed exactly for
+            the radius ratio being evaluated, so there is no weight table to precompute.
+        nz, nzin, nzlimb, zcut : optional
+            Deprecated and ignored: the stellar disk is no longer discretised into annuli.
         ng : int, optional
-            Size of the grazing value table.
+            Number of grazing parameter nodes in the mean intensity table, split at the limb
+            contact and interpolated with cubics.
         nthreads: int, optional
             Number of threads to use for the model computation. Values above one enable the
             parallel model version and set the numba thread count. Note that the numba thread
@@ -144,14 +143,15 @@ class RoadRunnerModel(TransitModel):
             radius ratio (below 1 ppm at the default limit of 0.01, but ~100 ppm at k = 0.05),
             so raise the limit only if speed matters more than ppm-level accuracy. Set to None
             or 0.0 to disable.
+
+        Notes
+        -----
+        Measured against the analytic Mandel & Agol model for the quadratic law, over impact
+        parameters up to 0.9, the defaults (``nq=8``, ``ng=100``) are accurate to about 0.3 ppm
+        at k = 0.02, 1.5 ppm at k = 0.1 and 5.4 ppm at k = 0.3. ``nq=12, ng=200`` reaches 0.5 ppm
+        at k = 0.1 and 1.9 ppm at k = 0.3, and ``nq=16, ng=400`` is below 1 ppm everywhere.
         """
         super().__init__()
-
-        if 'interpolate' in kwargs:
-            warn("The 'interpolate' argument has been replaced by 'precompute_weights' and will be removed in the future.", FutureWarning)
-            self.interpolate: bool = kwargs.get('interpolate', False)
-        else:
-            self.interpolate: bool = precompute_weights
 
         if 'parallel' in kwargs:
             warn("The 'parallel' argument has been replaced by 'nthreads' and will be removed in the future.", FutureWarning)
@@ -164,6 +164,16 @@ class RoadRunnerModel(TransitModel):
                 set_num_threads(self.nthreads)
 
         self.splimit: float | None = small_planet_limit
+
+        if precompute_weights is not None or klims is not None or nk is not None or 'interpolate' in kwargs:
+            warn("The 'precompute_weights', 'klims' and 'nk' arguments are no longer used and will be removed "
+                 "in the future: the limb darkening weights are always computed exactly for the radius "
+                 "ratio being evaluated.", FutureWarning)
+            kwargs.pop('interpolate', None)
+        if nz is not None or nzin is not None or nzlimb is not None or zcut is not None:
+            warn("The 'nz', 'nzin', 'nzlimb' and 'zcut' arguments are no longer used and will be removed in "
+                 "the future: the stellar disk is no longer discretised into annuli. The quadrature "
+                 "resolution is set by 'nq'.", FutureWarning)
 
         # Set up the limb darkening model
         # --------------------------------
@@ -191,28 +201,20 @@ class RoadRunnerModel(TransitModel):
         else:
             raise NotImplementedError
 
-        # Set the basic variable
-        # ----------------------
-        self.klims = klims
-        self.nk = nk
-        self.ng = ng
-        self.nzin = nzin
-        self.nzlimb = nzlimb
-        self.zcut = zcut
+        # Discretisation
+        # --------------
+        self.nq: int = nq
+        self.ng: int = ng
+        self._rules = None
+        self.mu = None            # The mu grid the intensity profile is tabulated on
+        self._t0 = 0.0
+        self._dt = 0.0
 
-        # Declare the basic arrays
-        # ------------------------
-        self.ze = None
-        self.zm = None
-        self.mu = None
-        self.dk = None
-        self.dg = None
-        self.weights = None
-
+        # Numerical disk integration of a profile without an analytic integral
         self._ldmu = linspace(1, 0, 200)
         self._ldz = sqrt(1 - self._ldmu ** 2)
 
-        self.init_integration(nzin, nzlimb, zcut, ng, nk)
+        self.init_integration(nq, ng)
 
     def set_data(self, time: Union[ndarray, List],
                  lcids: Optional[Union[ndarray, List]] = None,
@@ -223,33 +225,23 @@ class RoadRunnerModel(TransitModel):
         super().set_data(time, lcids, pbids, nsamples, exptimes, epids)
         self.nep = unique(self.epids).size
 
-    def init_integration(self, nzin, nzlimb, zcut, ng, nk):
-        """Rebuild the stellar disk discretisation and the limb darkening weight tables.
+    def init_integration(self, nq: int, ng: int) -> None:
+        """Set the quadrature resolution and the mean intensity table size.
 
         Called by the initialiser, and useful afterwards for changing the model's accuracy without
         creating a new model. The arguments have the same meaning as in the initialiser.
 
         Parameters
         ----------
-        nzin : int
-            Number of discretisation nodes covering the inner stellar disk.
-        nzlimb : int
-            Number of discretisation nodes covering the stellar limb.
-        zcut : float
-            Normalised distance separating the inner disk from the limb.
+        nq : int
+            Number of quadrature nodes per segment.
         ng : int
-            Size of the grazing value table.
-        nk : int
-            Radius ratio grid size for the precomputed weight table.
+            Number of grazing parameter nodes in the mean intensity table.
         """
-        self.nk = nk
+        self.nq = nq
         self.ng = ng
-        self.nzin = nzin
-        self.nzlimb = nzlimb
-        self.zcut = zcut
-        self.ze, self.zm = create_z_grid(zcut, nzin, nzlimb)
-        self.mu = sqrt(1 - self.zm ** 2)
-        self.dk, self.dg, self.weights = calculate_weights_3d(nk, self.klims[0], self.klims[1], self.ze, ng)
+        self._rules = quadrature_rules(nq)
+        self.mu, self._t0, self._dt = profile_grid()
 
     def evaluate(self, k: Union[float, ndarray], ldc: Union[ndarray, List],
                  t0: Union[float, ndarray], p: Union[float, ndarray], a: Union[float, ndarray],
@@ -310,16 +302,15 @@ class RoadRunnerModel(TransitModel):
                     for ipb in range(self.npb):
                         istar[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv, ipb], self._ldz)
 
-        k, t0, p, a, i, e, w = (atleast_2d(k), atleast_2d(t0), atleast_1d(p), atleast_1d(a),
-                                atleast_1d(i), atleast_1d(e), atleast_1d(w))
+        k = atleast_2d(k)
+        t0, p, a, i, e, w = population_arrays(t0, p, a, i, e, w)
 
         if self.nlc > 1 or k.shape[0] > 1:
             return squeeze(rr_full(self.time, k, t0, p, a, i, e, w, self.parallel, self.nlc, self.npb, self.nep,
                                    self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
-                                   ldp, istar, self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze))
+                                   ldp, istar, self._t0, self._dt, self._rules, self.ng))
         else:
             splimit = self.splimit if self.splimit is not None else 0.0
             return rr_simple(self.time, k[0, 0], t0[0, 0], p[0], a[0], i[0], e[0], w[0], self.parallel, splimit,
-                             self.nsamples[0], self.exptimes[0],
-                             ldp[0, 0, :], istar[0, 0], self.weights, self.dk, self.klims[0], self.klims[1], self.dg,
-                             self.ze, self.zm)
+                             self.nsamples[0], self.exptimes[0], ldp[0, 0, :], self._t0, self._dt, istar[0, 0],
+                             self._rules, self.ng)

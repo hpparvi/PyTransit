@@ -2,9 +2,9 @@ from math import fabs, floor
 
 from meepmeep.backends.numba.point2d import sep_c, solve2d, bounding_box
 from numba import njit, prange, get_num_threads, set_num_threads
-from numpy import zeros, dot, ndarray, isnan, nan, mean, floor, fabs, max
+from numpy import zeros, dot, ndarray, isnan, nan, mean, floor, fabs, max, empty
 
-from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
+from .common import (g_nodes, ldm_nodes, ldm_table, split_cubic_coefficients, split_point, ldm_lookup)
 from .common import circle_circle_intersection_area_kite as ccia
 
 
@@ -12,7 +12,7 @@ from .common import circle_circle_intersection_area_kite as ccia
 def tsmodel_serial(times: ndarray,
                    k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
                    nsamples: ndarray, exptimes: ndarray, ldp: ndarray, istar: ndarray,
-                   weights: ndarray, dk: float, kmin: float, kmax: float, ng: int, dg: float, z_edges: ndarray) -> ndarray:
+                   pt0: float, pdt: float, rules: ndarray, ng: int) -> ndarray:
     if k.ndim != 2:
         raise ValueError(" The radius ratios must be given as a 2D array with shape (npv, npb)")
 
@@ -26,11 +26,13 @@ def tsmodel_serial(times: ndarray,
     npv = k.shape[0]
     npb = k.shape[1]
 
-    if weights is not None:
-        ng = weights.shape[1]
 
     flux = zeros((npv, npb, npt))  # Model flux
-    ldm = zeros((npb, ng))         # Limb darkening means
+    nq = rules.shape[2]
+    coef = zeros((npb, ng - 2, 4))   # Split cubic coefficients of the mean intensity tables
+    mu = empty((ng, 2 * nq))
+    wf = zeros((ng, 2 * nq))
+    ldm = empty(ng)
     xyc = zeros((2, 5))            # Taylor series coefficients for the (x, y) position
 
     for ipv in range(npv):
@@ -45,15 +47,12 @@ def tsmodel_serial(times: ndarray,
         # -----------------------------------#
         # Calculate the limb darkening means #
         # -----------------------------------#
-        if weights is not None and kmin <= kmean <= kmax:
-            ik = int(floor((kmean - kmin) / dk))
-            ak = (kmean - kmin - ik * dk) / dk
-            for ipb in range(npb):
-                ldm[ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb, :]) + ak * dot(weights[ik + 1], ldp[ipv, ipb, :])
-        else:
-            _, dg, wg = calculate_weights_2d(kmean, z_edges, ng)
-            for ipb in range(npb):
-                ldm[ipb, :] = dot(wg, ldp[ipv, ipb, :])
+        gs, n1 = g_nodes(kmean, ng)
+        gc = split_point(kmean)
+        ldm_nodes(kmean, gs, rules, mu, wf)
+        for ipb in range(npb):
+            ldm_table(mu, wf, pt0, pdt, ldp[ipv, ipb, :], ldm)
+            split_cubic_coefficients(ldm, n1, coef[ipb])
 
         # -----------------------------------------------------#
         # Calculate the Taylor series expansions for the orbit #
@@ -83,11 +82,11 @@ def tsmodel_serial(times: ndarray,
                     dadk = 2.0*kmean*kappa
                     if z <= 1.0 - kmax:
                         for ipb in range(npb):
-                            iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
+                            iplanet = ldm_lookup(z / (1.0 + kmean), gc, n1, coef[ipb])
                             flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * ap0 * afac[ipb]) / istar[ipv, ipb]
                     else:
                         for ipb in range(npb):
-                            iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
+                            iplanet = ldm_lookup(z / (1.0 + kmean), gc, n1, coef[ipb])
                             flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * (ap0 + (k[ipv, ipb]-kmean)*dadk)) / istar[ipv, ipb]
                 flux[ipv, :, ipt] /= nsamples[0]
     return flux
@@ -97,7 +96,7 @@ def tsmodel_serial(times: ndarray,
 def tsmodel_parallel(times: ndarray,
                    k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
                    nsamples: ndarray, exptimes: ndarray, ldp: ndarray, istar: ndarray,
-                   weights: ndarray, dk: float, kmin: float, kmax: float, ng: int, dg: float, z_edges: ndarray,
+                   pt0: float, pdt: float, rules: ndarray, ng: int,
                    nthreads: int) -> ndarray:
 
     nthreads_current = get_num_threads()
@@ -115,11 +114,13 @@ def tsmodel_parallel(times: ndarray,
     npt = times.size
     npv = k.shape[0]
     npb = k.shape[1]
-    if weights is not None:
-        ng = weights.shape[1]
 
     flux = zeros((npv, npb, npt))  # Model flux
-    ldm = zeros((npb, ng))         # Limb darkening means
+    nq = rules.shape[2]
+    coef = zeros((npb, ng - 2, 4))   # Split cubic coefficients of the mean intensity tables
+    mu = empty((ng, 2 * nq))
+    wf = zeros((ng, 2 * nq))
+    ldm = empty(ng)
     xyc = zeros((2, 5))            # Taylor series coefficients for the (x, y) position
 
     for ipv in range(npv):
@@ -134,16 +135,12 @@ def tsmodel_parallel(times: ndarray,
         # -----------------------------------#
         # Calculate the limb darkening means #
         # -----------------------------------#
-        if weights is not None and kmin <= kmean <= kmax:
-            ik = int(floor((kmean - kmin) / dk))
-            ak = (kmean - kmin - ik * dk) / dk
-            for ipb in range(npb):
-                ldm[ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb, :]) + ak * dot(weights[ik + 1],
-                                                                                         ldp[ipv, ipb, :])
-        else:
-            dk, dg, wg = calculate_weights_2d(kmean, z_edges, ng)
-            for ipb in prange(npb):
-                ldm[ipb, :] = dot(wg, ldp[ipv, ipb, :])
+        gs, n1 = g_nodes(kmean, ng)
+        gc = split_point(kmean)
+        ldm_nodes(kmean, gs, rules, mu, wf)
+        for ipb in range(npb):
+            ldm_table(mu, wf, pt0, pdt, ldp[ipv, ipb, :], ldm)
+            split_cubic_coefficients(ldm, n1, coef[ipb])
 
         # -----------------------------------------------------#
         # Calculate the Taylor series expansions for the orbit #
@@ -174,11 +171,11 @@ def tsmodel_parallel(times: ndarray,
                     for ipb in range(npb):
                         if z <= 1.0 - kmax:
                             for ipb in range(npb):
-                                iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
+                                iplanet = ldm_lookup(z / (1.0 + kmean), gc, n1, coef[ipb])
                                 flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * ap0 * afac[ipb]) / istar[ipv, ipb]
                         else:
                             for ipb in range(npb):
-                                iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + kmean), dg, ldm[ipb])
+                                iplanet = ldm_lookup(z / (1.0 + kmean), gc, n1, coef[ipb])
                                 flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * (
                                             ap0 + (k[ipv, ipb] - kmean) * dadk)) / istar[ipv, ipb]
                 flux[ipv, :, ipt] /= nsamples[0]

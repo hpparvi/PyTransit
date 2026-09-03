@@ -35,6 +35,7 @@ from scipy.integrate import trapezoid
 from ..ldmodel import LDModel
 from ..limb_darkening import evaluate_ld, evaluate_ldi
 from .rrmodel import RoadRunnerModel
+from .common import population_arrays
 
 from .model_trspec import tsmodel_serial, tsmodel_parallel
 
@@ -121,8 +122,8 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
         """
         k = atleast_2d(k)
         ldc = atleast_2d(ldc)
-        t0, p, a, i, e, w = map(atleast_1d, (t0, p, a, i, e, w))
         npv = k.shape[0]
+        t0, p, a, i, e, w = population_arrays(t0, p, a, i, e, w, epochs=False, npv=npv)
 
         # Limb darkening
         # --------------
@@ -154,18 +155,12 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
                     for ipb in range(npb):
                         istar[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv, ipb], self._ldz)
 
-        if self.interpolate:
-            dk, dg, weights = self.dk, self.dg, self.weights
-        else:
-            dk, dg, weights = None, None, None
-
         if self.parallel:
             flux = tsmodel_parallel(self.time, k, t0, p, a, i, e, w, self.nsamples, self.exptimes,
-                                    ldp, istar, weights, dk, self.klims[0], self.klims[1], self.ng, dg, self.ze,
-                                    self.nthreads)
+                                    ldp, istar, self._t0, self._dt, self._rules, self.ng, self.nthreads)
         else:
             flux = tsmodel_serial(self.time, k, t0, p, a, i, e, w, self.nsamples, self.exptimes,
-                                  ldp, istar, weights, dk, self.klims[0], self.klims[1], self.ng, dg, self.ze)
+                                  ldp, istar, self._t0, self._dt, self._rules, self.ng)
 
         return flux
 

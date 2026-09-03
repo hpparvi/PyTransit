@@ -2,39 +2,17 @@ from math import floor, sqrt
 
 from meepmeep.backends.numba.point2d import pos_c, solve2d, bounding_box
 from numba import njit, prange
-from numpy import zeros, dot, ndarray, isnan, nan, full, squeeze, atleast_2d, atleast_1d
+from numpy import zeros, dot, ndarray, isnan, nan, full, squeeze, atleast_2d, atleast_1d, empty, int64
 
-from .common import calculate_weights_2d, interpolate_mean_limb_darkening_s
+from .common import (population_arrays, g_nodes, ldm_nodes, ldm_table, split_cubic_coefficients,
+                     split_point, ldm_lookup, profile_at)
 from .ecintersection import (create_ellipse_theta, ellipse_circle_intersection_area_theta,
                              ellipse_circle_intersection_area_exact, ellipse_disk_intersection_area_theta)
 
 
 @njit
-def _interpolate_ld_profile(mu: float, mun: ndarray, ldpn: ndarray) -> float:
-    """Linearly interpolate a tabulated limb darkening profile at mu.
-
-    The profile nodes `mun` are in descending order (ascending z), as stored in the model's
-    `mu` attribute; the profile value is clamped to the end nodes outside the tabulated range.
-    """
-    n = mun.size
-    if mu >= mun[0]:
-        return ldpn[0]
-    if mu <= mun[n - 1]:
-        return ldpn[n - 1]
-    i0, i1 = 0, n - 1
-    while i1 - i0 > 1:
-        im = (i0 + i1) // 2
-        if mun[im] > mu:
-            i0 = im
-        else:
-            i1 = im
-    a = (mun[i0] - mu) / (mun[i0] - mun[i1])
-    return (1.0 - a) * ldpn[i0] + a * ldpn[i1]
-
-
-@njit
 def op_ld_blocked(cx: float, cy: float, z: float, k: float, f: float, alpha: float,
-                  xs: ndarray, ys: ndarray, ws: ndarray, mun: ndarray, ldpn: ndarray,
+                  xs: ndarray, ys: ndarray, ws: ndarray, pt0: float, pdt: float, ldpn: ndarray,
                   nannuli: int, exact_areas: bool) -> float:
     """Flux blocked by the oblate planet, with the limb darkening integrated over the exact footprint.
 
@@ -66,7 +44,7 @@ def op_ld_blocked(cx: float, cy: float, z: float, k: float, f: float, alpha: flo
         else:
             a_next = ellipse_disk_intersection_area_theta(cx, cy, z, k, f, xs, ys, ws, r)
         mmid = mu_lo + (g + 0.5) * dmu
-        blocked += (a_prev - a_next) * _interpolate_ld_profile(mmid, mun, ldpn)
+        blocked += (a_prev - a_next) * profile_at(mmid, pt0, pdt, ldpn)
         a_prev = a_next
     return blocked
 
@@ -74,15 +52,16 @@ def op_ld_blocked(cx: float, cy: float, z: float, k: float, f: float, alpha: flo
 def opmodel(times, k, f, alpha, t0, p, a, i, e, w,
             parallelize, nlc, npb, nep, npl,
             lcids, pbids, epids, nsamples, exptimes,
-            ldp, istar, weights, dk, kmin, kmax, dg, z_edges, mun,
+            ldp, istar, pt0, pdt, rules, ng,
             exact_areas=False, exact_ld=False, nannuli=20):
 
-    k, f, alpha, t0, p, a, i, e, w = (atleast_2d(k), atleast_1d(f), atleast_1d(alpha), atleast_2d(t0), atleast_1d(p),
-                                      atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w))
+    k = atleast_2d(k)
+    t0, p, a, i, e, w = population_arrays(t0, p, a, i, e, w, npv=k.shape[0])
+    f, alpha = (full(k.shape[0], atleast_1d(x)[0]) if atleast_1d(x).size == 1 else atleast_1d(x) for x in (f, alpha))
 
     return squeeze(op_full(times, k, f, alpha, t0, p, a, i, e, w, parallelize, nlc, npb, nep, npl,
                    lcids, pbids, epids, nsamples, exptimes,
-                   ldp, istar, weights, dk, kmin, kmax, dg, z_edges, mun, exact_areas, exact_ld, nannuli))
+                   ldp, istar, pt0, pdt, rules, ng, exact_areas, exact_ld, nannuli))
 
 
 @njit
@@ -90,8 +69,8 @@ def op_full(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
             t0: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w: ndarray,
             parallelize: bool, nlc: int, npb: int, nep: int, npl: int,
             lcids: ndarray, pbids: ndarray, epids: ndarray, nsamples: ndarray, exptimes: ndarray,
-            ldp: ndarray, istar: ndarray, weights: ndarray, dk: float, kmin: float, kmax: float, dg: float, z_edges: ndarray,
-            mun: ndarray, exact_areas: bool = False, exact_ld: bool = False, nannuli: int = 20):
+            ldp: ndarray, istar: ndarray, pt0: float, pdt: float, rules: ndarray, ng: int,
+            exact_areas: bool = False, exact_ld: bool = False, nannuli: int = 20):
     """Full oblate planet model for heterogeneous light curves.
 
     The evaluation is split into a serial per-parameter-vector precompute stage and a flux stage
@@ -99,25 +78,24 @@ def op_full(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
     with ``parallel=True``: compiling the precompute stage in parallel would turn its many small
     array operations into per-iteration thread-pool launches, which costs far more than it saves.
     """
-    ks, klds, pv_is_good, ldm, xyc, bbs, exs, eys, ews = op_precompute(
+    ks, klds, pv_is_good, gcs, n1s, coef, xyc, bbs, exs, eys, ews = op_precompute(
         k, f, alpha, p, a, i, e, w, nlc, npb, npl, exptimes,
-        ldp, weights, dk, kmin, kmax, z_edges, exact_areas)
+        ldp, pt0, pdt, rules, ng, exact_areas)
 
     if parallelize:
-        return op_flux_parallel(times, f, alpha, t0, p, ks, klds, pv_is_good, ldm, xyc, bbs, exs, eys, ews,
-                                lcids, pbids, epids, nsamples, exptimes, ldp, istar, dg, mun,
+        return op_flux_parallel(times, f, alpha, t0, p, ks, klds, pv_is_good, gcs, n1s, coef, xyc, bbs, exs, eys, ews,
+                                lcids, pbids, epids, nsamples, exptimes, ldp, istar, pt0, pdt,
                                 exact_areas, exact_ld, nannuli)
     else:
-        return op_flux_serial(times, f, alpha, t0, p, ks, klds, pv_is_good, ldm, xyc, bbs, exs, eys, ews,
-                              lcids, pbids, epids, nsamples, exptimes, ldp, istar, dg, mun,
+        return op_flux_serial(times, f, alpha, t0, p, ks, klds, pv_is_good, gcs, n1s, coef, xyc, bbs, exs, eys, ews,
+                              lcids, pbids, epids, nsamples, exptimes, ldp, istar, pt0, pdt,
                               exact_areas, exact_ld, nannuli)
 
 
 @njit(parallel=False)
 def op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray, i: ndarray,
                   e: ndarray, w: ndarray, nlc: int, npb: int, npl: int, exptimes: ndarray,
-                  ldp: ndarray, weights: ndarray, dk: float, kmin: float, kmax: float,
-                  z_edges: ndarray, exact_areas: bool):
+                  ldp: ndarray, pt0: float, pdt: float, rules: ndarray, ng: int, exact_areas: bool):
     """Precompute the per-parameter-vector quantities needed by the flux stage.
 
     For each parameter vector: the mean limb darkening profiles, the Taylor series expansion
@@ -125,7 +103,7 @@ def op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray
     intersection areas) the θ-sampled ellipse scanline grids per passband.
     """
     npv = k.shape[0]
-    ng = weights.shape[1]
+    nq = rules.shape[2]
 
     if k.shape[1] > 1 and k.shape[1] != npb:
         raise ValueError('Radius ratios should be given either as an [npv, 1] or [npv, npb] array.')
@@ -140,7 +118,12 @@ def op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray
 
     pv_is_good = full(npv, True)
     klds = zeros((npv, npb))     # LD-equivalent circular planet radii
-    ldm = zeros((npv, npb, ng))  # Limb darkening means
+    gcs = zeros(npv)                     # Split point of the mean intensity table, per pv
+    n1s = zeros(npv, int64)              # Nodes in the first table segment, per pv
+    coef = zeros((npv, npb, ng - 2, 4))  # Split cubic coefficients of the mean intensity tables
+    mu = empty((ng, 2 * nq))
+    wf = zeros((ng, 2 * nq))
+    ldm = empty(ng)
     xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
     bbs = zeros((npv, nlc, 2))   # Bounding boxes per (pv, lc)
 
@@ -168,15 +151,13 @@ def op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray
         # tests/test_opmodel.py).
         for ipb in range(npb):
             klds[ipv, ipb] = ks[ipv, ipb] * sqrt(1.0 - f[ipv])
-        if kmin <= klds[ipv, 0] <= kmax:
-            ik = int(floor((klds[ipv, 0] - kmin) / dk))
-            ak = (klds[ipv, 0] - kmin - ik * dk) / dk
-            for ipb in range(npb):
-                ldm[ipv, ipb, :] = (1.0 - ak) * dot(weights[ik], ldp[ipv, ipb]) + ak * dot(weights[ik + 1], ldp[ipv, ipb])
-        else:
-            _, _, wg = calculate_weights_2d(klds[ipv, 0], z_edges, ng)
-            for ipb in range(npb):
-                ldm[ipv, ipb, :] = dot(wg, ldp[ipv, ipb])
+        gs, n1 = g_nodes(klds[ipv, 0], ng)
+        gcs[ipv] = split_point(klds[ipv, 0])
+        n1s[ipv] = n1
+        ldm_nodes(klds[ipv, 0], gs, rules, mu, wf)
+        for ipb in range(npb):
+            ldm_table(mu, wf, pt0, pdt, ldp[ipv, ipb], ldm)
+            split_cubic_coefficients(ldm, n1, coef[ipv, ipb])
 
         # ------------------------------------------------------#
         # Calculate the Taylor series expansions for the orbits #
@@ -201,14 +182,14 @@ def op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray
                 eys[ipv, ipb, :] = _y
                 ews[ipv, ipb, :] = _w
 
-    return ks, klds, pv_is_good, ldm, xyc, bbs, exs, eys, ews
+    return ks, klds, pv_is_good, gcs, n1s, coef, xyc, bbs, exs, eys, ews
 
 
 def _op_flux(times: ndarray, f: ndarray, alpha: ndarray, t0: ndarray, p: ndarray,
-             ks: ndarray, klds: ndarray, pv_is_good: ndarray, ldm: ndarray, xyc: ndarray, bbs: ndarray,
+             ks: ndarray, klds: ndarray, pv_is_good: ndarray, gcs: ndarray, n1s: ndarray, coef: ndarray, xyc: ndarray, bbs: ndarray,
              exs: ndarray, eys: ndarray, ews: ndarray,
              lcids: ndarray, pbids: ndarray, epids: ndarray, nsamples: ndarray, exptimes: ndarray,
-             ldp: ndarray, istar: ndarray, dg: float, mun: ndarray,
+             ldp: ndarray, istar: ndarray, pt0: float, pdt: float,
              exact_areas: bool, exact_ld: bool, nannuli: int):
     """Calculate the model fluxes for all (parameter vector, time sample) pairs.
 
@@ -220,7 +201,7 @@ def _op_flux(times: ndarray, f: ndarray, alpha: ndarray, t0: ndarray, p: ndarray
     ks = ks.copy()
     klds = klds.copy()
     pv_is_good = pv_is_good.copy()
-    ldm = ldm.copy()
+    coef = coef.copy()
     xyc = xyc.copy()
     bbs = bbs.copy()
     exs = exs.copy()
@@ -258,10 +239,10 @@ def _op_flux(times: ndarray, f: ndarray, alpha: ndarray, t0: ndarray, p: ndarray
                     else:
                         blocked = op_ld_blocked(cx, cy, z, ks[ipv, ipb], f[ipv], alpha[ipv],
                                                 exs[ipv, ipb], eys[ipv, ipb], ews[ipv, ipb],
-                                                mun, ldp[ipv, ipb], nannuli, exact_areas)
+                                                pt0, pdt, ldp[ipv, ipb], nannuli, exact_areas)
                     fsum += (istar[ipv, ipb] - blocked) / istar[ipv, ipb]
                 else:
-                    iplanet = interpolate_mean_limb_darkening_s(z / (1.0 + klds[ipv, ipb]), dg, ldm[ipv, ipb])
+                    iplanet = ldm_lookup(z / (1.0 + klds[ipv, ipb]), gcs[ipv], n1s[ipv], coef[ipv, ipb])
                     if exact_areas:
                         aplanet = ellipse_circle_intersection_area_exact(cx, cy, z, ks[ipv, ipb], f[ipv], alpha[ipv])
                     else:

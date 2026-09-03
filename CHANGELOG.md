@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The Numba RoadRunner models (`RoadRunnerModel`, `TransmissionSpectroscopyModel`, `OblatePlanetModel`) no longer
+  discretise the stellar disk into annuli. The mean intensity under the planet is now computed for every radius
+  ratio by Gauss quadrature matched to the transit geometry (Gauss-Jacobi rules for the square-root zeros of the
+  planet's angular extent at its contacts, substitutions that regularise the limb, and the integration variable
+  chosen per regime), tabulated against the grazing parameter in two segments split at the limb contact, and read during the
+  evaluation with a per-interval cubic. The intensity profile is tabulated once per evaluation on a fixed grid
+  uniform in the square root of mu, which is also what lets limb darkening models such as `LDTkLDModel` work
+  unchanged. The new accuracy parameter is `nq`, the number of quadrature nodes (default 8), alongside `ng` (default
+  100). Against the analytic Mandel & Agol model the defaults are 3-5 times more accurate than before at every
+  radius ratio from 0.02 to 0.3, the per-evaluation setup costs about the same, and the per-sample cost rises by a
+  few percent. `nz`, `nzin`, `nzlimb`, `zcut`, `precompute_weights`, `klims` and `nk` are accepted and ignored
+  with a `FutureWarning`. The OpenCL model keeps the annulus grid, which it builds on the device.
+
+### Fixed
+
+- The RoadRunner radius ratio weight table was indexed with the wrong node spacing, `(kmax - kmin) / nk` instead of
+  `(kmax - kmin) / (nk - 1)`, so the interpolation between table nodes was systematically misplaced: at a radius
+  ratio exactly on a node the error was 3-7 times what the exact weights give, and at `kmax` the model read one row
+  past the end of the table.
+- The small-planet profile lookup in the RoadRunner model walked off the start of the node array for a planet
+  centred inside the innermost annulus.
+- Evaluating a RoadRunner-family model for a population of parameter vectors read past the ends of the eccentricity
+  and argument of periastron arrays when they were left at their scalar defaults, and past the end of the zero epoch
+  array when it was given as a one-dimensional vector, as documented. The results were silently wrong or, for larger
+  populations, raised a `ZeroDivisionError`; this is also the likely cause of the intermittent failure of
+  `test_rrmodel_batch_evaluation_matches_scalar`. The scalars are now broadcast to the population and a
+  one-dimensional zero epoch vector is treated as one zero epoch per parameter vector. The oblate planet model
+  additionally broadcasts scalar flattening and obliquity.
+
 ### Added
 
 - Added `LCData.add_time_covariates` and `LCDataGroup.add_time_covariates`, which append the time normalised to

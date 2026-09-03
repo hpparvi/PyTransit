@@ -24,12 +24,16 @@ Two things follow:
 - **The cost barely depends on the law.** A four-coefficient non-linear profile costs about the
   same as a linear one, because the expensive part -- the geometry -- is shared.
 
-Accuracy is controlled by the discretisation of the stellar disk: `nzin` nodes across the inner
-disk, `nzlimb` nodes across the limb, split at `zcut`, and `ng` grazing-geometry nodes. The error
-grows with the radius ratio: measured against the analytic Mandel & Agol solution, the defaults
-give roughly 1 ppm at :math:`k = 0.02`, a few ppm around :math:`k = 0.1`, and tens of ppm above
-:math:`k = 0.2`. See :doc:`../features/roadrunner` for the measured curve and for which settings
-to raise.
+Accuracy is controlled by two settings: `nq`, the number of quadrature nodes used to integrate
+the profile over the planet's footprint, and `ng`, the size of the mean intensity table. The error
+grows with the radius ratio: measured against the analytic Mandel & Agol solution over impact
+parameters up to 0.9, the defaults give 0.3 ppm at :math:`k = 0.02`, 1.5 ppm at :math:`k = 0.1`,
+and 5.4 ppm at :math:`k = 0.3`; ``nq=16, ng=400`` is below 1 ppm everywhere. See
+:doc:`../features/roadrunner` for the measured curve.
+
+The parameters `nz`, `nzin`, `nzlimb`, `zcut`, `precompute_weights`, `klims` and `nk` of earlier
+versions are accepted and ignored with a `FutureWarning`: the disk is no longer discretised into
+annuli, and there is no weight table to precompute.
 
 Usage
 -----
@@ -67,10 +71,6 @@ Performance options
 
 Numba's thread count is process-global, so the most recently created model sets it for every model
 in the process, and it is capped at the ``NUMBA_NUM_THREADS`` value fixed when Numba was imported.
-
-**Precomputed weights.** ``precompute_weights=True`` builds a 3D weight table covering the radius
-ratio range `klims`, trading initialisation time for evaluation speed. Worth it when the model is
-evaluated many times with the radius ratio confined to a known range.
 
 **Small planet approximation.** For a single light curve with a radius ratio at or below
 ``small_planet_limit`` (0.01 by default), the model approximates the mean blocked intensity by the
