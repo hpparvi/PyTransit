@@ -41,7 +41,7 @@ from ..limb_darkening import (ld_uniform, ldi_uniform, ld_linear, ldi_linear, ld
                               evaluate_ld, evaluate_ldi)
 from ..transitmodel import TransitModel
 
-from .common import population_arrays, quadrature_rules, profile_grid
+from .common import population_arrays, quadrature_rules, profile_grid, radius_ratio_array
 from .model_full import rr_full
 from .model_simple import rr_simple
 
@@ -252,7 +252,10 @@ class RoadRunnerModel(TransitModel):
         Parameters
         ----------
         k
-            Radius ratio(s) either as a single float, 1D vector, or 2D array.
+            Radius ratio(s) either as a single float, 1D vector, or 2D array. A 1D vector is
+            read as the radius ratios per passband when evaluating a single parameter vector,
+            and as one radius ratio per parameter vector when evaluating a population. Give a
+            population several radius ratios per parameter vector as an ``(npv, nk)`` array.
         ldc
             Limb darkening coefficients as a 1D or 2D array.
         t0
@@ -302,7 +305,7 @@ class RoadRunnerModel(TransitModel):
                     for ipb in range(self.npb):
                         istar[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv, ipb], self._ldz)
 
-        k = atleast_2d(k)
+        k = radius_ratio_array(k, npv)
         t0, p, a, i, e, w = population_arrays(t0, p, a, i, e, w)
 
         if self.nlc > 1 or k.shape[0] > 1:

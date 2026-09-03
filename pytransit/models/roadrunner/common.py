@@ -2,7 +2,7 @@ from numba import njit
 from typing import Optional
 
 from numpy import (sqrt, sin, arctan2, pi, nan, zeros, floor, arccos, linspace, ndarray, atleast_1d,
-                   atleast_2d, asarray, full, empty, concatenate, array)
+                   atleast_2d, asarray, full, empty, concatenate, array, broadcast_to)
 from numpy.polynomial import Polynomial
 from scipy.special import roots_jacobi, roots_legendre
 
@@ -329,6 +329,52 @@ def population_arrays(t0, p, a, i, e, w, epochs: bool = True, npv: Optional[int]
     else:
         t0 = atleast_1d(t0)
     return t0, p, a, i, e, w
+
+
+def radius_ratio_array(k, npv: int) -> ndarray:
+    """Normalise the radius ratio(s) into the ``(npv, nk)`` array the kernels index.
+
+    The kernels index the radius ratios per parameter vector and passband, so the many
+    shapes `evaluate` accepts are expanded into a single canonical one here. The rule
+    mirrors the one used for the limb darkening coefficients: a one-dimensional array is
+    read as ``(nk,)`` for a single parameter vector, and as ``(npv,)`` -- one radius ratio
+    per parameter vector -- for a population. Pass an explicit ``(npv, nk)`` array to give
+    a population several radius ratios per parameter vector.
+
+    Parameters
+    ----------
+    k
+        Radius ratio(s) as a scalar, a 1D array, or a 2D ``(npv, nk)`` array.
+    npv : int
+        Number of parameter vectors, taken from the orbital parameters.
+
+    Returns
+    -------
+    ndarray
+        The radius ratios as a ``(npv, nk)`` array.
+
+    Raises
+    ------
+    ValueError
+        If `k` has more than two dimensions, or if its leading dimension matches neither
+        `npv` nor one.
+    """
+    k = atleast_1d(k).astype(float)
+
+    if k.ndim == 1:
+        # A 1D array is ambiguous: it is a set of radius ratios for a single parameter
+        # vector, or one radius ratio for each vector of a population.
+        k = k.reshape((1, -1)) if npv == 1 else k.reshape((-1, 1))
+    elif k.ndim > 2:
+        raise ValueError(f"The radius ratio array can be at most two-dimensional, got {k.ndim} dimensions.")
+
+    if k.shape[0] == 1 and npv > 1:
+        k = broadcast_to(k, (npv, k.shape[1])).copy()
+    elif k.shape[0] != npv:
+        raise ValueError(f"Expected the radius ratios for {npv} parameter vectors, got an array with "
+                         f"a leading dimension of {k.shape[0]}. Give the radius ratios either as a "
+                         f"({npv}, nk) array or as a single radius ratio per parameter vector.")
+    return k
 
 
 # ----------------------------------------------------------------------------------------------

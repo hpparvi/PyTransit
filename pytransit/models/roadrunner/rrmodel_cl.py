@@ -31,7 +31,7 @@ from ..limb_darkening import (ld_uniform, ldi_uniform, ld_linear, ldi_linear, ld
                               evaluate_ld, evaluate_ldi)
 from ..transitmodel import TransitModel
 from .._deprecation import deprecated_evaluation_method
-from .common import quadrature_rules, profile_grid, CUBIC_MATRICES
+from .common import quadrature_rules, profile_grid, radius_ratio_array, CUBIC_MATRICES
 
 filterwarnings('ignore', category=CompilerWarning)
 
@@ -184,6 +184,14 @@ class RoadRunnerModelCL(TransitModel):
 
         self.prg = cl.Program(self.ctx, open(join(dirname(__file__), 'rrmodel.cl'), 'r').read()).build()
 
+        # Bind the kernels once. Every `Program.__getattr__` builds a new Kernel object and
+        # regenerates its invoker, which consults PyOpenCL's on-disk (SQLite) cache, so looking
+        # the kernels up per evaluation would dominate the cost of small models.
+        self._k_ldm = self.prg.calculate_ldm
+        self._k_coefficients = self.prg.calculate_coefficients
+        self._k_flux = self.prg.rr_flux
+        self._kernel_args_set = False
+
         self.init_integration(nq, ng)
 
     def init_integration(self, nq: int, ng: int) -> None:
@@ -211,6 +219,7 @@ class RoadRunnerModelCL(TransitModel):
             self._b_cm.release()
         self._b_rules = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,
                                   hostbuf=self._rules.astype(float32).ravel())
+        self._kernel_args_set = False
         self._b_cm = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,
                                hostbuf=CUBIC_MATRICES.astype(float32).ravel())
 
@@ -243,6 +252,7 @@ class RoadRunnerModelCL(TransitModel):
         self.nsamples = ones(self.nlc, 'uint32') if nsamples is None else asarray(nsamples, dtype='uint32')
         self.exptimes = ones(self.nlc, 'float32') if exptimes is None else asarray(exptimes, dtype='float32')
 
+        self._kernel_args_set = False
         self._b_time = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.time)
         self._b_lcids = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lcids)
         self._b_pbids = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pbids)
@@ -260,7 +270,10 @@ class RoadRunnerModelCL(TransitModel):
         Parameters
         ----------
         k
-            Radius ratio(s) either as a single float, 1D vector, or 2D array.
+            Radius ratio(s) either as a single float, 1D vector, or 2D array. A 1D vector is
+            read as the radius ratios per passband when evaluating a single parameter vector,
+            and as one radius ratio per parameter vector when evaluating a population. Give a
+            population several radius ratios per parameter vector as an ``(npv, nk)`` array.
         ldc
             Limb darkening coefficients as a 1D or 2D array.
         t0
@@ -291,14 +304,8 @@ class RoadRunnerModelCL(TransitModel):
             Modelled flux either as a 1D or 2D ndarray.
         """
         npv = 1 if isscalar(t0) else len(t0)
-        k = asarray(k)
-
-        if k.size == 1:
-            nk = 1
-        elif npv == 1:
-            nk = k.size
-        else:
-            nk = k.shape[1]
+        k = radius_ratio_array(k, npv)
+        nk = k.shape[1]
 
         if e is None:
             e, w = 0.0, 0.0
@@ -390,6 +397,7 @@ class RoadRunnerModelCL(TransitModel):
 
         self.npv = uint32(npv)
         self.f = zeros((npv, self.nptb), float32)
+        self._kernel_args_set = False
         self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * npv)
         self._b_p = None
         self._b_ks = cl.Buffer(self.ctx, mf.READ_ONLY, npv * npb * nb)
@@ -400,6 +408,25 @@ class RoadRunnerModelCL(TransitModel):
         self._b_n1s = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * int32().nbytes)
         self._b_coef = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * (ng - 2) * 4 * nb)
         self._b_valid = cl.Buffer(self.ctx, mf.READ_ONLY, npv * int32().nbytes)
+
+    def _set_kernel_args(self) -> None:
+        """Bind the kernel arguments that do not change between evaluations.
+
+        Only the global sizes vary from call to call, so setting the arguments once and
+        enqueuing with `cl.enqueue_nd_range_kernel` avoids PyOpenCL re-marshalling every
+        argument on each launch. The arguments are invalidated whenever a buffer is
+        reallocated, which happens in `init_integration`, `set_data`, `_allocate`, and when
+        the shape of the parameter vector array changes.
+        """
+        self._k_ldm.set_args(self._b_ks, self._b_ldp, self._b_rules,
+                             float32(self._t0), float32(self._dt), int32(self.nmu), int32(self.nq),
+                             self._b_gcs, self._b_n1s, self._b_ldm)
+        self._k_coefficients.set_args(self._b_ldm, self._b_n1s, self._b_cm, int32(self.ng), self._b_coef)
+        self._k_flux.set_args(self._b_time, self._b_ks, self._b_istar, self._b_gcs, self._b_n1s,
+                              self._b_coef, self._b_valid, int32(self.ng),
+                              self._b_lcids, self._b_pbids, self._b_p, self._b_nsamples, self._b_etimes,
+                              self.spv, self.nlc, self.npb, self._b_f)
+        self._kernel_args_set = True
 
     def _evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
         # Implementation shared with the supported `evaluate` method, so that calling
@@ -423,6 +450,7 @@ class RoadRunnerModelCL(TransitModel):
             self.pv = zeros(pvp.shape, float32)
             self.spv = uint32(pvp.shape[1])
             self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY, self.pv.nbytes)
+            self._kernel_args_set = False
 
         # Normalise the limb darkening coefficients to a 3D array with a shape (npv, npb, nldc),
         # as in the Numba model.
@@ -461,20 +489,15 @@ class RoadRunnerModelCL(TransitModel):
         self.pv[:] = pvp
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
+        if not self._kernel_args_set:
+            self._set_kernel_args()
+
         # Tabulate the mean intensity under the planet and fit the cubics
-        self.prg.calculate_ldm(self.queue, (npv, npb, self.ng), None,
-                               self._b_ks, self._b_ldp, self._b_rules,
-                               float32(self._t0), float32(self._dt), int32(self.nmu), int32(self.nq),
-                               self._b_gcs, self._b_n1s, self._b_ldm)
-        self.prg.calculate_coefficients(self.queue, (npv, npb, self.ng - 2), None,
-                                        self._b_ldm, self._b_n1s, self._b_cm, int32(self.ng), self._b_coef)
+        cl.enqueue_nd_range_kernel(self.queue, self._k_ldm, (npv, npb, self.ng), None)
+        cl.enqueue_nd_range_kernel(self.queue, self._k_coefficients, (npv, npb, self.ng - 2), None)
 
         # Evaluate the model
-        self.prg.rr_flux(self.queue, (npv, self.nptb), None,
-                         self._b_time, self._b_ks, self._b_istar, self._b_gcs, self._b_n1s, self._b_coef,
-                         self._b_valid, int32(self.ng),
-                         self._b_lcids, self._b_pbids, self._b_p, self._b_nsamples, self._b_etimes,
-                         self.spv, self.nlc, self.npb, self._b_f)
+        cl.enqueue_nd_range_kernel(self.queue, self._k_flux, (npv, self.nptb), None)
 
         if copy:
             cl.enqueue_copy(self.queue, self.f, self._b_f)
