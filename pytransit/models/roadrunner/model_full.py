@@ -2,7 +2,8 @@ from meepmeep.backends.numba.point2d import sep_c, solve2d, bounding_box
 from numba import njit, prange
 from numpy import zeros, dot, ndarray, isnan, nan, full, floor, empty, int64
 
-from .common import (g_nodes, ldm_nodes, ldm_table, split_cubic_coefficients, split_point, ldm_lookup)
+from .common import (g_nodes, ldm_nodes, ldm_table, split_cubic_coefficients, split_point, ldm_lookup,
+                     valid_radius_ratios)
 from .common import circle_circle_intersection_area_kite as ccia
 
 
@@ -53,8 +54,8 @@ def rr_precompute(k: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w:
         ks[:, :] = k[:, 0:npb]
 
     pv_is_good = full(npv, True)
-    gcs = zeros(npv)                   # Split point of the mean intensity table, per pv
-    n1s = zeros(npv, int64)            # Nodes in the first segment of the table, per pv
+    gcs = zeros((npv, npb))            # Split point of the mean intensity table, per (pv, pb)
+    n1s = zeros((npv, npb), int64)     # Nodes in the first segment of the table, per (pv, pb)
     coef = zeros((npv, npb, ng - 2, 4))  # Split cubic coefficients of the mean intensity table
     mu = empty((ng, 2 * nq))
     wf = zeros((ng, 2 * nq))
@@ -63,18 +64,22 @@ def rr_precompute(k: ndarray, p: ndarray, a: ndarray, i: ndarray, e: ndarray, w:
     bbs = zeros((npv, nlc, 2))   # Bounding boxes per (pv, lc)
 
     for ipv in range(npv):
-        if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
+        if (isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0]))
+                or not valid_radius_ratios(ks[ipv])):
             pv_is_good[ipv] = False
             continue
 
         # -----------------------------------#
         # Calculate the limb darkening means #
         # -----------------------------------#
-        gs, n1 = g_nodes(ks[ipv, 0], ng)
-        gcs[ipv] = split_point(ks[ipv, 0])
-        n1s[ipv] = n1
-        ldm_nodes(ks[ipv, 0], gs, rules, mu, wf)
+        # The quadrature nodes depend on the radius ratio, so they are rebuilt whenever it
+        # differs from the previous passband's.
         for ipb in range(npb):
+            if ipb == 0 or ks[ipv, ipb] != ks[ipv, ipb - 1]:
+                gs, n1 = g_nodes(ks[ipv, ipb], ng)
+                ldm_nodes(ks[ipv, ipb], gs, rules, mu, wf)
+            gcs[ipv, ipb] = split_point(ks[ipv, ipb])
+            n1s[ipv, ipb] = n1
             ldm_table(mu, wf, pt0, pdt, ldp[ipv, ipb], ldm)
             split_cubic_coefficients(ldm, n1, coef[ipv, ipb])
 
@@ -136,7 +141,7 @@ def _rr_flux(times: ndarray, t0: ndarray, p: ndarray,
             for isample in range(1, nsamples[ilc] + 1):
                 time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
                 z = sep_c(tc + time_offset, xyc[ipv])
-                iplanet = ldm_lookup(z / (1.0 + ks[ipv, ipb]), gcs[ipv], n1s[ipv], coef[ipv, ipb])
+                iplanet = ldm_lookup(z / (1.0 + ks[ipv, ipb]), gcs[ipv, ipb], n1s[ipv, ipb], coef[ipv, ipb])
                 aplanet = ccia(1.0, ks[ipv, ipb], z)[0]
                 fsum += (istar[ipv, ipb] - iplanet * aplanet) / istar[ipv, ipb]
             flux[ipv, ipt] = fsum / nsamples[ilc]

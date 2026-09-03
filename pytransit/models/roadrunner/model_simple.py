@@ -53,12 +53,17 @@ def rr_simple_precompute(k: float, p: float, a: float, i: float, e: float, w: fl
     (skipped in the small-planet mode) and its split cubic coefficients, the Taylor series
     expansion coefficients for the planet position, and the transit bounding box.
     """
-    bad = isnan(a) or (a <= 1.0) or (e < 0.0) or isnan(ldp[0])
+    bad = isnan(a) or (a <= 1.0) or (e < 0.0) or isnan(ldp[0]) or not (0.0 < k <= 1.0)
     small_planet = k <= splimit
     nq = rules.shape[2]
-    gc = split_point(k)
     n1 = 4
     coef = zeros((ng - 2, 4))
+
+    # Nothing below is defined for a bad parameter vector; the caller returns NaN fluxes.
+    if bad:
+        return bad, small_planet, 0.0, n1, coef, zeros((2, 5)), 0.0, 0.0
+
+    gc = split_point(k)
 
     # -------------------------------------------#
     # Mean intensity under the planet, ldm(g)    #

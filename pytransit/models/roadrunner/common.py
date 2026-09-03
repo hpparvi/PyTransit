@@ -442,6 +442,20 @@ def ldm_nodes(k: float, gs: ndarray, rules: ndarray, mu: ndarray, wf: ndarray) -
                 wf[ig, q] = rules[1, 1, q] * planet_angular_extent(z, b, k) * m * h
 
 
+@njit
+def valid_radius_ratios(k: ndarray) -> bool:
+    """Whether every radius ratio is in (0, 1], the range the mean intensity tables can be built for.
+
+    A NaN, non-positive or above-one radius ratio would leave the quadrature with an empty or
+    inverted footprint, so a parameter vector holding one is treated as invalid and evaluates to
+    NaN fluxes, as one with a bad semi-major axis or eccentricity does.
+    """
+    for i in range(k.size):
+        if not (0.0 < k[i] <= 1.0):
+            return False
+    return True
+
+
 @njit(fastmath=True)
 def split_point(k: float) -> float:
     """The grazing parameter at which the planet first touches the stellar limb, (1 - k) / (1 + k).

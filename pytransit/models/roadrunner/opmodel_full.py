@@ -5,7 +5,8 @@ from numba import njit, prange
 from numpy import zeros, dot, ndarray, isnan, nan, full, squeeze, atleast_2d, atleast_1d, empty, int64
 
 from .common import (population_arrays, g_nodes, ldm_nodes, ldm_table, split_cubic_coefficients,
-                     split_point, ldm_lookup, profile_at)
+                     split_point, ldm_lookup, profile_at,
+                     valid_radius_ratios)
 from .ecintersection import (create_ellipse_theta, ellipse_circle_intersection_area_theta,
                              ellipse_circle_intersection_area_exact, ellipse_disk_intersection_area_theta)
 
@@ -118,8 +119,8 @@ def op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray
 
     pv_is_good = full(npv, True)
     klds = zeros((npv, npb))     # LD-equivalent circular planet radii
-    gcs = zeros(npv)                     # Split point of the mean intensity table, per pv
-    n1s = zeros(npv, int64)              # Nodes in the first table segment, per pv
+    gcs = zeros((npv, npb))              # Split point of the mean intensity table, per (pv, pb)
+    n1s = zeros((npv, npb), int64)       # Nodes in the first table segment, per (pv, pb)
     coef = zeros((npv, npb, ng - 2, 4))  # Split cubic coefficients of the mean intensity tables
     mu = empty((ng, 2 * nq))
     wf = zeros((ng, 2 * nq))
@@ -138,7 +139,8 @@ def op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray
         ews = zeros((npv, npb, npl))     # Scanline quadrature weights
 
     for ipv in range(npv):
-        if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0])):
+        if (isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0]))
+                or not valid_radius_ratios(ks[ipv])):
             pv_is_good[ipv] = False
             continue
 
@@ -149,13 +151,15 @@ def op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray
         # radius k*sqrt(1-f): using the ellipse's semi-major axis would overestimate the
         # intensity-sampling footprint and bias the blocked flux (see the accuracy tests in
         # tests/test_opmodel.py).
+        # The quadrature nodes depend on the radius ratio, so they are rebuilt whenever it
+        # differs from the previous passband's.
         for ipb in range(npb):
             klds[ipv, ipb] = ks[ipv, ipb] * sqrt(1.0 - f[ipv])
-        gs, n1 = g_nodes(klds[ipv, 0], ng)
-        gcs[ipv] = split_point(klds[ipv, 0])
-        n1s[ipv] = n1
-        ldm_nodes(klds[ipv, 0], gs, rules, mu, wf)
-        for ipb in range(npb):
+            if ipb == 0 or klds[ipv, ipb] != klds[ipv, ipb - 1]:
+                gs, n1 = g_nodes(klds[ipv, ipb], ng)
+                ldm_nodes(klds[ipv, ipb], gs, rules, mu, wf)
+            gcs[ipv, ipb] = split_point(klds[ipv, ipb])
+            n1s[ipv, ipb] = n1
             ldm_table(mu, wf, pt0, pdt, ldp[ipv, ipb], ldm)
             split_cubic_coefficients(ldm, n1, coef[ipv, ipb])
 
@@ -242,7 +246,7 @@ def _op_flux(times: ndarray, f: ndarray, alpha: ndarray, t0: ndarray, p: ndarray
                                                 pt0, pdt, ldp[ipv, ipb], nannuli, exact_areas)
                     fsum += (istar[ipv, ipb] - blocked) / istar[ipv, ipb]
                 else:
-                    iplanet = ldm_lookup(z / (1.0 + klds[ipv, ipb]), gcs[ipv], n1s[ipv], coef[ipv, ipb])
+                    iplanet = ldm_lookup(z / (1.0 + klds[ipv, ipb]), gcs[ipv, ipb], n1s[ipv, ipb], coef[ipv, ipb])
                     if exact_areas:
                         aplanet = ellipse_circle_intersection_area_exact(cx, cy, z, ks[ipv, ipb], f[ipv], alpha[ipv])
                     else:

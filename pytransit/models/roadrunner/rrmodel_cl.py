@@ -1,5 +1,5 @@
 #  PyTransit: fast and easy exoplanet transit modelling in Python.
-#  Copyright (C) 2010-2019  Hannu Parviainen
+#  Copyright (C) 2010-2026  Hannu Parviainen
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -14,40 +14,42 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Optional, Union, Callable, Tuple
-
-import numpy as np
-import pyopencl as cl
 from os.path import dirname, join
+from warnings import warn, filterwarnings
 
-import warnings
+import pyopencl as cl
 from pyopencl import CompilerWarning
 
-from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, \
-    concatenate, empty, linspace, diff, trapezoid, sqrt, pi
+from numpy import (array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray,
+                   concatenate, empty, linspace, sqrt, pi, isnan, isscalar, trapezoid)
+
 from ..ldmodel import LDModel
-
-from warnings import warn
-
-from .common import create_z_grid
-
-from .._deprecation import deprecated_evaluation_method
-from ..transitmodel import TransitModel
 from ..limb_darkening import (ld_uniform, ldi_uniform, ld_linear, ldi_linear, ld_quadratic, ldi_quadratic,
                               ld_quadratic_tri, ldi_quadratic_tri, ld_nonlinear, ldi_nonlinear, ld_general, ldi_general,
                               ld_square_root, ldi_square_root, ld_logarithmic, ldi_logarithmic,
                               ld_exponential, ldi_exponential, ld_power_2, ldi_power_2, ld_power_2_pm, ldi_power_2_pm,
                               evaluate_ld, evaluate_ldi)
+from ..transitmodel import TransitModel
+from .._deprecation import deprecated_evaluation_method
+from .common import quadrature_rules, profile_grid, CUBIC_MATRICES
 
-warnings.filterwarnings('ignore', category=CompilerWarning)
+filterwarnings('ignore', category=CompilerWarning)
 
 __all__ = ['RoadRunnerModelCL']
+
 
 class RoadRunnerModelCL(TransitModel):
     """OpenCL implementation of the RoadRunner transit model (Parviainen, MNRAS 499, 1633, 2020).
 
-    A GPU implementation of :class:`~pytransit.models.roadrunner.rrmodel.RoadRunnerModel`. The
-    limb darkening profile is evaluated on the host and uploaded to the device, so the model
-    supports the same built-in limb darkening laws as the Numba version.
+    A GPU implementation of :class:`~pytransit.models.roadrunner.rrmodel.RoadRunnerModel` with the
+    same accuracy settings, `nq` and `ng`. The limb darkening profile is evaluated on the host on
+    the same fixed grid of mu as in the Numba model and uploaded to the device, which integrates
+    it over the planet's footprint by the same geometry-matched Gauss quadrature, tabulates the
+    mean intensity under the planet against the grazing parameter, and reads the table with a
+    cubic lookup during the evaluation. Any radially symmetric limb darkening model the Numba
+    model accepts works here as well.
+
+    The model computes in single precision; see :doc:`/guide/opencl` for what that implies.
 
     This class is not exported at the package top level; import it from its module::
 
@@ -66,19 +68,45 @@ class RoadRunnerModelCL(TransitModel):
                 'power-2-pm': (ld_power_2_pm, ldi_power_2_pm)}
 
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
-                 interpolate: bool = False, klims: tuple = (0.005, 0.5), nk: int = 256,
+                 interpolate: Optional[bool] = None, klims: Optional[tuple] = None, nk: Optional[int] = None,
                  nzin: Optional[int] = None, nzlimb: Optional[int] = None, zcut: Optional[float] = None,
-                 ng: int = 50, parallel: bool = False, small_planet_limit: float = 0.05, cl_ctx=None,
-                 cl_queue=None, nz: int = 40) -> None:
+                 ng: int = 100, parallel: bool = False, small_planet_limit: float = 0.05, cl_ctx=None,
+                 cl_queue=None, nz: Optional[int] = None, nq: int = 8) -> None:
+        """The OpenCL RoadRunner transit model.
+
+        Parameters
+        ----------
+        ldmodel
+            Limb darkening model: either the name of a built-in model, a callable returning the
+            stellar intensity profile as a function of mu, a tuple of callables returning the
+            profile and its integral over the stellar disk, or an ``LDModel`` instance.
+        nq : int, optional
+            Number of quadrature nodes per segment used to integrate the intensity profile over
+            the planet's footprint.
+        ng : int, optional
+            Number of grazing parameter nodes in the mean intensity table, split at the limb
+            contact and interpolated with cubics.
+        interpolate, klims, nk : optional
+            Deprecated and ignored: the mean intensity under the planet is always computed for the
+            radius ratio being evaluated, so there is no weight table to precompute.
+        nz, nzin, nzlimb, zcut : optional
+            Deprecated and ignored: the stellar disk is no longer discretised into annuli.
+        parallel, small_planet_limit
+            Accepted for interface compatibility with the Numba model; unused here.
+        cl_ctx, cl_queue : optional
+            OpenCL context and command queue. Created with ``cl.create_some_context()`` if
+            omitted.
+        """
         super().__init__()
 
-        if nzin is not None or nzlimb is not None:
-            warn("The 'nzin' and 'nzlimb' arguments have been replaced by 'nz', the total number of "
-                 "annuli, and will be removed in the future. Using nz = nzin + nzlimb.", FutureWarning)
-            nz = (nzin if nzin is not None else 20) + (nzlimb if nzlimb is not None else 20)
-        if zcut is not None:
-            warn("The 'zcut' argument is no longer used and will be removed in the future: the stellar "
-                 "disk is now discretised uniformly in the viewing angle.", FutureWarning)
+        if interpolate is not None or klims is not None or nk is not None:
+            warn("The 'interpolate', 'klims' and 'nk' arguments are no longer used and will be removed "
+                 "in the future: the mean intensity under the planet is always computed for the radius "
+                 "ratio being evaluated.", FutureWarning)
+        if nz is not None or nzin is not None or nzlimb is not None or zcut is not None:
+            warn("The 'nz', 'nzin', 'nzlimb' and 'zcut' arguments are no longer used and will be removed in "
+                 "the future: the stellar disk is no longer discretised into annuli. The quadrature "
+                 "resolution is set by 'nq'.", FutureWarning)
 
         self.ctx = cl_ctx or cl.create_some_context()
         self.queue = cl_queue or cl.CommandQueue(self.ctx)
@@ -111,85 +139,89 @@ class RoadRunnerModelCL(TransitModel):
         else:
             raise NotImplementedError
 
+        # Numerical disk integration of a profile without an analytic integral
         self._ldmu = linspace(1, 0, 200)
         self._ldz = sqrt(1 - self._ldmu ** 2)
 
-        # Set the basic variable
-        # ----------------------
-        self.klims = klims
-        self.nk = nk
-        self.ng = ng
-        self.nz = nz
+        # Discretisation
+        # --------------
+        self.nq: int = nq
+        self.ng: int = ng
+        self.mu = None            # The mu grid the intensity profile is tabulated on
+        self._t0 = 0.0
+        self._dt = 0.0
+        self._rules = None
+        self._b_rules = None      # Quadrature rules on the device
+        self._b_cm = None         # Cubic stencil matrices on the device
 
         self.npv = None
-        self.nptb  = 0
-        self.npb   = 0
-        self.f     = None
+        self.nptb = 0
+        self.npb = 0
+        self.f = None
         self.pv = array([])
 
-        self.time  = None
+        self.time = None
         self.lcids = None
         self.pbids = None
         self.nsamples = None
         self.exptimes = None
 
-        self.ze = None
-        self.gs = None
-        self.dg = None
+        # Declare the per-population buffers. These are initialised when the model is first
+        # evaluated, and reinitialised if the population size changes.
+        self._b_ks = None        # Radius ratios per passband
+        self._b_ldp = None       # Intensity profiles
+        self._b_istar = None     # Disk-integrated intensities
+        self._b_ldm = None       # Mean intensity tables
+        self._b_gcs = None       # Limb contacts, the table split points
+        self._b_n1s = None       # First segment sizes of the tables
+        self._b_coef = None      # Split cubic coefficients of the tables
+        self._b_valid = None     # Parameter vector validity flags
+        self._b_f = None         # Flux buffer
+        self._b_p = None         # Parameter vector buffer
 
-        # Declare the buffers for the swift model arrays
-        self._b_ze = None
-        self._b_gs = None
-        self._b_weights = None
-        self._b_istar = None
-        self._b_ldp = None
-        self._b_ldw = None
-        self._b_ks = None
-
-        # Declare the buffers for the ld coefficients, time, and flux arrays. These will
-        # be initialised when the model is first evaluated, and reinitialised if the
-        # array sizes change.
-        #
-        self._b_time = None    # Time buffer
-        self._b_f = None       # Flux buffer
-        self._b_p = None       # Parameter vector buffer
-
-        self._time_id = None   # Time array ID
+        self._b_time = None
+        self._time_id = None
 
         self.prg = cl.Program(self.ctx, open(join(dirname(__file__), 'rrmodel.cl'), 'r').read()).build()
 
-        self.init_siwft_arrays(self.nz, self.ng)
+        self.init_integration(nq, ng)
 
-    def init_siwft_arrays(self, nz: int = 40, ng: int = 50):
-        """Build the stellar disk discretisation arrays and upload them to the device.
+    def init_integration(self, nq: int, ng: int) -> None:
+        """Set the quadrature resolution and the mean intensity table size.
 
-        Called by the initialiser. The arguments set the accuracy of the model the same way they do
-        in :class:`~pytransit.models.roadrunner.rrmodel.RoadRunnerModel`.
+        Called by the initialiser, and useful afterwards for changing the model's accuracy without
+        creating a new model. The arguments have the same meaning as in the initialiser.
 
         Parameters
         ----------
-        nz : int, optional
-            Number of annuli the stellar disk is discretised into.
-        ng : int, optional
-            Size of the grazing value table.
+        nq : int
+            Number of quadrature nodes per segment.
+        ng : int
+            Number of grazing parameter nodes in the mean intensity table.
         """
         mf = cl.mem_flags
+        self.nq = int(nq)
+        self.ng = int(ng)
+        self._rules = quadrature_rules(nq)
+        self.mu, self._t0, self._dt = profile_grid()
+        self.nmu = self.mu.size
 
-        self.ze, self.zm = create_z_grid(nz)
-        self.mu = sqrt(1-self.zm**2).astype('float32')
-        self.ze = self.ze.astype('float32')
-        self.nz = int32(self.ze.size)
-        self.ng = int32(ng)
+        if self._b_rules is not None:
+            self._b_rules.release()
+            self._b_cm.release()
+        self._b_rules = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,
+                                  hostbuf=self._rules.astype(float32).ravel())
+        self._b_cm = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,
+                               hostbuf=CUBIC_MATRICES.astype(float32).ravel())
 
-        self.gs = linspace(0, 0.9999, ng).astype('float32')
-        self.dg = float32(diff(self.gs)[0])
+        # The table buffers depend on ng, so force their reallocation on the next evaluation.
+        self.npv = None
 
-        if self._b_ze is not None:
-            self._b_ze.release()
-            self._b_gs.releare()
-
-        self._b_ze = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.ze)
-        self._b_gs = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.gs)
+    def init_siwft_arrays(self, nz: int = 40, ng: int = 50):
+        """Deprecated: use `init_integration`."""
+        warn("'init_siwft_arrays' has been replaced by 'init_integration(nq, ng)' and will be removed in the "
+             "future. The stellar disk is no longer discretised into annuli, so 'nz' is ignored.", FutureWarning)
+        self.init_integration(self.nq, ng)
 
     def set_data(self, time, lcids=None, pbids=None, nsamples=None, exptimes=None):
         mf = cl.mem_flags
@@ -217,6 +249,8 @@ class RoadRunnerModelCL(TransitModel):
         self._b_nsamples = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.nsamples)
         self._b_etimes = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.exptimes)
 
+        # The passband count enters the buffer sizes, so force their reallocation.
+        self.npv = None
 
     def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Optional[Union[float, ndarray]] = None,
@@ -241,6 +275,9 @@ class RoadRunnerModelCL(TransitModel):
             Orbital eccentricity as a float or a 1D vector.
         w : optional
             Argument of periastron as a float or a 1D vector.
+        copy : optional
+            Copy the fluxes back from the device. With ``copy=False`` the fluxes are left in the
+            device buffer ``_b_f`` and ``None`` is returned.
 
         Notes
         -----
@@ -253,7 +290,7 @@ class RoadRunnerModelCL(TransitModel):
         ndarray
             Modelled flux either as a 1D or 2D ndarray.
         """
-        npv = 1 if isinstance(t0, float) else len(t0)
+        npv = 1 if isscalar(t0) else len(t0)
         k = asarray(k)
 
         if k.size == 1:
@@ -340,40 +377,58 @@ class RoadRunnerModelCL(TransitModel):
            """
         return self._evaluate_pv(pvp, ldc, copy)
 
+    def _allocate(self, npv: int) -> None:
+        """(Re)allocate the per-population device buffers for `npv` parameter vectors."""
+        mf = cl.mem_flags
+        nb = float32().nbytes
+        npb, ng = int(self.npb), self.ng
+
+        if self._b_f is not None:
+            for name in ('_b_f', '_b_p', '_b_ks', '_b_ldp', '_b_istar', '_b_ldm', '_b_gcs', '_b_n1s',
+                         '_b_coef', '_b_valid'):
+                getattr(self, name).release()
+
+        self.npv = uint32(npv)
+        self.f = zeros((npv, self.nptb), float32)
+        self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * npv)
+        self._b_p = None
+        self._b_ks = cl.Buffer(self.ctx, mf.READ_ONLY, npv * npb * nb)
+        self._b_ldp = cl.Buffer(self.ctx, mf.READ_ONLY, npv * npb * self.nmu * nb)
+        self._b_istar = cl.Buffer(self.ctx, mf.READ_ONLY, npv * npb * nb)
+        self._b_ldm = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * ng * nb)
+        self._b_gcs = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * nb)
+        self._b_n1s = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * int32().nbytes)
+        self._b_coef = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * (ng - 2) * 4 * nb)
+        self._b_valid = cl.Buffer(self.ctx, mf.READ_ONLY, npv * int32().nbytes)
+
     def _evaluate_pv(self, pvp: ndarray, ldc: ndarray, copy: bool = True) -> ndarray:
         # Implementation shared with the supported `evaluate` method, so that calling
         # `evaluate` does not raise the deprecation warning.
-        pvp = atleast_2d(pvp)
-        ldc = asarray(ldc)
+        mf = cl.mem_flags
+        pvp = atleast_2d(asarray(pvp, dtype=float32))
+        npv = pvp.shape[0]
+        npb = int(self.npb)
         nk = pvp.shape[1] - 6
 
-        # Release and reinitialise the GPU buffers if the parameter vector size changes
-        if self.npv != pvp.shape[0]:
-            self.npv = uint32(pvp.shape[0])
-            self.spv = uint32(pvp.shape[1])
+        if nk != 1 and nk != npb:
+            raise ValueError('Radius ratios should be given either as an [npv, 1] or [npv, npb] array.')
 
-            if self._b_f is not None:
-                self._b_f.release()
+        if self.npv != npv:
+            self._allocate(npv)
+
+        # The parameter vector buffer depends on the number of radius ratios as well.
+        if self._b_p is None or self.pv.shape != pvp.shape:
+            if self._b_p is not None:
                 self._b_p.release()
-
-            if self._b_weights is not None:
-                self._b_weights.release()
-                self._b_ldp.release()
-                self._b_ldw.release()
-                self._b_istar.release()
-                self._b_ks.release()
-
             self.pv = zeros(pvp.shape, float32)
-            self.f = zeros((self.npv, self.nptb), float32)
+            self.spv = uint32(pvp.shape[1])
+            self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY, self.pv.nbytes)
 
-            mf = cl.mem_flags
-            self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * self.npv)
-            self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pv)
-            self._b_weights = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.npv * self.ng * self.nz * float32().nbytes)
-            self._b_ldp = cl.Buffer(self.ctx, mf.READ_ONLY, self.npv*self.npb*self.ng*float32().nbytes)
-            self._b_ldw = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.npv*self.npb*self.ng*float32().nbytes)
-            self._b_istar = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.npv*self.npb*float32().nbytes)
-            self._b_ks = cl.Buffer(self.ctx, mf.READ_ONLY, self.npv*float32().nbytes)
+        # Normalise the limb darkening coefficients to a 3D array with a shape (npv, npb, nldc),
+        # as in the Numba model.
+        ldc = atleast_2d(ldc)
+        if ldc.ndim == 2:
+            ldc = ldc.reshape((npv, npb, -1))
 
         if isinstance(self.ldmodel, LDModel):
             ldp, istar = self.ldmodel(self.mu, ldc)
@@ -383,30 +438,70 @@ class RoadRunnerModelCL(TransitModel):
             if self.ldmmean is not None:
                 istar = evaluate_ldi(self.ldmmean, ldc)
             else:
-                istar = zeros((self.npv, self.npb))
+                istar = zeros((npv, npb))
                 ldpi = evaluate_ld(self.ldmodel, self._ldmu, ldc)
-                for ipv in range(self.npv):
-                    for ipb in range(self.npb):
-                        istar[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv,ipb], self._ldz)
+                for ipv in range(npv):
+                    for ipb in range(npb):
+                        istar[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv, ipb], self._ldz)
 
-        # Copy the limb darkening profiles and their integrals to the GPU
-        cl.enqueue_copy(self.queue, self._b_ldp, ldp.astype('float32'))
-        cl.enqueue_copy(self.queue, self._b_istar, istar.astype('float32'))
-        cl.enqueue_copy(self.queue, self._b_ks, pvp[:, :nk].mean(1).astype('float32'))
+        ldp = ldp.reshape((npv, npb, self.nmu))
+        istar = istar.reshape((npv, npb))
 
-        # Copy the parameter vector to the GPU
+        # Radius ratios per passband, and the parameter vector validity as in the Numba model
+        ks = empty((npv, npb), float32)
+        ks[:, :] = pvp[:, :nk]
+        a, e = pvp[:, nk + 2], pvp[:, nk + 4]
+        valid = ~(isnan(a) | (a <= 1.0) | (e < 0.0) | isnan(ldp[:, 0, 0])) & ((ks > 0.0) & (ks <= 1.0)).all(1)
+
+        cl.enqueue_copy(self.queue, self._b_ks, ks)
+        cl.enqueue_copy(self.queue, self._b_ldp, ldp.astype(float32))
+        cl.enqueue_copy(self.queue, self._b_istar, istar.astype(float32))
+        cl.enqueue_copy(self.queue, self._b_valid, valid.astype(int32))
+
         self.pv[:] = pvp
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
 
-        self.prg.calculate_weights(self.queue, (self.npv, self.ng, self.nz), None, self._b_ks, self._b_ze, self._b_gs, self._b_weights)
-        self.prg.calculate_ldw(self.queue, (self.npv, self.npb, self.ng), None, self.nz, self._b_ldp, self._b_weights, self._b_ldw)
+        # Tabulate the mean intensity under the planet and fit the cubics
+        self.prg.calculate_ldm(self.queue, (npv, npb, self.ng), None,
+                               self._b_ks, self._b_ldp, self._b_rules,
+                               float32(self._t0), float32(self._dt), int32(self.nmu), int32(self.nq),
+                               self._b_gcs, self._b_n1s, self._b_ldm)
+        self.prg.calculate_coefficients(self.queue, (npv, npb, self.ng - 2), None,
+                                        self._b_ldm, self._b_n1s, self._b_cm, int32(self.ng), self._b_coef)
 
-        self.prg.swift_pop(self.queue, (self.npv, self.nptb), None, self._b_time, self._b_istar, self._b_ldw, self.ng,
-                           self.dg, self._b_lcids, self._b_pbids, self._b_p, self._b_nsamples, self._b_etimes,
-                           self.spv, self.nlc, self.npb, self._b_f)
+        # Evaluate the model
+        self.prg.rr_flux(self.queue, (npv, self.nptb), None,
+                         self._b_time, self._b_ks, self._b_istar, self._b_gcs, self._b_n1s, self._b_coef,
+                         self._b_valid, int32(self.ng),
+                         self._b_lcids, self._b_pbids, self._b_p, self._b_nsamples, self._b_etimes,
+                         self.spv, self.nlc, self.npb, self._b_f)
 
         if copy:
             cl.enqueue_copy(self.queue, self.f, self._b_f)
             return squeeze(self.f)
         else:
             return None
+
+    def tables(self) -> Tuple[ndarray, ndarray, ndarray]:
+        """Read the mean intensity tables of the last evaluation back from the device.
+
+        Returns
+        -------
+        gcs : ndarray
+            Limb contacts (the table split points) with a shape ``(npv, npb)``.
+        n1s : ndarray
+            Number of nodes in the first segment of each table, shape ``(npv, npb)``.
+        coef : ndarray
+            Split cubic coefficients of the tables, shape ``(npv, npb, ng - 2, 4)``.
+        """
+        if self.npv is None:
+            raise ValueError('The model has not been evaluated yet.')
+        npv, npb = int(self.npv), int(self.npb)
+        gcs = empty((npv, npb), float32)
+        n1s = empty((npv, npb), int32)
+        coef = empty((npv, npb, self.ng - 2, 4), float32)
+        cl.enqueue_copy(self.queue, gcs, self._b_gcs)
+        cl.enqueue_copy(self.queue, n1s, self._b_n1s)
+        cl.enqueue_copy(self.queue, coef, self._b_coef)
+        self.queue.finish()
+        return gcs, n1s, coef

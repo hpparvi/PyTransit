@@ -34,5 +34,5 @@ RoadRunner model
 ----------------
 
 .. autoclass:: pytransit.models.roadrunner.rrmodel_cl.RoadRunnerModelCL
-    :members: set_data, evaluate, init_siwft_arrays
+    :members: set_data, evaluate, init_integration
     :special-members: __init__

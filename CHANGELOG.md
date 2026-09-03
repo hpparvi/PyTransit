@@ -15,10 +15,31 @@
   100). Against the analytic Mandel & Agol model the defaults are 3-5 times more accurate than before at every
   radius ratio from 0.02 to 0.3, the per-evaluation setup costs about the same, and the per-sample cost rises by a
   few percent. `nz`, `nzin`, `nzlimb`, `zcut`, `precompute_weights`, `klims` and `nk` are accepted and ignored
-  with a `FutureWarning`. The OpenCL model keeps the annulus grid, which it builds on the device.
+  with a `FutureWarning`.
+- The OpenCL RoadRunner model (`RoadRunnerModelCL`) uses the same quadrature. The intensity profile is tabulated on
+  the host on the same fixed grid as in the Numba model, and the device integrates it over the planet's footprint,
+  tabulates the mean intensity under the planet against the grazing parameter and fits the per-interval cubics in
+  two kernels that run before the flux kernel, so the host work per evaluation is unchanged. The model takes the
+  Numba model's `nq` and `ng` (defaults 8 and 100) and `init_integration(nq, ng)` replaces `init_siwft_arrays`;
+  `interpolate`, `klims`, `nk`, `nz`, `nzin`, `nzlimb` and `zcut` are accepted and ignored with a `FutureWarning`.
+  Against the analytic Mandel & Agol model the error at the defaults drops from 27 ppm to 2.5 ppm at a radius ratio
+  of 0.1 and from 120 ppm to 10 ppm at 0.3, matching the Numba model to within the single-precision orbit solver,
+  and the evaluation time is unchanged to within 0.2 ms. The radius ratio of each passband is now used for that
+  passband's table (the old model integrated with the mean over the passbands), parameter vectors with a NaN
+  radius ratio, a semi-major axis at or below one, or a negative eccentricity give NaN fluxes as in the Numba
+  model, and a radius ratio array with a shape other than `[npv, 1]` or `[npv, npb]` raises a `ValueError`.
 
 ### Fixed
 
+- The RoadRunner-family models raised a `ZeroDivisionError` for a radius ratio that was NaN, zero, negative or
+  above one, which a differential evolution population can propose and which the annulus-based versions evaluated
+  to NaN or meaningless finite fluxes. A parameter vector with a radius ratio outside (0, 1] is now treated as
+  invalid, like one with a bad semi-major axis or eccentricity, and evaluates to NaN fluxes in all the models
+  including the OpenCL one.
+- The Numba RoadRunner and oblate planet models built the quadrature nodes of the mean intensity table with the
+  radius ratio of the first passband for every passband, so with passband-dependent radius ratios the other
+  passbands read a table built for the wrong planet size: a radius ratio of 0.100 in the second passband next to
+  0.114 in the first was off by 140 ppm. The nodes are now built per passband.
 - The RoadRunner radius ratio weight table was indexed with the wrong node spacing, `(kmax - kmin) / nk` instead of
   `(kmax - kmin) / (nk - 1)`, so the interpolation between table nodes was systematically misplaced: at a radius
   ratio exactly on a node the error was 3-7 times what the exact weights give, and at `kmax` the model read one row

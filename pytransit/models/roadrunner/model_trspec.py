@@ -4,7 +4,8 @@ from meepmeep.backends.numba.point2d import sep_c, solve2d, bounding_box
 from numba import njit, prange, get_num_threads, set_num_threads
 from numpy import zeros, dot, ndarray, isnan, nan, mean, floor, fabs, max, empty
 
-from .common import (g_nodes, ldm_nodes, ldm_table, split_cubic_coefficients, split_point, ldm_lookup)
+from .common import (g_nodes, ldm_nodes, ldm_table, split_cubic_coefficients, split_point, ldm_lookup,
+                     valid_radius_ratios)
 from .common import circle_circle_intersection_area_kite as ccia
 
 
@@ -36,7 +37,7 @@ def tsmodel_serial(times: ndarray,
     xyc = zeros((2, 5))            # Taylor series coefficients for the (x, y) position
 
     for ipv in range(npv):
-        if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0):
+        if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or not valid_radius_ratios(k[ipv]):
             flux[ipv, :, :] = nan
             continue
 
@@ -124,7 +125,7 @@ def tsmodel_parallel(times: ndarray,
     xyc = zeros((2, 5))            # Taylor series coefficients for the (x, y) position
 
     for ipv in range(npv):
-        if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0):
+        if isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or not valid_radius_ratios(k[ipv]):
             flux[ipv, :, :] = nan
             continue
 
