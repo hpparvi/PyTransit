@@ -244,7 +244,7 @@ class CLModel:
         self._obs_cache = keyed
         self._obs_id = key
 
-    def reduce_loglikelihood(self, jitter: float, slots, ngrad: int, npv: int):
+    def reduce_loglikelihood(self, jitter: float, baseline: float, slots, ngrad: int, npv: int):
         """Reduce the device-resident flux and Jacobian into log-likelihood sums.
 
         Must follow an evaluation with ``copy=False``, whose results are still in
@@ -255,6 +255,10 @@ class CLModel:
         jitter : float
             Additional white-noise term, added in quadrature to the per-point
             uncertainties.
+        baseline : float
+            Flux baseline. The residual is ``(obs - baseline) - dF``, so a
+            normalised light curve (baseline=1.0) matches the model's flux deficit
+            convention.
         slots : tuple of ndarray
             ``(col, kind, grp)`` describing each gradient output slot; see
             `reduction.cl`. The first `NSCALAR` slots are the scalar sums and are
@@ -265,7 +269,7 @@ class CLModel:
         Returns
         -------
         ndarray
-            Shape ``(npv, 4 + n_gradient_slots)``: the four scalar sums followed
+            Shape ``(npv, 5 + n_gradient_slots)``: the five scalar sums followed
             by one reduced gradient column per slot.
         """
         if self._b_flux is None or self._b_dflux is None:
@@ -291,15 +295,15 @@ class CLModel:
                 build_options(self.precision))
 
         col, kind, grp = slots
-        nslot = 4 + col.size
+        nslot = 5 + col.size
         # The slot table depends only on the parameter shapes, so in a sampling
         # loop it is identical every call; re-uploading it would be three
         # avoidable round trips per likelihood evaluation.
         key = (col.tobytes(), kind.tobytes(), grp.tobytes())
         if key != self._slot_key:
-            # The four scalar sums occupy the leading slots; their col/kind/grp
+            # The five scalar sums occupy the leading slots; their col/kind/grp
             # are unused by the kernel but must be present so the arrays line up.
-            pad = zeros(4, int32)
+            pad = zeros(5, int32)
             self._upload('_b_slot_col', concatenate([pad, asarray(col, int32)]))
             self._upload('_b_slot_kind', concatenate([pad, asarray(kind, int32)]))
             self._upload('_b_slot_grp', concatenate([pad, asarray(grp, int32)]))
@@ -317,7 +321,8 @@ class CLModel:
             self._b_obs, self._b_err, self._b_flux, self._b_dflux,
             self._b_lcids, self._b_pbids, self._b_epids,
             self._b_slot_col, self._b_slot_kind, self._b_slot_grp,
-            int32(self.npt), int32(ngrad), int32(nslot), self.dtype(jitter),
+            int32(self.npt), int32(ngrad), int32(nslot),
+            self.dtype(jitter), self.dtype(baseline),
             cl.LocalMemory(lsize * self.dtype().nbytes), self._b_lnl)
 
         sums = zeros((npv, nslot), self.dtype)

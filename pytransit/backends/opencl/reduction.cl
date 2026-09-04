@@ -11,12 +11,14 @@
  *  Noise model: independent Gaussians with a fixed per-point `err` and a sampled
  *  `jitter`, so e2 = err^2 + jitter^2. A constant `err` gives the i.i.d. case.
  *
- *      lnL          = -N/2 log(2 pi) - 1/2 sum(log e2) - 1/2 sum(r^2/e2)
- *      dlnL/dtheta  = sum (r/e2) dm/dtheta
- *      dlnL/djitter = jitter [ sum(r^2/e2^2) - sum(1/e2) ]
+ *      lnL           = -N/2 log(2 pi) - 1/2 sum(log e2) - 1/2 sum(r^2/e2)
+ *      dlnL/dtheta   = sum (r/e2) dm/dtheta
+ *      dlnL/dbaseline = sum(r/e2)
+ *      dlnL/djitter  = jitter [ sum(r^2/e2^2) - sum(1/e2) ]
  *
- *  with r = obs - model. The four scalar sums and every gradient column are
- *  produced by one kernel: each work-group owns one output slot and reduces the
+ *  with r = (obs - baseline) - dF, dF the model's flux deficit (evaluate() returns
+ *  dF = F - 1, not normalised flux). The five scalar sums and every gradient column
+ *  are produced by one kernel: each work-group owns one output slot and reduces the
  *  whole time series into it, so `s` is uniform within a group and none of the
  *  branching below diverges.
  *
@@ -31,7 +33,8 @@
 #define SLOT_LOG_E2     1   /* sum log(e2)  */
 #define SLOT_CHI2_E2    2   /* sum r^2/e2^2 */
 #define SLOT_INV_E2     3   /* sum 1/e2     */
-#define NSCALAR         4
+#define SLOT_R_E2       4   /* sum r/e2  -> d lnL/d baseline */
+#define NSCALAR         5
 
 #define MATCH_ALL       0   /* parameter is shared: accept every point       */
 #define MATCH_PASSBAND  1   /* accept points whose passband is `grp`         */
@@ -49,7 +52,7 @@ __kernel void wn_loglikelihood(__global const REAL *obs,        /* (npt,)       
                                __global const int  *slot_kind,  /* (nslot,)           */
                                __global const int  *slot_grp,   /* (nslot,)           */
                                const int npt, const int ngrad, const int nslot,
-                               const REAL jitter,
+                               const REAL jitter, const REAL baseline,
                                __local REAL *scratch,
                                __global REAL *out)              /* (npv, nslot)       */
 {
@@ -80,11 +83,18 @@ __kernel void wn_loglikelihood(__global const REAL *obs,        /* (npt,)       
         } else if (s == SLOT_INV_E2) {
             term = (REAL)1.0 / e2;                /* model-independent */
         } else {
-            REAL r = obs[ipt] - flux[(size_t)ipv * npt + ipt];
+            /* (obs - baseline) before subtracting flux: both operands are near
+               1.0, so this subtraction is exact (Sterbenz lemma), and the rest of
+               the reduction stays on the small deficit scale. Do not reorder to
+               obs - (baseline + flux); that re-creates a near-1 value and throws
+               away the numerical benefit the deficit convention exists for. */
+            REAL r = (obs[ipt] - baseline) - flux[(size_t)ipv * npt + ipt];
             if (s == SLOT_CHI2) {
                 term = r * r / e2;
             } else if (s == SLOT_CHI2_E2) {
                 term = r * r / (e2 * e2);
+            } else if (s == SLOT_R_E2) {
+                term = r / e2;                    /* d lnL/d baseline */
             } else {
                 int g = grp;
                 if (kind != MATCH_ALL) {

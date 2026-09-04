@@ -31,17 +31,22 @@ P, A, I, W = 3.0, 6.0, radians(88.0), pi / 2
 LDC = np.array([0.3, 0.2])
 
 
-def reference_loglikelihood(model, obs, err, jitter, **pars):
-    """NumPy oracle: reduce the model's own expanded Jacobian on the host."""
+def reference_loglikelihood(model, obs, err, jitter, baseline=1.0, **pars):
+    """NumPy oracle: reduce the model's own expanded Jacobian on the host.
+
+    The residual is (obs - baseline) - dF, matching reduction.cl. Gradient columns are
+    the Jacobian's, then d lnL/d baseline, then d lnL/d jitter -- jitter stays last.
+    """
     flux, jac = model.evaluate(**pars)
     flux, jac = np.asarray(flux), np.asarray(jac)
     e2 = np.asarray(err) ** 2 + jitter ** 2
-    r = np.asarray(obs) - flux
+    r = (np.asarray(obs) - baseline) - flux
     lnl = (-0.5 * r.size * np.log(2 * np.pi) - 0.5 * np.sum(np.log(e2))
            - 0.5 * np.sum(r ** 2 / e2))
     grad = (r / e2) @ jac
+    db = np.sum(r / e2)
     dj = jitter * (np.sum(r ** 2 / e2 ** 2) - np.sum(1.0 / e2))
-    return lnl, np.concatenate([grad, [dj]])
+    return lnl, np.concatenate([grad, [db], [dj]])
 
 
 def _dataset(npt=2000, origin=BJD, seed=0):
@@ -66,11 +71,13 @@ class TestReferenceMathIsRight:
 
     PARS = dict(k=0.1, t0=BJD, p=P, a=A, i=I, e=0.1, w=W, ldc=LDC)
 
-    def _lnl(self, model, obs, err, jitter, **overrides):
+    def _lnl(self, model, obs, err, jitter, baseline=1.0, **overrides):
         pars = {**self.PARS, **overrides}
         flux = np.asarray(model.evaluate(**pars))
         e2 = err ** 2 + jitter ** 2
-        r = obs - flux
+        # (obs - baseline) before subtracting flux: both operands are near 1.0, so
+        # this subtraction is exact (Sterbenz), and the rest stays on the deficit scale.
+        r = (obs - baseline) - flux
         return (-0.5 * r.size * np.log(2 * np.pi) - 0.5 * np.sum(np.log(e2))
                 - 0.5 * np.sum(r ** 2 / e2))
 
@@ -86,7 +93,7 @@ class TestReferenceMathIsRight:
         times, err, rng = _dataset()
         grad_model = _rr(times)
         fwd_model = _rr(times, return_grad=False)
-        obs = np.asarray(fwd_model.evaluate(**self.PARS)) + rng.normal(0, err)
+        obs = 1.0 + np.asarray(fwd_model.evaluate(**self.PARS)) + rng.normal(0, err)
         jitter = 5e-4
 
         _, grad = reference_loglikelihood(grad_model, obs, err, jitter, **self.PARS)
@@ -100,7 +107,7 @@ class TestReferenceMathIsRight:
     def test_limb_darkening_gradient(self, j):
         times, err, rng = _dataset()
         grad_model, fwd_model = _rr(times), _rr(times, return_grad=False)
-        obs = np.asarray(fwd_model.evaluate(**self.PARS)) + rng.normal(0, err)
+        obs = 1.0 + np.asarray(fwd_model.evaluate(**self.PARS)) + rng.normal(0, err)
         jitter, eps = 5e-4, 1e-7
 
         _, grad = reference_loglikelihood(grad_model, obs, err, jitter, **self.PARS)
@@ -114,12 +121,35 @@ class TestReferenceMathIsRight:
     def test_jitter_gradient(self):
         times, err, rng = _dataset()
         grad_model, fwd_model = _rr(times), _rr(times, return_grad=False)
-        obs = np.asarray(fwd_model.evaluate(**self.PARS)) + rng.normal(0, err)
+        obs = 1.0 + np.asarray(fwd_model.evaluate(**self.PARS)) + rng.normal(0, err)
         jitter, eps = 5e-4, 1e-9
 
         _, grad = reference_loglikelihood(grad_model, obs, err, jitter, **self.PARS)
         fd = (self._lnl(fwd_model, obs, err, jitter + eps)
               - self._lnl(fwd_model, obs, err, jitter - eps)) / (2 * eps)
+        np.testing.assert_allclose(grad[-1], fd, rtol=1e-5)
+
+    def test_baseline_gradient(self):
+        times, err, rng = _dataset()
+        grad_model, fwd_model = _rr(times), _rr(times, return_grad=False)
+        obs = 1.0 + np.asarray(fwd_model.evaluate(**self.PARS)) + rng.normal(0, err)
+        jitter, baseline, eps = 5e-4, 1.0, 1e-6
+
+        _, grad = reference_loglikelihood(grad_model, obs, err, jitter, baseline, **self.PARS)
+        fd = (self._lnl(fwd_model, obs, err, jitter, baseline + eps)
+              - self._lnl(fwd_model, obs, err, jitter, baseline - eps)) / (2 * eps)
+        # baseline is second from last; jitter keeps the last column.
+        np.testing.assert_allclose(grad[-2], fd, rtol=1e-5)
+
+    def test_jitter_is_still_the_last_column(self):
+        times, err, rng = _dataset()
+        grad_model, fwd_model = _rr(times), _rr(times, return_grad=False)
+        obs = 1.0 + np.asarray(fwd_model.evaluate(**self.PARS)) + rng.normal(0, err)
+        jitter, eps = 5e-4, 1e-9
+
+        _, grad = reference_loglikelihood(grad_model, obs, err, jitter, 1.0, **self.PARS)
+        fd = (self._lnl(fwd_model, obs, err, jitter + eps, 1.0)
+              - self._lnl(fwd_model, obs, err, jitter - eps, 1.0)) / (2 * eps)
         np.testing.assert_allclose(grad[-1], fd, rtol=1e-5)
 
 
@@ -129,7 +159,7 @@ class TestDeviceMatchesReference:
     def test_simple(self):
         times, err, rng = _dataset()
         model = _rr(times)
-        obs = np.asarray(_rr(times, return_grad=False).evaluate(**self.PARS)) + rng.normal(0, err)
+        obs = 1.0 + np.asarray(_rr(times, return_grad=False).evaluate(**self.PARS)) + rng.normal(0, err)
         jitter = 5e-4
 
         expected_lnl, expected_grad = reference_loglikelihood(model, obs, err, jitter, **self.PARS)
@@ -139,6 +169,17 @@ class TestDeviceMatchesReference:
         assert grad.shape == expected_grad.shape
         np.testing.assert_allclose(lnl, expected_lnl, rtol=1e-12)
         np.testing.assert_allclose(grad, expected_grad, rtol=1e-10, atol=1e-12)
+
+    def test_device_matches_reference_with_baseline(self):
+        times, err, rng = _dataset()
+        model = _rr(times)
+        obs = 1.0 + np.asarray(_rr(times, return_grad=False).evaluate(**self.PARS)) + rng.normal(0, err)
+        jitter, baseline = 5e-4, 0.9997
+
+        want_lnl, want_grad = reference_loglikelihood(model, obs, err, jitter, baseline, **self.PARS)
+        got_lnl, got_grad = model.loglikelihood(obs, err, jitter, baseline=baseline, **self.PARS)
+        np.testing.assert_allclose(got_lnl, want_lnl, rtol=1e-10)
+        np.testing.assert_allclose(np.asarray(got_grad), want_grad, rtol=1e-8, atol=1e-12)
 
 
 def _hetero(npt_per_lc=500, origin=BJD, seed=1):
@@ -188,7 +229,7 @@ class TestDeviceMatchesReferenceHeterogeneous:
                     for key, value in pars.items()}
 
         # Observations come from the first parameter vector plus noise.
-        obs = np.asarray(build(False).evaluate(**single(0))) + rng.normal(0, err)
+        obs = 1.0 + np.asarray(build(False).evaluate(**single(0))) + rng.normal(0, err)
         jitter = 4e-4
 
         reference = build(True)
@@ -214,13 +255,13 @@ class TestUniformDiskModel:
         pars = dict(k=0.1, t0=BJD, p=P, a=A, i=I, e=0.1, w=W)
         model = UniformDiskModel(backend='opencl', return_grad=True)
         model.set_data(times)
-        obs = np.asarray(model.evaluate(**pars)[0]) + rng.normal(0, err)
+        obs = 1.0 + np.asarray(model.evaluate(**pars)[0]) + rng.normal(0, err)
         jitter = 5e-4
 
         expected_lnl, expected_grad = reference_loglikelihood(model, obs, err, jitter, **pars)
         lnl, grad = model.loglikelihood(obs, err, jitter, **pars)
 
-        assert grad.size == 7 + 1, "7 orbital columns plus d/djitter, no LD block"
+        assert grad.size == 7 + 2, "7 orbital columns plus d/dbaseline and d/djitter, no LD block"
         np.testing.assert_allclose(lnl, expected_lnl, rtol=1e-12)
         np.testing.assert_allclose(grad, expected_grad, rtol=1e-10, atol=1e-12)
 
@@ -231,7 +272,7 @@ class TestNoiseHandling:
     def test_scalar_err_is_the_iid_case(self):
         times, err_array, rng = _dataset()
         model = _rr(times)
-        obs = np.asarray(model.evaluate(**self.PARS)[0]) + rng.normal(0, err_array)
+        obs = 1.0 + np.asarray(model.evaluate(**self.PARS)[0]) + rng.normal(0, err_array)
         sigma, jitter = 1.2e-3, 4e-4
 
         expected = reference_loglikelihood(model, obs, np.full(times.size, sigma),
@@ -243,7 +284,7 @@ class TestNoiseHandling:
     def test_zero_jitter(self):
         times, err, rng = _dataset()
         model = _rr(times)
-        obs = np.asarray(model.evaluate(**self.PARS)[0]) + rng.normal(0, err)
+        obs = 1.0 + np.asarray(model.evaluate(**self.PARS)[0]) + rng.normal(0, err)
 
         expected = reference_loglikelihood(model, obs, err, 0.0, **self.PARS)
         got = model.loglikelihood(obs, err, 0.0, **self.PARS)
@@ -266,7 +307,7 @@ class TestInvalidParameterVectors:
         times, err, rng = _dataset()
         model = _rr(times)
         pars = dict(k=0.1, t0=BJD, p=P, a=A, i=I, e=0.1, w=W, ldc=LDC)
-        obs = np.asarray(model.evaluate(**pars)[0]) + rng.normal(0, err)
+        obs = 1.0 + np.asarray(model.evaluate(**pars)[0]) + rng.normal(0, err)
 
         lnl, grad = model.loglikelihood(obs, err, 5e-4, **{**pars, 'a': 0.5})
         assert np.isnan(lnl), "an invalid parameter vector should give a NaN lnL"
@@ -306,7 +347,7 @@ class TestWNLogLikelihoodClass:
         from pytransit.loglikelihoods import WNLogLikelihood
         times, err, rng = _dataset()
         model = _rr(times)
-        obs = np.asarray(model.evaluate(**self.PARS)[0]) + rng.normal(0, err)
+        obs = 1.0 + np.asarray(model.evaluate(**self.PARS)[0]) + rng.normal(0, err)
         return model, obs, err, WNLogLikelihood(model, obs, err)
 
     def test_matches_the_model_method(self):
@@ -323,7 +364,7 @@ class TestWNLogLikelihoodClass:
         from pytransit.loglikelihoods import WNLogLikelihood
         times, err_array, rng = _dataset()
         model = _rr(times)
-        obs = np.asarray(model.evaluate(**self.PARS)[0]) + rng.normal(0, err_array)
+        obs = 1.0 + np.asarray(model.evaluate(**self.PARS)[0]) + rng.normal(0, err_array)
         sigma = 1.1e-3
 
         ll = WNLogLikelihood(model, obs, sigma)
@@ -353,7 +394,7 @@ class TestObservationCache:
         import weakref
         times, err, rng = _dataset()
         model = _rr(times)
-        obs = np.asarray(model.evaluate(**self.PARS)[0]) + rng.normal(0, err)
+        obs = 1.0 + np.asarray(model.evaluate(**self.PARS)[0]) + rng.normal(0, err)
         model.loglikelihood(obs, err, 4e-4, **self.PARS)
 
         ref = weakref.ref(model._model._obs_cache[0])
@@ -363,7 +404,7 @@ class TestObservationCache:
     def test_new_observations_are_re_uploaded(self):
         times, err, rng = _dataset()
         model = _rr(times)
-        base = np.asarray(model.evaluate(**self.PARS)[0])
+        base = 1.0 + np.asarray(model.evaluate(**self.PARS)[0])
 
         for offset in (0.0, 0.01, 0.02):
             obs = base + offset + rng.normal(0, err)
@@ -378,19 +419,21 @@ class TestObservationCache:
         times = np.linspace(-0.12, 0.12, npt) + BJD
         model = _rr(times)
         err = np.full(npt, 1e-3)
-        obs = np.atleast_1d(np.asarray(model.evaluate(**self.PARS)[0])) + 1e-4
+        obs = 1.0 + np.atleast_1d(np.asarray(model.evaluate(**self.PARS)[0])) + 1e-4
 
         flux, jac = model.evaluate(**self.PARS)
         flux = np.atleast_1d(np.asarray(flux))
         jac = np.asarray(jac).reshape(flux.size, -1)
-        e2, r = err ** 2 + 4e-4 ** 2, obs - flux
+        # (obs - baseline) before subtracting flux: baseline defaults to 1.0 here,
+        # and both operands are near 1.0, so this stays on the small deficit scale.
+        e2, r = err ** 2 + 4e-4 ** 2, (obs - 1.0) - flux
         expected_lnl = (-0.5 * npt * np.log(2 * np.pi) - 0.5 * np.sum(np.log(e2))
                         - 0.5 * np.sum(r ** 2 / e2))
         expected_grad = (r / e2) @ jac
 
         lnl, grad = model.loglikelihood(obs, err, 4e-4, **self.PARS)
         np.testing.assert_allclose(lnl, expected_lnl, rtol=1e-10)
-        np.testing.assert_allclose(grad[:-1], expected_grad, rtol=1e-8, atol=1e-11)
+        np.testing.assert_allclose(grad[:-2], expected_grad, rtol=1e-8, atol=1e-11)
 
 
 class TestCopyArgumentIsRejected:
@@ -414,12 +457,14 @@ class TestSinglePrecision:
 
     PARS = dict(k=0.1, t0=BJD, p=P, a=A, i=I, e=0.1, w=W, ldc=LDC)
 
-    def _exact(self, model, obs, err, jitter):
+    def _exact(self, model, obs, err, jitter, baseline=1.0):
         flux, jac = model.evaluate(**self.PARS)
         flux = np.asarray(flux, np.float64)
         jac = np.asarray(jac, np.float64)
         e2 = np.asarray(err, np.float64) ** 2 + jitter ** 2
-        r = np.asarray(obs, np.float64) - flux
+        # (obs - baseline) before subtracting flux: both operands are near 1.0, so
+        # this subtraction is exact (Sterbenz), and the rest stays on the deficit scale.
+        r = (np.asarray(obs, np.float64) - baseline) - flux
         lnl = (-0.5 * r.size * np.log(2 * np.pi) - 0.5 * np.sum(np.log(e2))
                - 0.5 * np.sum(r ** 2 / e2))
         dj = jitter * (np.sum(r ** 2 / e2 ** 2) - np.sum(1.0 / e2))
@@ -429,7 +474,7 @@ class TestSinglePrecision:
     def test_accuracy(self, npt):
         times, err, rng = _dataset(npt=npt)
         model = _rr(times, precision='single')
-        obs = np.asarray(model.evaluate(**self.PARS)[0], np.float64) + rng.normal(0, err)
+        obs = 1.0 + np.asarray(model.evaluate(**self.PARS)[0], np.float64) + rng.normal(0, err)
         jitter = 4e-4
 
         exact_lnl, exact_grad, exact_dj = self._exact(model, obs, err, jitter)
@@ -446,7 +491,7 @@ class TestSinglePrecision:
         object, which is exactly when a naive identity cache goes stale."""
         times, _, rng = _dataset()
         model = _rr(times, precision='single')
-        obs = np.asarray(model.evaluate(**self.PARS)[0], np.float64) + 1e-4
+        obs = 1.0 + np.asarray(model.evaluate(**self.PARS)[0], np.float64) + 1e-4
 
         seen = []
         for sigma in (1e-3, 5e-3, 2e-2, 5e-3, 1e-3):
@@ -472,7 +517,7 @@ class TestMixedExpansion:
 
         model = RoadRunnerModel(backend='opencl', return_grad=True, ldmodel='quadratic')
         model.set_data(times, **data)
-        obs = np.asarray(model.evaluate(**pars)[0]) + rng.normal(0, err)
+        obs = 1.0 + np.asarray(model.evaluate(**pars)[0]) + rng.normal(0, err)
 
         expected_lnl, expected_grad = reference_loglikelihood(model, obs, err, 4e-4, **pars)
         lnl, grad = model.loglikelihood(obs, err, 4e-4, **pars)
@@ -490,7 +535,7 @@ class TestReductionGuards:
         slots, ncol = model._gradient_slots(
             tuple(self.PARS[n] for n in 'k t0 p a i e w'.split()), 1, ldc=LDC)
         with pytest.raises(RuntimeError, match="copy=False"):
-            model._model.reduce_loglikelihood(0.0, slots, ncol, 1)
+            model._model.reduce_loglikelihood(0.0, 1.0, slots, ncol, 1)
 
     def test_reduce_without_observations_raises(self):
         times, _, _ = _dataset()
@@ -499,20 +544,20 @@ class TestReductionGuards:
         slots, ncol = model._gradient_slots(
             tuple(self.PARS[n] for n in 'k t0 p a i e w'.split()), 1, ldc=LDC)
         with pytest.raises(RuntimeError, match="set_observations"):
-            model._model.reduce_loglikelihood(0.0, slots, ncol, 1)
+            model._model.reduce_loglikelihood(0.0, 1.0, slots, ncol, 1)
 
     def test_mismatched_row_width_raises(self):
         """A gradient row width disagreeing with the Jacobian on the device must
         fail loudly; striding it wrongly would return plausible nonsense."""
         times, err, _ = _dataset()
         model = _rr(times)
-        obs = np.asarray(model.evaluate(**self.PARS)[0]) + 1e-4
+        obs = 1.0 + np.asarray(model.evaluate(**self.PARS)[0]) + 1e-4
         model._model.set_observations(obs, err)
         model.evaluate(**self.PARS, copy=False)
         slots, ncol = model._gradient_slots(
             tuple(self.PARS[n] for n in 'k t0 p a i e w'.split()), 1, ldc=LDC)
         with pytest.raises(ValueError, match="row width"):
-            model._model.reduce_loglikelihood(0.0, slots, ncol + 1, 1)
+            model._model.reduce_loglikelihood(0.0, 1.0, slots, ncol + 1, 1)
 
     def test_missing_ldc_raises(self):
         times, err, _ = _dataset()

@@ -186,7 +186,8 @@ class TransitModel:
                  ldp: ndarray | None = None) -> ndarray | tuple[ndarray, ndarray]:
         raise NotImplementedError
 
-    def loglikelihood(self, obs, err, jitter, k, t0, p, a, i, e=0.0, w=0.0, **kwargs):
+    def loglikelihood(self, obs, err, jitter, k, t0, p, a, i, e=0.0, w=0.0,
+                       baseline: float = 1.0, **kwargs):
         """Log-likelihood and its gradient, reduced on the OpenCL device.
 
         Evaluates the model with ``copy=False`` and reduces the device-resident
@@ -195,7 +196,10 @@ class TransitModel:
 
         The noise is independent Gaussian with a fixed per-point `err` and a
         sampled `jitter`, combined as ``e2 = err**2 + jitter**2``; a constant
-        `err` gives the i.i.d. case.
+        `err` gives the i.i.d. case. `evaluate` returns a flux deficit
+        ``dF = F - 1``, not normalised flux, so the residual is
+        ``(obs - baseline) - dF``: `baseline` shifts the deficit back onto the
+        scale of normalised photometry.
 
         Parameters
         ----------
@@ -207,6 +211,9 @@ class TransitModel:
             Additional white noise added in quadrature.
         k, t0, p, a, i, e, w : float or ndarray
             Model parameters, exactly as for `evaluate`.
+        baseline : float, optional
+            Flux baseline; default 1.0 for normalised photometry. A scalar
+            shared across the whole light curve.
         **kwargs
             Passed to `evaluate`, so limb-darkening coefficients go here as
             ``ldc=`` (RoadRunner) or ``ldp=`` (uniform disk).
@@ -218,8 +225,8 @@ class TransitModel:
             otherwise shape ``(npv,)``.
         grad : ndarray
             Gradient with the same columns `evaluate` returns for the Jacobian,
-            in the order ``[k, t0, p, a, i, e, w, ldc]``, plus a trailing
-            ``d lnL / d jitter``.
+            in the order ``[k, t0, p, a, i, e, w, ldc]``, followed by
+            ``d lnL / d baseline`` and then a trailing ``d lnL / d jitter``.
         """
         if self.backend != 'opencl':
             raise NotImplementedError(
@@ -248,14 +255,16 @@ class TransitModel:
 
         self._model.set_observations(obs, err)
         self.evaluate(k, t0, p, a, i, e, w, **kwargs, copy=False)
-        sums = self._model.reduce_loglikelihood(jitter, slots, ncol, npv)
+        sums = self._model.reduce_loglikelihood(jitter, baseline, slots, ncol, npv)
 
-        # Slot order matches reduction.cl: chi2, log_e2, chi2_e2, inv_e2, then
-        # one reduced column per gradient slot.
-        chi2, log_e2, chi2_e2, inv_e2 = (sums[:, j] for j in range(4))
+        # Slot order matches reduction.cl: chi2, log_e2, chi2_e2, inv_e2, r_e2,
+        # then one reduced column per gradient slot.
+        chi2, log_e2, chi2_e2, inv_e2, r_e2 = (sums[:, j] for j in range(5))
         lnl = -0.5 * self.npt * log(2.0 * pi) - 0.5 * log_e2 - 0.5 * chi2
         djitter = jitter * (chi2_e2 - inv_e2)
-        grad = concatenate([sums[:, 4:], djitter[:, None]], axis=1)
+        dbaseline = r_e2                      # d lnL/d baseline = sum(r/e2)
+        # baseline goes before jitter so that grad[..., -1] is still d lnL/d jitter.
+        grad = concatenate([sums[:, 5:], dbaseline[:, None], djitter[:, None]], axis=1)
         if lnl.size == 1:
             return float(lnl[0]), grad[0]
         return lnl, grad
