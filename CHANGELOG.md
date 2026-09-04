@@ -23,11 +23,41 @@
   Numba model's `nq` and `ng` (defaults 8 and 100) and `init_integration(nq, ng)` replaces `init_siwft_arrays`;
   `interpolate`, `klims`, `nk`, `nz`, `nzin`, `nzlimb` and `zcut` are accepted and ignored with a `FutureWarning`.
   Against the analytic Mandel & Agol model the error at the defaults drops from 27 ppm to 2.5 ppm at a radius ratio
-  of 0.1 and from 120 ppm to 10 ppm at 0.3, matching the Numba model to within the single-precision orbit solver,
-  and the evaluation time is unchanged to within 0.2 ms. The radius ratio of each passband is now used for that
+  of 0.1 and from 120 ppm to 10 ppm at 0.3, and the evaluation time is unchanged to within 0.2 ms. The radius ratio of each passband is now used for that
   passband's table (the old model integrated with the mean over the passbands), parameter vectors with a NaN
   radius ratio, a semi-major axis at or below one, or a negative eccentricity give NaN fluxes as in the Numba
   model, and a radius ratio array with a shape other than `[npv, 1]` or `[npv, npb]` raises a `ValueError`.
+
+- The OpenCL RoadRunner model takes the projected star-planet separation from the same MeepMeep Taylor series
+  expansion as the Numba model instead of solving the orbit itself, so the two now share the orbit exactly.
+  MeepMeep's OpenCL backend ships its evaluators as device functions, and `meepmeep.backends.opencl.point2d.cl` is
+  prepended to the model source; the coefficient solvers stay on the host, as MeepMeep's consumer contract requires,
+  and `solve2d` and `bounding_box` are evaluated in a compiled loop mirroring the Numba model's precomputation. The
+  difference between the two backends was up to 2e-6 in flux at a scaled semi-major axis of 4, all of it the
+  expansion's truncation error, which the Numba model carried and the OpenCL model did not; a double precision build
+  now agrees with the Numba model to about 7e-9 regardless of the transit geometry. Because the expansion is only
+  valid near the transit, where the Keplerian solver it replaces was valid everywhere, samples outside the transit
+  bounding box are now rejected rather than evaluated. `RoadRunnerModelCL` now needs a MeepMeep with the OpenCL
+  backend (`meepmeep.backends.opencl`).
+- The OpenCL RoadRunner model takes a `precision` argument, either `'single'` (the default, and the previous
+  behaviour) or `'double'`. The kernel's floating point type is a `-DREAL=` build option, so the precision is fixed
+  when the model is created, and it sets the dtype of the returned flux as well. Double precision requires
+  `cl_khr_fp64`, which is checked against the device. It costs between 1.1 and 7.1 times the single precision
+  evaluation time on an RTX 5070, depending on how much of the time is the fixed per-call overhead.
+- The OpenCL RoadRunner model evaluates up to 3.9 times faster, and no slower anywhere, by binding the kernels once
+  when the program is built rather than looking them up on every evaluation, and by setting the kernel arguments
+  only when they change rather than letting PyOpenCL re-marshal all seventeen of them at every launch. The gain is
+  largest for small models and vanishes for the largest ones, where the device-to-host transfer of the fluxes
+  dominates everything else. Each `Program`
+  attribute lookup builds a new `Kernel` and regenerates its invoker, which consults PyOpenCL's on-disk cache, so
+  the three lookups were more than half the cost of a small evaluation. The fixed per-call overhead drops from about
+  570 to about 150 microseconds, which makes the OpenCL model faster than the sixteen-thread Numba model for a
+  single light curve of 1e4 points or more, where it used to be slower for every single-light-curve evaluation.
+- A one-dimensional radius ratio array is now interpreted consistently by the Numba and OpenCL RoadRunner models,
+  following the convention already used for the limb darkening coefficients: as the radius ratios per passband when
+  a single parameter vector is evaluated, and as one radius ratio per parameter vector when a population is. Give a
+  population several radius ratios per parameter vector as an `(npv, nk)` array. A radius ratio array whose leading
+  dimension matches neither the number of parameter vectors nor one raises a `ValueError` naming the expected shape.
 
 ### Fixed
 
@@ -36,6 +66,16 @@
   to NaN or meaningless finite fluxes. A parameter vector with a radius ratio outside (0, 1] is now treated as
   invalid, like one with a bad semi-major axis or eccentricity, and evaluates to NaN fluxes in all the models
   including the OpenCL one.
+- Evaluating a RoadRunner model for a population with the radius ratios given as a one-dimensional array of one
+  radius ratio per parameter vector, which the documentation allows, silently returned a single light curve computed
+  from the first radius ratio in the Numba model and raised an `IndexError` in the OpenCL one. The array was read as
+  a set of passband-dependent radius ratios for one parameter vector in both. It is now read as one radius ratio per
+  parameter vector whenever a population is evaluated.
+- `RoadRunnerModelCL.set_data` defaulted the exposure times to one day instead of zero as `TransitModel.set_data`
+  does, so supersampling without an explicit exposure time spread the samples over a whole day: `set_data(time,
+  nsamples=10)` gave a transit 5 times too shallow, a depth of 0.0021 where the Numba model gave 0.0114. A scalar
+  exposure time or sample count was also stored as a zero-dimensional array rather than being broadcast to one
+  dimension.
 - The Numba RoadRunner and oblate planet models built the quadrature nodes of the mean intensity table with the
   radius ratio of the first passband for every passband, so with passband-dependent radius ratios the other
   passbands read a table built for the wrong planet size: a radius ratio of 0.100 in the second passband next to

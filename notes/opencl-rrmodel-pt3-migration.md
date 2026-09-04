@@ -1,6 +1,6 @@
 # Migrating the OpenCL RoadRunner changes to PyTransit3
 
-Source: PyTransit commits `a664826` and the precision commit that follows it, on branch `dev`.
+Source: PyTransit commits `a664826`, `920669f`, `d6454fb` and `2ab63c5` on branch `dev`.
 Target: `pt3` (PyTransit3), `pytransit/backends/opencl/`.
 
 Three independent changes. Changes 1 and 2 port directly and are pure wins.
@@ -187,15 +187,17 @@ catch.
 
 | npt x npv | CL single | CL double | fp64 cost |
 |---|---|---|---|
-| 1e3 x 1 | 124 us | 229 us | 1.9x |
-| 1e4 x 1 | 146 us | 933 us | 6.4x |
-| 1e4 x 1000 | 932 us | 27.0 ms | 29x |
-| 1e5 x 1000 | 5.6 ms | 257 ms | 46x |
+| 1e3 x 1 | 188 us | 208 us | 1.1x |
+| 1e4 x 1 | 159 us | 242 us | 1.5x |
+| 1e4 x 1000 | 1.35 ms | 4.22 ms | 3.1x |
+| 1e5 x 1000 | 4.50 ms | 32.1 ms | 7.1x |
 
-The cost rises from 1.9x to 46x as the fixed per-call overhead stops dominating, converging on
-the ~64x fp64:fp32 ratio of consumer NVIDIA. Double is still **1.8x faster than 16-thread Numba**
-at 1e5 x 1000 (257 vs 473 ms), so it is usable for validation runs; it is not a production
-default.
+**Change 6 cut this from 46x to 7.1x.** With the Keplerian solver the kernel was bound by fp64
+transcendentals (`sin`, `cos`, `atan2`, `fmod` per sample), which consumer NVIDIA runs at a
+sixty-fourth of the single precision rate. A degree-4 polynomial is multiply-add and the kernel
+is table-bound instead, so the fp64 penalty largely disappears. Double is now **13.7x faster
+than 16-thread Numba** at 1e5 x 1000 (32 vs 440 ms), against 1.8x before, which makes it a
+practical choice rather than a validation-only one.
 
 ---
 
@@ -264,7 +266,13 @@ cl.Program(ctx, source).build(options=build_options(precision))
    either way) but it stretched the box by a full day, across the far side of a two-day orbit,
    and put a 1.1e-02 spurious transit between every pair of transits. Check this default before
    wiring in the box, and test with data spanning several epochs — single-transit tests cannot
-   see it.
+   see it. The same default was independently wrong for supersampling: `set_data(t, nsamples=10)`
+   with no exposure time smeared the model over a whole day and returned a transit 5x too
+   shallow (depth 0.0021 against 0.0114).
+3. **A scalar exposure time is a zero-dimensional array.** `asarray(0.02)` has `ndim == 0`,
+   which is fine as a buffer but cannot be indexed inside the compiled expansion loop, and
+   fails at *compile* time with a `NumbaTypeError` naming the wrong line. `atleast_1d` it, as
+   `TransitModel.set_data` does.
 
 Match the Numba fold exactly: the epoch comes from the **unshifted** sample time and the
 supersampling offsets are added to the centred time afterwards, so a sample never crosses into a
@@ -302,23 +310,27 @@ same reason; this would break that guarantee on the host side instead.
 
 `npt` x `npv`, microseconds, `copy=True` / `copy=False`+`queue.finish()`:
 
+`before` is the state at `ac72acc`, `after` is `2ab63c5` — Changes 1, 2 and 6 combined:
+
 | npt x npv | before | after | speedup |
 |---|---|---|---|
-| 1e3 x 1 | 603 / 581 | **133 / 121** | 4.5x / 4.8x |
-| 1e4 x 1 | 619 / 587 | **149 / 136** | 4.1x / 4.3x |
-| 1e3 x 100 | 664 / 614 | **200 / 153** | 3.3x / 4.0x |
-| 1e4 x 100 | 1120 / 683 | **626 / 221** | 1.8x / 3.1x |
-| 1e5 x 1000 | 46841 / 6112 | 49554 / 5653 | ~1x (transfer-bound) |
+| 1e3 x 1 | 603 / 581 | **163 / 151** | 3.7x / 3.8x |
+| 1e4 x 1 | 619 / 587 | **168 / 151** | 3.7x / 3.9x |
+| 1e3 x 100 | 664 / 614 | **273 / 222** | 2.4x / 2.8x |
+| 1e4 x 100 | 1120 / 683 | **651 / 248** | 1.7x / 2.8x |
+| 1e5 x 100 | 5526 / 1345 | **4631 / 542** | 1.2x / 2.5x |
+| 1e5 x 1000 | 46841 / 6112 | 44829 / 4283 | 1.0x / 1.4x |
 
-A fixed ~460 us is removed, so the gain is large for small models and nil for
-transfer-bound ones. Consequence worth knowing: OpenCL now **beats** 16-thread Numba
-for a single light curve at `npt >= 1e4` (149 vs 179 us; 361 vs 462 us at 1e5), where
-it previously lost at every `npv == 1`.
+Changes 1 and 2 remove a fixed ~460 us per call; Change 6 gives some of it back as host-side
+precompute (~315 ns per parameter vector) and takes more off the kernel. Consequence worth
+knowing: OpenCL now **beats** 16-thread Numba for a single light curve at `npt >= 1e4`
+(168 vs 178 us; 285 vs 483 us at 1e5), where it previously lost at every `npv == 1`.
 
-**Remaining 120 us floor:** ~27 us blocking host->device uploads (5), ~26 us kernel
-launches (3), ~9 us Numba dispatch in `evaluate_ld`/`evaluate_ldi`, ~7 us readback,
-~40 us Python/NumPy in `_evaluate_pv`. Further gains need preallocated `astype`
-temporaries and coalesced uploads — perhaps 30-40 us, for materially uglier code.
+**Remaining ~150 us floor:** ~27 us blocking host->device uploads (now 7), ~26 us kernel
+launches (3), ~9 us Numba dispatch in `evaluate_ld`/`evaluate_ldi`, ~7 us readback, the
+expansion precompute, and ~40 us Python/NumPy in `_evaluate_pv`. Further gains need
+preallocated `astype` temporaries and coalesced uploads — perhaps 30-40 us, for materially
+uglier code.
 
 ---
 
@@ -332,5 +344,11 @@ temporaries and coalesced uploads — perhaps 30-40 us, for materially uglier co
 3. **White-box invalidation assertions** (Change 2 above).
 4. **Mutation-test the invalidations:** remove each one in turn and confirm a test
    fails. If none fails, the test is not a guard.
-5. Profile with `cProfile` sorted by `tottime` and confirm neither
-   `pyopencl/__init__.py:__getattr__` nor `sqlite3` appears.
+5. **Data spanning several epochs**, not one transit. The bounding box, the epoch fold and the
+   exposure time default are all invisible to a single-transit test, and all three were wrong
+   at some point in this work. Assert that nothing dips between the transits and that the two
+   backends report the *same number* of in-transit samples.
+6. **Eccentric orbits at several `w`**, which is where a Kepler solver's convergence shows.
+7. Profile with `cProfile` sorted by `tottime` and confirm neither
+   `pyopencl/__init__.py:__getattr__` nor `sqlite3` appears, and that no per-parameter-vector
+   Python call into `solve2d` does either.
