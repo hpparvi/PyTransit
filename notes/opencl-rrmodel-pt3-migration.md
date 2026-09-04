@@ -168,8 +168,9 @@ of that surfaces in a flux test. `TestKernelSourceIsPrecisionAgnostic` in
 
 ### What double precision actually buys
 
-The difference from the Numba model is the sum of rounding and the quadrature port, and which
-dominates depends on the geometry — so a single tolerance number is misleading:
+The difference from the Numba model is the sum of rounding and a difference in the **projected
+distance**, and which dominates depends on the geometry — so a single tolerance number is
+misleading:
 
 | a/R* | single | double | gain |
 |---|---|---|---|
@@ -178,10 +179,18 @@ dominates depends on the geometry — so a single tolerance number is misleading
 | 10 | 6.2e-07 | 4.8e-08 | 12.8x |
 | 20 | 1.2e-06 | 6.7e-09 | **176x** |
 
-For a short, steep transit the ~2e-6 quadrature difference swamps the rounding and double buys
-nothing. Only once the transit is long enough for the quadrature difference to fall away does
-the precision become the limit. **Set test tolerances from the quadrature difference, not from
-the precision**, and use a long transit (a = 20) if you want a test that actually exercises fp64.
+The cause is **not** quadrature, which was the first guess and was wrong. The Numba model takes
+the projected distance from MeepMeep's fifth-order Taylor expansion around the transit centre
+(`model_full.py:63`, `xyc = zeros((npv, 2, 5))`), while the kernel solves the orbit directly.
+Measured against an exact circular orbit, the kernel's `z_iter` is accurate to ~1e-12 while the
+expansion is off by up to 5.6e-5 R_star in transit at a/R* = 4. The flux difference is exactly
+that times dF/dz: predicted and observed agree to three significant figures with a correlation
+of 1.00000 across a/R* = 4, 6 and 10.
+
+Two consequences. **The OpenCL model is the more accurate of the two for the orbit** — do not
+"fix" the kernel to match the Numba reference. And **set test tolerances from the expansion
+error, not from the precision**; use a long transit (a = 20) for a test that actually exercises
+fp64.
 
 ### fp64 cost (RTX 5070, kernels only, `copy=False` + `finish()`)
 
@@ -196,6 +205,34 @@ The cost rises from 1.9x to 46x as the fixed per-call overhead stops dominating,
 the ~64x fp64:fp32 ratio of consumer NVIDIA. Double is still **1.8x faster than 16-thread Numba**
 at 1e5 x 1000 (257 vs 473 ms), so it is usable for validation runs; it is not a production
 default.
+
+---
+
+## Change 5 — Kepler's equation by Newton (port to pt3 if it shares this solver)
+
+Found while chasing the above. `z_iter` solved Kepler's equation with the fixed point iteration
+`E = M + e sin(E)`, which converges **linearly at a rate of e**: reaching double precision needs
+~80 steps at e = 0.7, so the loop ran at most 15 and settled for a `1e-4` convergence threshold.
+That capped the projected distance at ~1e-4 R_star for *any* eccentric orbit, which in double
+precision made the orbit the accuracy bottleneck and negated fp64 entirely.
+
+Replaced with Newton's method from the same starting guess, which doubles the correct digits per
+step and converges in four or five, with the threshold tied to the build's precision
+(`KEPLER_TOL`, 1e-13 double / 1e-6 single).
+
+| e, w | before | after |
+|---|---|---|
+| 0.1, 1.0 | 7.7e-06 | 7.5e-09 |
+| 0.3, 1.0 | 3.1e-05 | 1.8e-08 |
+| 0.5, 1.0 | 8.9e-05 | 6.2e-08 |
+
+(Numba vs OpenCL-double at a/R* = 20, where the expansion error is ~1e-8.) Circular orbits are
+**bit-identical** — both solvers converge on the first step at e = 0 — and there is no measurable
+performance difference, because the orbit solve is not what the flux kernel is bound by.
+
+The old loop also declared its counter as `int i`, **shadowing the inclination parameter `i`** of
+the enclosing function. Harmless there because the loop body never read it, but worth not
+reproducing.
 
 ---
 

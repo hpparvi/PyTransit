@@ -414,11 +414,12 @@ class TestPrecision:
 
     The kernel's floating point type is a `-DREAL=` build option, so both builds come from the
     same source and the only thing that separates them is the compile-time type. Double precision
-    removes the rounding error, leaving only the difference between the two quadrature
-    implementations. Which of the two dominates depends on the geometry: for a short, steep
-    transit the quadrature difference is ~2e-6 and swamps the rounding, while for a long transit
-    it falls away and double precision is over a hundred times closer to the Numba model. The
-    tolerances below are therefore set by the quadrature difference, not by the precision.
+    removes the rounding error, leaving the difference in the projected distance: the Numba model
+    takes it from MeepMeep's fifth order Taylor expansion around the transit centre, while the
+    kernel solves the orbit directly. The expansion's truncation error grows with the transit
+    duration in phase, so it is ~5.6e-5 R_star at a/R* = 4 and swamps the rounding, and falls to
+    ~8e-8 at a/R* = 20, where double precision is then over a hundred times closer to the Numba
+    model. The tolerances below are therefore set by the expansion, not by the precision.
     """
     args = (0.1, [0.6, 0.5], 0.0, 2.0, 4.0, 0.5 * pi)
 
@@ -468,11 +469,11 @@ class TestPrecision:
         return errs
 
     def test_double_is_much_closer_to_numba_for_a_long_transit(self, clenv, fp64):
-        """Where rounding rather than the quadrature port sets the error, double must win big.
+        """Where rounding rather than the orbit sets the error, double must win big.
 
-        A long transit (a = 20) resolves ingress and egress well enough that the quadrature
-        difference drops below the single precision rounding, which is the regime that actually
-        exercises the precision.
+        A long transit (a = 20) spans little enough orbital phase that the Taylor expansion of
+        the projected distance in the Numba model drops below the single precision rounding,
+        which is the regime that actually exercises the precision.
         """
         errs = self._errors(clenv, linspace(-0.04, 0.04, 1000),
                             (0.1, [0.6, 0.5], 0.0, 2.0, 20.0, 0.5 * pi))
@@ -506,6 +507,23 @@ class TestPrecision:
         tc.set_data(time)
         orbit = (0.1, [0.6, 0.5], 0.0, 2.0, 4.0, 0.5 * pi, 0.2, 0.4)
         assert npabs(tc.evaluate(*orbit) - tm.evaluate(*orbit)).max() < 5e-6
+
+    @pytest.mark.parametrize('e,w', [(0.1, 1.0), (0.3, 1.0), (0.5, 1.0), (0.5, 0.0)])
+    def test_eccentric_orbit_solver_is_not_the_bottleneck(self, clenv, fp64, e, w):
+        """The kernel's Kepler solver must not limit the accuracy of an eccentric orbit.
+
+        Evaluated at a/R* = 20, where the Numba model's Taylor expansion of the projected
+        distance is accurate to ~1e-8 and the circular case agrees to 7e-9, so anything larger
+        here comes from the kernel solving Kepler's equation, not from the expansion.
+        """
+        ctx, queue = clenv
+        t = linspace(-0.02, 0.02, 1000)
+        tm = RoadRunnerModel('power-2')
+        tm.set_data(t)
+        tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue, precision='double')
+        tc.set_data(t)
+        orbit = (0.1, [0.6, 0.5], 0.0, 2.0, 20.0, 0.5 * pi, e, w)
+        assert npabs(tm.evaluate(*orbit) - tc.evaluate(*orbit)).max() < 1e-6
 
     def test_double_invalid_parameters_give_nan(self, clenv, time, fp64):
         ctx, queue = clenv

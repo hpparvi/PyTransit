@@ -29,6 +29,13 @@
 #define TWO_PI  ((REAL)6.28318530717958647693)
 #define HALF_PI ((REAL)1.57079632679489661923)
 
+/* Convergence threshold for Kepler's equation, a little above the rounding of each build. */
+#ifdef USE_FP64
+#define KEPLER_TOL ((REAL)1e-13)
+#else
+#define KEPLER_TOL ((REAL)1e-6)
+#endif
+
 REAL mean_anomaly_offset(const REAL e, const REAL w){
     REAL offset = atan2(sqrt((REAL)1.0-e*e) * sin(HALF_PI - w), e + cos(HALF_PI - w));
     return offset - e*sin(offset);
@@ -38,19 +45,23 @@ REAL mean_anomaly_offset(const REAL e, const REAL w){
 REAL z_iter(const REAL t, const REAL t0, const REAL p, const REAL a,
             const REAL i, const REAL e,  const REAL w, const REAL ma_offset,
             const REAL eclipse){
-    REAL Ma, ec, ect, Ea, sta, cta, Ta, z;
+    REAL Ma, Ea, sta, cta, Ta;
 
     Ma = fmod(TWO_PI * (t - (t0 - ma_offset * p / TWO_PI)) / p, TWO_PI);
-    ec = e*sin(Ma)/((REAL)1.0 - e*cos(Ma));
 
-    for(int i=0; i<15; i++){
-        ect = ec;
-        ec = e*sin(Ma+ec);
-        if (fabs(ect-ec) < (REAL)1e-4){
+    /* Kepler's equation by Newton's method. The fixed point iteration E = M + e sin(E) this
+       replaces converges linearly at a rate of e, so reaching double precision took ~80 steps
+       at e = 0.7 and the loop settled for a 1e-4 threshold instead, which capped the projected
+       distance at ~1e-4 R_star for any eccentric orbit. Newton doubles the correct digits per
+       step and reaches the threshold in four or five from the same starting guess. */
+    Ea = Ma + e*sin(Ma)/((REAL)1.0 - e*cos(Ma));
+    for(int it=0; it<8; it++){
+        const REAL dEa = (Ea - e*sin(Ea) - Ma) / ((REAL)1.0 - e*cos(Ea));
+        Ea -= dEa;
+        if (fabs(dEa) < KEPLER_TOL){
             break;
         }
     }
-    Ea  = Ma + ec;
     sta = sqrt((REAL)1.0-e*e) * sin(Ea)/((REAL)1.0-e*cos(Ea));
     cta = (cos(Ea)-e)/((REAL)1.0-e*cos(Ea));
     Ta  = atan2(sta, cta);
