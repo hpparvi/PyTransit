@@ -101,7 +101,9 @@ def bench_opencl(results, npts, npvs, precision='double'):
             record(results, 'opencl-nocopy' + sfx, 'value', npt, npv, nocopy(mv))
             record(results, 'opencl-nocopy' + sfx, 'jacobian', npt, npv, nocopy(mg))
             record(results, 'opencl' + sfx, 'grad_lnl', npt, npv,
-                   lambda: mg.loglikelihood(obs, ERR, JITTER, *pars, ldc=LDC))
+                   # baseline=0.0: obs was built in deficit space (see above), matching the
+                   # implicit baseline=0 the numba and JAX rows below use for `r = obs - flux`.
+                   lambda: mg.loglikelihood(obs, ERR, JITTER, *pars, ldc=LDC, baseline=0.0))
 
 
 # ----------------------------------------------------------------------------- jax

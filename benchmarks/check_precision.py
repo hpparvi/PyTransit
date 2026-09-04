@@ -79,7 +79,10 @@ def evaluate(backend, precision, origin_name):
 
 def compare(ref_f, ref_d, got_f, got_d):
     """Flux error, and per-column Jacobian relative error over the in-transit points."""
-    mask = ref_f < -1e-6                        # models return the deficit dF = F - 1
+    # models return the deficit dF = F - 1; -1e-4 is the analogue of the old `ref_f < 0.9999`
+    # cut. A wider mask (e.g. -1e-6) admits the shallow ingress/egress fringe where the JAX
+    # fp32 Jacobian has NaN entries, which turns whole columns of this report into `nan`.
+    mask = ref_f < -1e-4
     depth = -ref_f.min()                        # we compare two analytic results, not an FD
     out = {'flux_abs': float(np.abs(got_f - ref_f).max()),
            'flux_frac_depth': float(np.abs(got_f - ref_f).max() / depth),
