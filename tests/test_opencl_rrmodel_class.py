@@ -162,7 +162,8 @@ class TestCopyFlag:
 
 class TestSinglePrecision:
     def test_close_to_numba(self):
-        """RoadRunner's (ldi - Ip*A)/ldi loses more to fp32 than the uniform disk does."""
+        """Single-precision OpenCL RoadRunner must still agree with the double-precision
+        Numba reference to within atol=1e-5."""
         times, data, pars = _hetero_setup()
         _, flux_nb = _evaluate('numba', False, times, data, pars)
         _, flux_cl = _evaluate('opencl', False, times, data, pars, precision='single')
