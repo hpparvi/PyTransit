@@ -88,10 +88,12 @@
 - Evaluating a RoadRunner model for a population with the radius ratios given as a one-dimensional array of one
   radius ratio per parameter vector, which the documentation allows, silently returned a single light curve computed
   from the first radius ratio in the Numba model and raised an `IndexError` in the OpenCL one.
-- `RoadRunnerModelCL.set_data` defaulted the exposure times to one day instead of zero as `TransitModel.set_data`
-  does, so supersampling without an explicit exposure time spread the samples over a whole day: `set_data(time,
-  nsamples=10)` gave a transit 5 times too shallow, a depth of 0.0021 where the Numba model gave 0.0114. A scalar
-  exposure time or sample count was also stored as a zero-dimensional array rather than broadcast to one dimension.
+- Every OpenCL model reimplements `set_data`, and all of them defaulted the exposure times to one day instead of
+  zero as `TransitModel.set_data` does, so supersampling without an explicit exposure time spread the samples of one
+  exposure over a whole day. `set_data(time, nsamples=10)` gave a transit up to 5 times too shallow:
+  `RoadRunnerModelCL` returned a depth of 0.0021 where the Numba model gave 0.0114, and `QuadraticModelCL`,
+  `QPower2ModelCL` and `UniformModelCL` were wrong by about 1e-2 in flux. A scalar exposure time or sample count was
+  also stored as a zero-dimensional array rather than broadcast to one dimension.
 - The Numba RoadRunner and oblate planet models built the quadrature nodes of the mean intensity table with the
   first passband's radius ratio for every passband, so with passband-dependent radius ratios the other passbands
   read a table built for the wrong planet size: 0.100 next to 0.114 was off by 140 ppm.

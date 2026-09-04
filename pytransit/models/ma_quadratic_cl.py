@@ -35,7 +35,7 @@ import pyopencl as cl
 import warnings
 from pyopencl import CompilerWarning
 
-from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray, empty, \
+from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_1d, atleast_2d, squeeze, ndarray, empty, \
     concatenate
 
 from .numba.ma_quadratic_nb import calculate_interpolation_tables
@@ -147,8 +147,12 @@ class QuadraticModelCL(TransitModel):
         self.time = asarray(time, dtype='float32')
         self.lcids = zeros(time.size, 'uint32') if lcids is None else asarray(lcids, dtype='uint32')
         self.pbids = zeros(self.nlc, 'uint32') if pbids is None else asarray(pbids, dtype='uint32')
-        self.nsamples = ones(self.nlc, 'uint32') if nsamples is None else asarray(nsamples, dtype='uint32')
-        self.exptimes = ones(self.nlc, 'float32') if exptimes is None else asarray(exptimes, dtype='float32')
+        # `atleast_1d`, and zero rather than one, as in `TransitModel.set_data`: a default exposure
+        # time of a day spread the supersampling of an exposure over a whole day.
+        self.nsamples = (ones(self.nlc, 'uint32') if nsamples is None
+                         else atleast_1d(asarray(nsamples, dtype='uint32')))
+        self.exptimes = (zeros(self.nlc, 'float32') if exptimes is None
+                         else atleast_1d(asarray(exptimes, dtype='float32')))
 
         self._b_time = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.time)
         self._b_lcids = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lcids)
