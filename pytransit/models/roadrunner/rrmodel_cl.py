@@ -20,7 +20,7 @@ from warnings import warn, filterwarnings
 import pyopencl as cl
 from pyopencl import CompilerWarning
 
-from numpy import (array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray,
+from numpy import (array, uint32, float32, float64, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray,
                    concatenate, empty, linspace, sqrt, pi, isnan, isscalar, trapezoid)
 
 from ..ldmodel import LDModel
@@ -36,6 +36,29 @@ from .common import quadrature_rules, profile_grid, radius_ratio_array, CUBIC_MA
 filterwarnings('ignore', category=CompilerWarning)
 
 __all__ = ['RoadRunnerModelCL']
+
+
+def _dtype_for_precision(ctx, precision: str):
+    """Map a precision name to a NumPy dtype, checking that the device supports it."""
+    if precision == 'double':
+        for device in ctx.devices:
+            if not device.double_fp_config:
+                raise RuntimeError(f"The OpenCL device '{device.name}' does not support double "
+                                   f"precision (cl_khr_fp64). Use precision='single' instead.")
+        return float64
+    elif precision == 'single':
+        return float32
+    else:
+        raise ValueError(f"Unknown precision '{precision}', expected 'single' or 'double'.")
+
+
+def _build_options(precision: str) -> str:
+    """Preprocessor options selecting the kernel's floating point type.
+
+    Deliberately does not enable ``-cl-fast-relaxed-math``: the model is tested for agreement
+    with the Numba model, and relaxed math breaks that.
+    """
+    return '-DREAL=double -DUSE_FP64' if precision == 'double' else '-DREAL=float'
 
 
 class RoadRunnerModelCL(TransitModel):
@@ -71,7 +94,8 @@ class RoadRunnerModelCL(TransitModel):
                  interpolate: Optional[bool] = None, klims: Optional[tuple] = None, nk: Optional[int] = None,
                  nzin: Optional[int] = None, nzlimb: Optional[int] = None, zcut: Optional[float] = None,
                  ng: int = 100, parallel: bool = False, small_planet_limit: float = 0.05, cl_ctx=None,
-                 cl_queue=None, nz: Optional[int] = None, nq: int = 8) -> None:
+                 cl_queue=None, nz: Optional[int] = None, nq: int = 8,
+                 precision: str = 'single') -> None:
         """The OpenCL RoadRunner transit model.
 
         Parameters
@@ -86,6 +110,13 @@ class RoadRunnerModelCL(TransitModel):
         ng : int, optional
             Number of grazing parameter nodes in the mean intensity table, split at the limb
             contact and interpolated with cubics.
+        precision : str, optional
+            Device floating point type, ``'single'`` (the default) or ``'double'``. Double
+            precision needs `cl_khr_fp64`, which most GPUs support but run at a fraction of the
+            single precision rate -- typically a sixty-fourth on consumer NVIDIA cards -- so it
+            is an opt-in for accuracy rather than a better default. It also changes the dtype of
+            the returned flux to float64. The precision is fixed for the lifetime of the model,
+            because the kernel's floating point type is a compile-time build option.
         interpolate, klims, nk : optional
             Deprecated and ignored: the mean intensity under the planet is always computed for the
             radius ratio being evaluated, so there is no weight table to precompute.
@@ -110,6 +141,12 @@ class RoadRunnerModelCL(TransitModel):
 
         self.ctx = cl_ctx or cl.create_some_context()
         self.queue = cl_queue or cl.CommandQueue(self.ctx)
+
+        # The kernel's floating point type is a build option, so the precision is fixed for the
+        # lifetime of the model: changing it would mean rebuilding the program and rebinding the
+        # kernels. It also sets the dtype of every host array and of the returned flux.
+        self.precision = precision
+        self.dtype = _dtype_for_precision(self.ctx, precision)
 
         self.splimit = small_planet_limit
 
@@ -182,7 +219,8 @@ class RoadRunnerModelCL(TransitModel):
         self._b_time = None
         self._time_id = None
 
-        self.prg = cl.Program(self.ctx, open(join(dirname(__file__), 'rrmodel.cl'), 'r').read()).build()
+        self.prg = cl.Program(self.ctx, open(join(dirname(__file__), 'rrmodel.cl'), 'r').read())
+        self.prg.build(options=_build_options(precision))
 
         # Bind the kernels once. Every `Program.__getattr__` builds a new Kernel object and
         # regenerates its invoker, which consults PyOpenCL's on-disk (SQLite) cache, so looking
@@ -218,10 +256,10 @@ class RoadRunnerModelCL(TransitModel):
             self._b_rules.release()
             self._b_cm.release()
         self._b_rules = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,
-                                  hostbuf=self._rules.astype(float32).ravel())
+                                  hostbuf=self._rules.astype(self.dtype).ravel())
         self._kernel_args_set = False
         self._b_cm = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR,
-                               hostbuf=CUBIC_MATRICES.astype(float32).ravel())
+                               hostbuf=CUBIC_MATRICES.astype(self.dtype).ravel())
 
         # The table buffers depend on ng, so force their reallocation on the next evaluation.
         self.npv = None
@@ -246,11 +284,12 @@ class RoadRunnerModelCL(TransitModel):
         self.npb = uint32(1 if pbids is None else unique(pbids).size)
         self.nptb = time.size
 
-        self.time = asarray(time, dtype='float32')
+        self.time = asarray(time, dtype=self.dtype)
         self.lcids = zeros(time.size, 'uint32') if lcids is None else asarray(lcids, dtype='uint32')
         self.pbids = zeros(self.nlc, 'uint32') if pbids is None else asarray(pbids, dtype='uint32')
         self.nsamples = ones(self.nlc, 'uint32') if nsamples is None else asarray(nsamples, dtype='uint32')
-        self.exptimes = ones(self.nlc, 'float32') if exptimes is None else asarray(exptimes, dtype='float32')
+        self.exptimes = (ones(self.nlc, self.dtype) if exptimes is None
+                         else asarray(exptimes, dtype=self.dtype))
 
         self._kernel_args_set = False
         self._b_time = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.time)
@@ -310,7 +349,7 @@ class RoadRunnerModelCL(TransitModel):
         if e is None:
             e, w = 0.0, 0.0
 
-        pvp = empty((npv, nk + 6), dtype=float32)
+        pvp = empty((npv, nk + 6), dtype=self.dtype)
         pvp[:, :nk] = k
         pvp[:, nk] = t0
         pvp[:, nk + 1] = p
@@ -356,9 +395,9 @@ class RoadRunnerModelCL(TransitModel):
                Modelled flux as a 1D ndarray.
            """
         if isinstance(k, float):
-            pv = array([[k, t0, p, a, i, e, w]], float32)
+            pv = array([[k, t0, p, a, i, e, w]], self.dtype)
         else:
-            pv = concatenate([k, [t0, p, a, i, e, w]]).astype(float32)
+            pv = concatenate([k, [t0, p, a, i, e, w]]).astype(self.dtype)
         return self._evaluate_pv(pv, ldc, copy)
 
     @deprecated_evaluation_method()
@@ -387,7 +426,7 @@ class RoadRunnerModelCL(TransitModel):
     def _allocate(self, npv: int) -> None:
         """(Re)allocate the per-population device buffers for `npv` parameter vectors."""
         mf = cl.mem_flags
-        nb = float32().nbytes
+        nb = self.dtype().nbytes
         npb, ng = int(self.npb), self.ng
 
         if self._b_f is not None:
@@ -396,7 +435,7 @@ class RoadRunnerModelCL(TransitModel):
                 getattr(self, name).release()
 
         self.npv = uint32(npv)
-        self.f = zeros((npv, self.nptb), float32)
+        self.f = zeros((npv, self.nptb), self.dtype)
         self._kernel_args_set = False
         self._b_f = cl.Buffer(self.ctx, mf.WRITE_ONLY, self.time.nbytes * npv)
         self._b_p = None
@@ -419,7 +458,7 @@ class RoadRunnerModelCL(TransitModel):
         the shape of the parameter vector array changes.
         """
         self._k_ldm.set_args(self._b_ks, self._b_ldp, self._b_rules,
-                             float32(self._t0), float32(self._dt), int32(self.nmu), int32(self.nq),
+                             self.dtype(self._t0), self.dtype(self._dt), int32(self.nmu), int32(self.nq),
                              self._b_gcs, self._b_n1s, self._b_ldm)
         self._k_coefficients.set_args(self._b_ldm, self._b_n1s, self._b_cm, int32(self.ng), self._b_coef)
         self._k_flux.set_args(self._b_time, self._b_ks, self._b_istar, self._b_gcs, self._b_n1s,
@@ -432,7 +471,7 @@ class RoadRunnerModelCL(TransitModel):
         # Implementation shared with the supported `evaluate` method, so that calling
         # `evaluate` does not raise the deprecation warning.
         mf = cl.mem_flags
-        pvp = atleast_2d(asarray(pvp, dtype=float32))
+        pvp = atleast_2d(asarray(pvp, dtype=self.dtype))
         npv = pvp.shape[0]
         npb = int(self.npb)
         nk = pvp.shape[1] - 6
@@ -447,7 +486,7 @@ class RoadRunnerModelCL(TransitModel):
         if self._b_p is None or self.pv.shape != pvp.shape:
             if self._b_p is not None:
                 self._b_p.release()
-            self.pv = zeros(pvp.shape, float32)
+            self.pv = zeros(pvp.shape, self.dtype)
             self.spv = uint32(pvp.shape[1])
             self._b_p = cl.Buffer(self.ctx, mf.READ_ONLY, self.pv.nbytes)
             self._kernel_args_set = False
@@ -476,14 +515,14 @@ class RoadRunnerModelCL(TransitModel):
         istar = istar.reshape((npv, npb))
 
         # Radius ratios per passband, and the parameter vector validity as in the Numba model
-        ks = empty((npv, npb), float32)
+        ks = empty((npv, npb), self.dtype)
         ks[:, :] = pvp[:, :nk]
         a, e = pvp[:, nk + 2], pvp[:, nk + 4]
         valid = ~(isnan(a) | (a <= 1.0) | (e < 0.0) | isnan(ldp[:, 0, 0])) & ((ks > 0.0) & (ks <= 1.0)).all(1)
 
         cl.enqueue_copy(self.queue, self._b_ks, ks)
-        cl.enqueue_copy(self.queue, self._b_ldp, ldp.astype(float32))
-        cl.enqueue_copy(self.queue, self._b_istar, istar.astype(float32))
+        cl.enqueue_copy(self.queue, self._b_ldp, ldp.astype(self.dtype))
+        cl.enqueue_copy(self.queue, self._b_istar, istar.astype(self.dtype))
         cl.enqueue_copy(self.queue, self._b_valid, valid.astype(int32))
 
         self.pv[:] = pvp
@@ -520,9 +559,9 @@ class RoadRunnerModelCL(TransitModel):
         if self.npv is None:
             raise ValueError('The model has not been evaluated yet.')
         npv, npb = int(self.npv), int(self.npb)
-        gcs = empty((npv, npb), float32)
+        gcs = empty((npv, npb), self.dtype)
         n1s = empty((npv, npb), int32)
-        coef = empty((npv, npb, self.ng - 2, 4), float32)
+        coef = empty((npv, npb, self.ng - 2, 4), self.dtype)
         cl.enqueue_copy(self.queue, gcs, self._b_gcs)
         cl.enqueue_copy(self.queue, n1s, self._b_n1s)
         cl.enqueue_copy(self.queue, coef, self._b_coef)

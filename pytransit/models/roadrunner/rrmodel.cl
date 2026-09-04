@@ -15,61 +15,69 @@
  *  3. `rr_flux` evaluates the model, one work item per (parameter vector, time sample), reading
  *     the mean intensity with the split cubic lookup of `common.ldm_lookup`.
  *
- *  Everything is single precision.
+ *  The floating point type is set by a -DREAL= build option, with USE_FP64 defined alongside
+ *  -DREAL=double. Every floating point literal is cast to REAL: a bare literal is a double in
+ *  C, which would silently promote the single precision build to double arithmetic where the
+ *  device supports it and fail to compile where it does not.
  */
 
-__constant float TWO_PI = 2*M_PI_F;
-__constant float HALF_PI = M_PI_2_F;
+#ifdef USE_FP64
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+#endif
 
-float mean_anomaly_offset(const float e, const float w){
-    float offset = atan2(sqrt(1.0f-e*e) * sin(HALF_PI - w), e + cos(HALF_PI - w));
+#define PI_R    ((REAL)3.14159265358979323846)
+#define TWO_PI  ((REAL)6.28318530717958647693)
+#define HALF_PI ((REAL)1.57079632679489661923)
+
+REAL mean_anomaly_offset(const REAL e, const REAL w){
+    REAL offset = atan2(sqrt((REAL)1.0-e*e) * sin(HALF_PI - w), e + cos(HALF_PI - w));
     return offset - e*sin(offset);
 }
 
 /* Projected star-planet distance, or -1 on the far side of the orbit. */
-float z_iter(const float t, const float t0, const float p, const float a,
-             const float i, const float e,  const float w, const float ma_offset,
-             const float eclipse){
-    float Ma, ec, ect, Ea, sta, cta, Ta, z;
+REAL z_iter(const REAL t, const REAL t0, const REAL p, const REAL a,
+            const REAL i, const REAL e,  const REAL w, const REAL ma_offset,
+            const REAL eclipse){
+    REAL Ma, ec, ect, Ea, sta, cta, Ta, z;
 
     Ma = fmod(TWO_PI * (t - (t0 - ma_offset * p / TWO_PI)) / p, TWO_PI);
-    ec = e*sin(Ma)/(1.f - e*cos(Ma));
+    ec = e*sin(Ma)/((REAL)1.0 - e*cos(Ma));
 
     for(int i=0; i<15; i++){
         ect = ec;
         ec = e*sin(Ma+ec);
-        if (fabs(ect-ec) < 1e-4){
+        if (fabs(ect-ec) < (REAL)1e-4){
             break;
         }
     }
     Ea  = Ma + ec;
-    sta = sqrt(1.f-e*e) * sin(Ea)/(1.f-e*cos(Ea));
-    cta = (cos(Ea)-e)/(1.f-e*cos(Ea));
+    sta = sqrt((REAL)1.0-e*e) * sin(Ea)/((REAL)1.0-e*cos(Ea));
+    cta = (cos(Ea)-e)/((REAL)1.0-e*cos(Ea));
     Ta  = atan2(sta, cta);
 
-    if (eclipse * sign(sin(w+Ta)) > 0.0f){
-        return a*(1.f-e*e)/(1.f+e*cos(Ta)) * sqrt(1.f - pow(sin(w+Ta)*sin(i), 2));
+    if (eclipse * sign(sin(w+Ta)) > (REAL)0.0){
+        return a*((REAL)1.0-e*e)/((REAL)1.0+e*cos(Ta)) * sqrt((REAL)1.0 - pow(sin(w+Ta)*sin(i), (REAL)2));
     }
     else{
-        return -1.f;
+        return -(REAL)1.0;
     }
 }
 
 
-float circle_circle_intersection_area(float r1, float r2, float b){
+REAL circle_circle_intersection_area(REAL r1, REAL r2, REAL b){
     if (r1 < b - r2){
-        return 0.0f;
+        return (REAL)0.0;
     }
     else if (r1 >= b + r2){
-        return M_PI_F * r2 * r2;
+        return PI_R * r2 * r2;
     }
     else if (b - r2 <= -r1){
-        return M_PI_F * r1 * r1;
+        return PI_R * r1 * r1;
     }
     else{
         return r2*r2 * acos((b*b + r2*r2 - r1*r1) / (2 * b * r2)) +
                r1*r1 * acos((b*b + r1*r1 - r2*r2) / (2 * b * r1)) -
-               0.5f * sqrt((-b + r2 + r1) * (b + r2 - r1) * (b - r2 + r1) * (b + r2 + r1));
+               (REAL)0.5 * sqrt((-b + r2 + r1) * (b + r2 - r1) * (b - r2 + r1) * (b + r2 + r1));
     }
 }
 
@@ -80,13 +88,13 @@ float circle_circle_intersection_area(float r1, float r2, float b){
 
 /* The grazing parameter at which the planet first touches the stellar limb. The mean intensity
    under the planet has a kink here, so the g table is split at it. */
-inline float split_point(const float k){
-    return (1.0f - k) / (1.0f + k);
+inline REAL split_point(const REAL k){
+    return ((REAL)1.0 - k) / ((REAL)1.0 + k);
 }
 
 /* Number of table nodes in the first segment, [0, gc]: proportional to its length, but at least
    four nodes in either segment so that a cubic can be fitted. Port of `common.g_nodes`. */
-inline int first_segment_size(const float gc, const int ng){
+inline int first_segment_size(const REAL gc, const int ng){
     int n1 = (int) rint(ng * gc);
     if (n1 < 4) n1 = 4;
     if (ng - n1 < 4) n1 = ng - 4;
@@ -95,50 +103,50 @@ inline int first_segment_size(const float gc, const int ng){
 
 /* Grazing parameter of table node `ig`: two uniform segments meeting at gc, which is stored
    twice, as the last node of the first segment and the first node of the second. */
-inline float g_node(const int ig, const float gc, const int n1, const int ng){
+inline REAL g_node(const int ig, const REAL gc, const int n1, const int ng){
     if (ig < n1){
-        return gc * (float) ig / (float) (n1 - 1);
+        return gc * (REAL) ig / (REAL) (n1 - 1);
     }
     else{
-        return gc + (1.0f - gc) * (float) (ig - n1) / (float) (ng - n1 - 1);
+        return gc + ((REAL)1.0 - gc) * (REAL) (ig - n1) / (REAL) (ng - n1 - 1);
     }
 }
 
 /* Angular extent of the planet disk at stellar radius z for a planet at separation b. */
-inline float planet_angular_extent(const float z, const float b, const float k){
-    if (b < 1e-7f){
-        return (z < k) ? TWO_PI : 0.0f;
+inline REAL planet_angular_extent(const REAL z, const REAL b, const REAL k){
+    if (b < (REAL)1e-7){
+        return (z < k) ? TWO_PI : (REAL)0.0;
     }
     if (z <= k - b){
         return TWO_PI;
     }
     if (z < b - k || z > b + k){
-        return 0.0f;
+        return (REAL)0.0;
     }
-    float c = (z * z + b * b - k * k) / (2.0f * z * b);
-    c = clamp(c, -1.0f, 1.0f);
-    return 2.0f * acos(c);
+    REAL c = (z * z + b * b - k * k) / ((REAL)2.0 * z * b);
+    c = clamp(c, -(REAL)1.0, (REAL)1.0);
+    return (REAL)2.0 * acos(c);
 }
 
 /* Cubic interpolation of a profile tabulated on the grid mu = (t0 + dt * i)**2, i = 0..n-1.
    Port of `common.profile_at`. */
-inline float profile_at(const float m, const float t0, const float dt, __global const float *ldp, const int n){
-    float x = (sqrt(m) - t0) / dt;
-    if (x <= 0.0f) return ldp[0];
-    if (x >= (float) (n - 1)) return ldp[n - 1];
+inline REAL profile_at(const REAL m, const REAL t0, const REAL dt, __global const REAL *ldp, const int n){
+    REAL x = (sqrt(m) - t0) / dt;
+    if (x <= (REAL)0.0) return ldp[0];
+    if (x >= (REAL) (n - 1)) return ldp[n - 1];
     int i = (int) x - 1;
     if (i < 0) i = 0;
     else if (i > n - 4) i = n - 4;
-    float u = x - (float) i;
-    return (-(u - 1.0f) * (u - 2.0f) * (u - 3.0f) / 6.0f * ldp[i]
-            + u * (u - 2.0f) * (u - 3.0f) / 2.0f * ldp[i + 1]
-            - u * (u - 1.0f) * (u - 3.0f) / 2.0f * ldp[i + 2]
-            + u * (u - 1.0f) * (u - 2.0f) / 6.0f * ldp[i + 3]);
+    REAL u = x - (REAL) i;
+    return (-(u - (REAL)1.0) * (u - (REAL)2.0) * (u - (REAL)3.0) / (REAL)6.0 * ldp[i]
+            + u * (u - (REAL)2.0) * (u - (REAL)3.0) / (REAL)2.0 * ldp[i + 1]
+            - u * (u - (REAL)1.0) * (u - (REAL)3.0) / (REAL)2.0 * ldp[i + 2]
+            + u * (u - (REAL)1.0) * (u - (REAL)2.0) / (REAL)6.0 * ldp[i + 3]);
 }
 
 /* Mu from z without the rounding of z*z past one producing a NaN. */
-inline float mu_from_z(const float z){
-    return sqrt(fmax(0.0f, 1.0f - z * z));
+inline REAL mu_from_z(const REAL z){
+    return sqrt(fmax((REAL)0.0, (REAL)1.0 - z * z));
 }
 
 /* The mean intensity under the planet at every node of the grazing parameter table.
@@ -148,13 +156,13 @@ inline float mu_from_z(const float z){
    on the fly. `rules` holds the Gauss-Legendre nodes and weights followed by the Gauss-Jacobi
    (0.5, 0) nodes and weights, nq of each. The work item of node 0 also stores the limb contact
    and the first segment size for the other kernels. A NaN radius ratio gives a NaN table. */
-__kernel void calculate_ldm(__global const float *ks,       /* (npv, npb)      */
-                            __global const float *ldp,      /* (npv, npb, nmu) */
-                            __global const float *rules,    /* (4, nq)         */
-                            const float pt0, const float pdt, const int nmu, const int nq,
-                            __global float *gcs,            /* (npv, npb)      */
-                            __global int   *n1s,            /* (npv, npb)      */
-                            __global float *ldm)            /* (npv, npb, ng)  */
+__kernel void calculate_ldm(__global const REAL *ks,    /* (npv, npb)      */
+                            __global const REAL *ldp,   /* (npv, npb, nmu) */
+                            __global const REAL *rules, /* (4, nq)         */
+                            const REAL pt0, const REAL pdt, const int nmu, const int nq,
+                            __global REAL *gcs,         /* (npv, npb)      */
+                            __global int   *n1s,        /* (npv, npb)      */
+                            __global REAL *ldm)         /* (npv, npb, ng)  */
 {
     const int ipv = get_global_id(0);
     const int ipb = get_global_id(1);
@@ -163,8 +171,8 @@ __kernel void calculate_ldm(__global const float *ks,       /* (npv, npb)      *
     const int ng  = get_global_size(2);
     const int ipp = ipv * npb + ipb;
 
-    const float k  = ks[ipp];
-    const float gc = split_point(k);
+    const REAL k  = ks[ipp];
+    const REAL gc = split_point(k);
 
     if (isnan(k)){
         if (ig == 0){
@@ -181,35 +189,35 @@ __kernel void calculate_ldm(__global const float *ks,       /* (npv, npb)      *
         n1s[ipp] = n1;
     }
 
-    __global const float *prof = ldp + ipp * nmu;
-    __global const float *t_gl = rules;
-    __global const float *w_gl = rules + nq;
-    __global const float *t_gj = rules + 2 * nq;
-    __global const float *w_gj = rules + 3 * nq;
+    __global const REAL *prof = ldp + ipp * nmu;
+    __global const REAL *t_gl = rules;
+    __global const REAL *w_gl = rules + nq;
+    __global const REAL *t_gj = rules + 2 * nq;
+    __global const REAL *w_gj = rules + 3 * nq;
 
-    const float g = g_node(ig, gc, n1, ng);
+    const REAL g = g_node(ig, gc, n1, ng);
 
     /* At g = 1 the overlap vanishes and the mean intensity is the profile at the limb. The Numba
        code evaluates the geometry a hair inside the limb instead, where every quadrature node
        falls below the first profile node and `profile_at` returns the same value; in single
        precision that hair would round away, leaving the mean 0/0. */
-    if (g >= 1.0f){
+    if (g >= (REAL)1.0){
         ldm[ipp * ng + ig] = prof[0];
         return;
     }
 
-    const float b = g * (1.0f + k);
+    const REAL b = g * ((REAL)1.0 + k);
 
-    float num = 0.0f;
-    float den = 0.0f;
-    float c, h, m, z, sq, w;
+    REAL num = (REAL)0.0;
+    REAL den = (REAL)0.0;
+    REAL c, h, m, z, sq, w;
 
-    if (b + k <= 1.0f){
+    if (b + k <= (REAL)1.0){
         if (b < k){
             /* z in [0, k - b]: theta = 2 pi. Integrated in mu with Gauss-Legendre. */
-            const float mu_mid = mu_from_z(k - b);
-            c = 0.5f * (mu_mid + 1.0f);
-            h = 0.5f * (1.0f - mu_mid);
+            const REAL mu_mid = mu_from_z(k - b);
+            c = (REAL)0.5 * (mu_mid + (REAL)1.0);
+            h = (REAL)0.5 * ((REAL)1.0 - mu_mid);
             for (int q = 0; q < nq; q++){
                 m = c + h * t_gl[q];
                 z = mu_from_z(m);
@@ -218,12 +226,12 @@ __kernel void calculate_ldm(__global const float *ks,       /* (npv, npb)      *
                 den += w;
             }
             /* z in [k - b, b + k] with z = (k - b) + s**2: regular at s = 0, sqrt zero at the end. */
-            c = h = 0.5f * sqrt(2.0f * b);
+            c = h = (REAL)0.5 * sqrt((REAL)2.0 * b);
             for (int q = 0; q < nq; q++){
                 sq = c + h * t_gj[q];
                 z = k - b + sq * sq;
                 m = mu_from_z(z);
-                w = w_gj[q] * planet_angular_extent(z, b, k) * z * 2.0f * sq * h;
+                w = w_gj[q] * planet_angular_extent(z, b, k) * z * (REAL)2.0 * sq * h;
                 num += w * profile_at(m, pt0, pdt, prof, nmu);
                 den += w;
             }
@@ -231,12 +239,12 @@ __kernel void calculate_ldm(__global const float *ks,       /* (npv, npb)      *
         else{
             /* z in [b - k, b + k] with z = (b + k) - s**2: the limb end is regular, and the sqrt
                zero of theta at z = b - k sits at s_max, where the Jacobi weight takes it. */
-            c = h = 0.5f * sqrt(2.0f * k);
+            c = h = (REAL)0.5 * sqrt((REAL)2.0 * k);
             for (int q = 0; q < nq; q++){
                 sq = c + h * t_gj[q];
                 z = b + k - sq * sq;
                 m = mu_from_z(z);
-                w = w_gj[q] * planet_angular_extent(z, b, k) * z * 2.0f * sq * h;
+                w = w_gj[q] * planet_angular_extent(z, b, k) * z * (REAL)2.0 * sq * h;
                 num += w * profile_at(m, pt0, pdt, prof, nmu);
                 den += w;
             }
@@ -246,9 +254,9 @@ __kernel void calculate_ldm(__global const float *ks,       /* (npv, npb)      *
         /* z in [b - k, 1]: integrated in mu from the limb, where the profile is regular, to
            mu_lo, where theta has its sqrt zero. The distance of the inner contact from the limb,
            1 - (b - k) = (1 - g)(1 + k), is formed without the cancellation of b - k near 1. */
-        const float dlimb = (1.0f - g) * (1.0f + k);
-        const float mu_lo = sqrt(dlimb * (2.0f - dlimb));
-        c = h = 0.5f * mu_lo;
+        const REAL dlimb = ((REAL)1.0 - g) * ((REAL)1.0 + k);
+        const REAL mu_lo = sqrt(dlimb * ((REAL)2.0 - dlimb));
+        c = h = (REAL)0.5 * mu_lo;
         for (int q = 0; q < nq; q++){
             m = c + h * t_gj[q];
             z = mu_from_z(m);
@@ -266,11 +274,11 @@ __kernel void calculate_ldm(__global const float *ks,       /* (npv, npb)      *
    belongs to the first segment if ii < n1 - 1 and to the second otherwise, and its cubic is
    the four-point Lagrange interpolant on a stencil shifted inwards at the segment ends. `cm`
    holds the three (4, 4) stencil matrices of `common.CUBIC_MATRICES`. */
-__kernel void calculate_coefficients(__global const float *ldm,   /* (npv, npb, ng)         */
-                                     __global const int   *n1s,   /* (npv, npb)             */
-                                     __global const float *cm,    /* (3, 4, 4)              */
+__kernel void calculate_coefficients(__global const REAL *ldm,  /* (npv, npb, ng)         */
+                                     __global const int   *n1s, /* (npv, npb)             */
+                                     __global const REAL *cm,   /* (3, 4, 4)              */
                                      const int ng,
-                                     __global float *coef)        /* (npv, npb, ng - 2, 4)  */
+                                     __global REAL *coef)       /* (npv, npb, ng - 2, 4)  */
 {
     const int ipv = get_global_id(0);
     const int ipb = get_global_id(1);
@@ -279,7 +287,7 @@ __kernel void calculate_coefficients(__global const float *ldm,   /* (npv, npb, 
     const int ipp = ipv * npb + ipb;
 
     const int n1 = n1s[ipp];
-    __global const float *tab = ldm + ipp * ng;
+    __global const REAL *tab = ldm + ipp * ng;
     int nseg, i;
     if (ii < n1 - 1){
         nseg = n1;
@@ -295,9 +303,9 @@ __kernel void calculate_coefficients(__global const float *ldm,   /* (npv, npb, 
     else if (j > nseg - 4) j = nseg - 4;
     const int s = i - j;
 
-    __global float *c = coef + (ipp * (ng - 2) + ii) * 4;
+    __global REAL *c = coef + (ipp * (ng - 2) + ii) * 4;
     for (int r = 0; r < 4; r++){
-        __global const float *row = cm + (s * 4 + r) * 4;
+        __global const REAL *row = cm + (s * 4 + r) * 4;
         c[r] = row[0] * tab[j] + row[1] * tab[j + 1] + row[2] * tab[j + 2] + row[3] * tab[j + 3];
     }
 }
@@ -307,41 +315,41 @@ __kernel void calculate_coefficients(__global const float *ldm,   /* (npv, npb, 
    Port of `common.ldm_lookup`. The NaN test is not decorative: NaN compares false against
    both range tests, and `(int) NAN` is INT_MIN on at least NVIDIA, which would index the table
    far outside its buffer. */
-inline float ldm_lookup(const float g, const float gc, const int n1, const int ng, __global const float *coef){
+inline REAL ldm_lookup(const REAL g, const REAL gc, const int n1, const int ng, __global const REAL *coef){
     if (isnan(g) || isnan(gc)) return NAN;
-    if (g < 0.0f) return NAN;
-    if (g > 1.0f) return 0.0f;
-    float x;
+    if (g < (REAL)0.0) return NAN;
+    if (g > (REAL)1.0) return (REAL)0.0;
+    REAL x;
     int i;
     if (g < gc){
-        x = g / gc * (float) (n1 - 1);
+        x = g / gc * (REAL) (n1 - 1);
         i = (int) x;
         if (i < 0) i = 0;
         if (i > n1 - 2) i = n1 - 2;
     }
     else{
         const int n2 = ng - n1;
-        x = (g - gc) / (1.0f - gc) * (float) (n2 - 1);
+        x = (g - gc) / ((REAL)1.0 - gc) * (REAL) (n2 - 1);
         i = (int) x;
         if (i < 0) i = 0;
         if (i > n2 - 2) i = n2 - 2;
-        x += (float) (n1 - 1);
+        x += (REAL) (n1 - 1);
         i += n1 - 1;
     }
-    const float a = x - (float) i;
-    __global const float *c = coef + i * 4;
+    const REAL a = x - (REAL) i;
+    __global const REAL *c = coef + i * 4;
     return c[0] + a * (c[1] + a * (c[2] + a * c[3]));
 }
 
 /* Normalised flux for one sample at projected distance z. A negative z is the far side of the
    orbit, and z beyond the last contact is out of transit. */
-inline float rr_flux_sample(const float z, const float k, const float istar,
-                            const float gc, const int n1, const int ng, __global const float *coef){
-    if (z < 0.0f || z >= 1.0f + k){
-        return 1.0f;
+inline REAL rr_flux_sample(const REAL z, const REAL k, const REAL istar,
+                           const REAL gc, const int n1, const int ng, __global const REAL *coef){
+    if (z < (REAL)0.0 || z >= (REAL)1.0 + k){
+        return (REAL)1.0;
     }
-    const float iplanet = ldm_lookup(z / (1.0f + k), gc, n1, ng, coef);
-    const float aplanet = circle_circle_intersection_area(1.0f, k, z);
+    const REAL iplanet = ldm_lookup(z / ((REAL)1.0 + k), gc, n1, ng, coef);
+    const REAL aplanet = circle_circle_intersection_area((REAL)1.0, k, z);
     return (istar - iplanet * aplanet) / istar;
 }
 
@@ -350,21 +358,21 @@ inline float rr_flux_sample(const float z, const float k, const float istar,
    Global size (npv, npt). The parameter vectors are rows of `pv_pop` laid out as
    [k_0, ..., k_{nk-1}, t0, p, a, i, e, w]; the radius ratios are read from `ks`, which the host
    has broadcast to one per passband. */
-__kernel void rr_flux(__global const float *times,       /* (npt,)                */
-                      __global const float *ks,          /* (npv, npb)            */
-                      __global const float *istar,       /* (npv, npb)            */
-                      __global const float *gcs,         /* (npv, npb)            */
-                      __global const int   *n1s,         /* (npv, npb)            */
-                      __global const float *coef,        /* (npv, npb, ng - 2, 4) */
-                      __global const int   *valid,       /* (npv,)                */
+__kernel void rr_flux(__global const REAL *times,    /* (npt,)                */
+                      __global const REAL *ks,       /* (npv, npb)            */
+                      __global const REAL *istar,    /* (npv, npb)            */
+                      __global const REAL *gcs,      /* (npv, npb)            */
+                      __global const int   *n1s,     /* (npv, npb)            */
+                      __global const REAL *coef,     /* (npv, npb, ng - 2, 4) */
+                      __global const int   *valid,   /* (npv,)                */
                       const int ng,
-                      __global const uint *lcids,        /* (npt,)                */
-                      __global const uint *pbids,        /* (nlc,)                */
-                      __global const float *pv_pop,      /* (npv, pv_length)      */
-                      __global const uint *nss,          /* (nlc,)                */
-                      __global const float *exptimes,    /* (nlc,)                */
+                      __global const uint *lcids,    /* (npt,)                */
+                      __global const uint *pbids,    /* (nlc,)                */
+                      __global const REAL *pv_pop,   /* (npv, pv_length)      */
+                      __global const uint *nss,      /* (nlc,)                */
+                      __global const REAL *exptimes, /* (nlc,)                */
                       const uint pv_length, const uint nlc, const uint npb,
-                      __global float *flux)              /* (npv, npt)            */
+                      __global REAL *flux)           /* (npv, npt)            */
 {
     const uint i_pv = get_global_id(0);
     const uint i_tm = get_global_id(1);
@@ -381,22 +389,22 @@ __kernel void rr_flux(__global const float *times,       /* (npt,)              
     const uint ipp  = i_pv * npb + pbid;
     const uint nks  = pv_length - 6;
 
-    __global const float *pv = &pv_pop[i_pv * pv_length + nks];
-    __global const float *coef_pb = coef + ipp * (ng - 2) * 4;
+    __global const REAL *pv = &pv_pop[i_pv * pv_length + nks];
+    __global const REAL *coef_pb = coef + ipp * (ng - 2) * 4;
 
     const uint ns = nss[lcid];
-    const float exptime = exptimes[lcid];
-    const float ma_offset = mean_anomaly_offset(pv[4], pv[5]);
-    const float k = ks[ipp];
-    const float gc = gcs[ipp];
+    const REAL exptime = exptimes[lcid];
+    const REAL ma_offset = mean_anomaly_offset(pv[4], pv[5]);
+    const REAL k = ks[ipp];
+    const REAL gc = gcs[ipp];
     const int n1 = n1s[ipp];
-    const float ist = istar[ipp];
+    const REAL ist = istar[ipp];
 
-    float f = 0.0f;
+    REAL f = (REAL)0.0;
     for (uint i = 1; i < ns + 1; i++){
-        const float toffset = exptime * (((float) i - 0.5f) / (float) ns - 0.5f);
-        const float z = z_iter(times[i_tm] + toffset, pv[0], pv[1], pv[2], pv[3], pv[4], pv[5], ma_offset, 1.0f);
+        const REAL toffset = exptime * (((REAL) i - (REAL)0.5) / (REAL) ns - (REAL)0.5);
+        const REAL z = z_iter(times[i_tm] + toffset, pv[0], pv[1], pv[2], pv[3], pv[4], pv[5], ma_offset, (REAL)1.0);
         f += rr_flux_sample(z, k, ist, gc, n1, ng, coef_pb);
     }
-    flux[gid] = f / (float) ns;
+    flux[gid] = f / (REAL) ns;
 }

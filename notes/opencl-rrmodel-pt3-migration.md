@@ -1,6 +1,6 @@
 # Migrating the OpenCL RoadRunner changes to PyTransit3
 
-Source: PyTransit commit `a664826` on branch `dev`.
+Source: PyTransit commits `a664826` and the precision commit that follows it, on branch `dev`.
 Target: `pt3` (PyTransit3), `pytransit/backends/opencl/`.
 
 Three independent changes. Changes 1 and 2 port directly and are pure wins.
@@ -139,6 +139,63 @@ the read-only view. Numba types a non-writeable array as
 `readonly array(float64, 2d, C)` — a **distinct type** from the writable one — so a
 broadcast view triggers a **full recompilation** of the kernel on first use. The copy
 is `npv * nk` floats; the recompile is seconds.
+
+---
+
+## Change 4 — Selectable precision (pt3 already has this; nothing to port)
+
+PyTransit's kernel was single-precision only and has been converted to pt3's own pattern, so
+this change flows *from* pt3, not to it. Recorded here so the two stay recognisable to each
+other:
+
+- `rrmodel.cl` now opens with the `#ifdef USE_FP64 / #pragma OPENCL EXTENSION cl_khr_fp64` guard
+  and `PI_R`/`TWO_PI`/`HALF_PI` macros, all 112 `float` are `REAL`, and all 70 literals are cast
+  `(REAL)x`. `M_PI_F`/`M_PI_2_F` are gone.
+- The host takes `precision='single'|'double'`, resolves it to `self.dtype` via a device
+  `double_fp_config` check, and builds with `-DREAL=double -DUSE_FP64` or `-DREAL=float`.
+- **PyTransit defaults to `'single'`, pt3 defaults to `'double'`.** Deliberate: PyTransit's
+  existing behaviour and benchmarks are single, and fp64 is 46x slower here (below). If the two
+  are ever unified, this is the one user-visible difference to decide on.
+- The precision is constructor-only in both. With the kernel-argument caching of Change 2 a
+  runtime switch would have to rebuild the program, rebind the kernels, *and* clear
+  `_kernel_args_set` — not worth supporting.
+
+**Guard the source-level invariant.** A reintroduced `float` or `0.5f` breaks the double build
+by mixing types, and a bare `0.5` silently promotes the single build to double arithmetic. None
+of that surfaces in a flux test. `TestKernelSourceIsPrecisionAgnostic` in
+`tests/test_rrmodel_cl.py` greps the comment-stripped kernel for `float`, `f`-suffixed literals,
+`M_[A-Z]+_F` and `native_`/`half_` intrinsics; all four mutations fail it.
+
+### What double precision actually buys
+
+The difference from the Numba model is the sum of rounding and the quadrature port, and which
+dominates depends on the geometry — so a single tolerance number is misleading:
+
+| a/R* | single | double | gain |
+|---|---|---|---|
+| 4 | 2.2e-06 | 2.0e-06 | 1.1x |
+| 6 | 6.8e-07 | 3.8e-07 | 1.8x |
+| 10 | 6.2e-07 | 4.8e-08 | 12.8x |
+| 20 | 1.2e-06 | 6.7e-09 | **176x** |
+
+For a short, steep transit the ~2e-6 quadrature difference swamps the rounding and double buys
+nothing. Only once the transit is long enough for the quadrature difference to fall away does
+the precision become the limit. **Set test tolerances from the quadrature difference, not from
+the precision**, and use a long transit (a = 20) if you want a test that actually exercises fp64.
+
+### fp64 cost (RTX 5070, kernels only, `copy=False` + `finish()`)
+
+| npt x npv | CL single | CL double | fp64 cost |
+|---|---|---|---|
+| 1e3 x 1 | 124 us | 229 us | 1.9x |
+| 1e4 x 1 | 146 us | 933 us | 6.4x |
+| 1e4 x 1000 | 932 us | 27.0 ms | 29x |
+| 1e5 x 1000 | 5.6 ms | 257 ms | 46x |
+
+The cost rises from 1.9x to 46x as the fixed per-call overhead stops dominating, converging on
+the ~64x fp64:fp32 ratio of consumer NVIDIA. Double is still **1.8x faster than 16-thread Numba**
+at 1e5 x 1000 (257 vs 473 ms), so it is usable for validation runs; it is not a production
+default.
 
 ---
 

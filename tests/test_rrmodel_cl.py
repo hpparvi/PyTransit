@@ -21,9 +21,12 @@ precision implementation, so the fluxes are compared at the ppm level. The mean 
 tables, which are what the port is about, are compared node by node at single precision.
 """
 
+import re
+from pathlib import Path
+
 import pytest
-from numpy import (arccos, array, isnan, linspace, pi, repeat, tile, abs as npabs, isfinite, float32, empty,
-                   zeros, allclose, array_equal)
+from numpy import (arccos, array, isnan, linspace, pi, repeat, tile, abs as npabs, isfinite, float32, float64,
+                   empty, zeros, allclose, array_equal)
 from numpy.random import default_rng
 
 from pytransit import RoadRunnerModel
@@ -48,6 +51,14 @@ def clenv():
 @pytest.fixture(scope='module')
 def time():
     return linspace(-0.12, 0.12, 1000)
+
+
+@pytest.fixture(scope='module')
+def fp64(clenv):
+    ctx, _ = clenv
+    if not all(d.double_fp_config for d in ctx.devices):
+        pytest.skip('The OpenCL device does not support double precision (cl_khr_fp64).')
+    return True
 
 
 def models(clenv, time, ldmodel='power-2', **kwargs):
@@ -396,4 +407,143 @@ class TestKernelArgumentCaching:
             fc, fn = self._population(tc, npv), self._population(tm, npv)
             assert fc.shape == fn.shape
             assert npabs(fc - fn).max() < 1e-5
+
+
+class TestPrecision:
+    """Single and double precision builds of the kernel.
+
+    The kernel's floating point type is a `-DREAL=` build option, so both builds come from the
+    same source and the only thing that separates them is the compile-time type. Double precision
+    removes the rounding error, leaving only the difference between the two quadrature
+    implementations. Which of the two dominates depends on the geometry: for a short, steep
+    transit the quadrature difference is ~2e-6 and swamps the rounding, while for a long transit
+    it falls away and double precision is over a hundred times closer to the Numba model. The
+    tolerances below are therefore set by the quadrature difference, not by the precision.
+    """
+    args = (0.1, [0.6, 0.5], 0.0, 2.0, 4.0, 0.5 * pi)
+
+    def test_single_is_the_default(self, clenv, time):
+        ctx, queue = clenv
+        tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue)
+        tc.set_data(time)
+        assert tc.precision == 'single'
+        assert tc.dtype is float32
+        assert tc.evaluate(*self.args).dtype == float32
+
+    def test_double_returns_float64(self, clenv, time, fp64):
+        ctx, queue = clenv
+        tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue, precision='double')
+        tc.set_data(time)
+        assert tc.dtype is float64
+        assert tc.evaluate(*self.args).dtype == float64
+
+    def test_unknown_precision_raises(self, clenv):
+        ctx, queue = clenv
+        with pytest.raises(ValueError):
+            RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue, precision='half')
+
+    @pytest.mark.parametrize('ldmodel', ['uniform', 'linear', 'quadratic', 'power-2'])
+    def test_double_matches_numba(self, clenv, time, fp64, ldmodel):
+        ctx, queue = clenv
+        ldc = [0.6, 0.5] if ldmodel in ('quadratic', 'power-2') else [0.6]
+        ldc = [] if ldmodel == 'uniform' else ldc
+        tm = RoadRunnerModel(ldmodel)
+        tm.set_data(time)
+        tc = RoadRunnerModelCL(ldmodel, cl_ctx=ctx, cl_queue=queue, precision='double')
+        tc.set_data(time)
+        orbit = (0.1, ldc, 0.0, 2.0, 4.0, 0.5 * pi)
+        assert npabs(tc.evaluate(*orbit) - tm.evaluate(*orbit)).max() < 5e-6
+
+    def _errors(self, clenv, t, orbit, ldmodel='power-2'):
+        """Maximum deviation from the Numba model for both precisions."""
+        ctx, queue = clenv
+        tm = RoadRunnerModel(ldmodel)
+        tm.set_data(t)
+        fn = tm.evaluate(*orbit)
+        errs = {}
+        for precision in ('single', 'double'):
+            tc = RoadRunnerModelCL(ldmodel, cl_ctx=ctx, cl_queue=queue, precision=precision)
+            tc.set_data(t)
+            errs[precision] = npabs(tc.evaluate(*orbit) - fn).max()
+        return errs
+
+    def test_double_is_much_closer_to_numba_for_a_long_transit(self, clenv, fp64):
+        """Where rounding rather than the quadrature port sets the error, double must win big.
+
+        A long transit (a = 20) resolves ingress and egress well enough that the quadrature
+        difference drops below the single precision rounding, which is the regime that actually
+        exercises the precision.
+        """
+        errs = self._errors(clenv, linspace(-0.04, 0.04, 1000),
+                            (0.1, [0.6, 0.5], 0.0, 2.0, 20.0, 0.5 * pi))
+        assert errs['double'] < errs['single'] / 20.0
+
+    @pytest.mark.parametrize('ldmodel,ldc', [('uniform', []), ('linear', [0.6]),
+                                             ('quadratic', [0.6, 0.5]), ('power-2', [0.6, 0.5])])
+    def test_double_is_never_worse_than_single(self, clenv, time, fp64, ldmodel, ldc):
+        errs = self._errors(clenv, time, (0.1, ldc, 0.0, 2.0, 4.0, 0.5 * pi), ldmodel)
+        assert errs['double'] <= errs['single']
+
+    def test_double_population(self, clenv, time, fp64):
+        ctx, queue = clenv
+        npv = 5
+        tm = RoadRunnerModel('power-2')
+        tm.set_data(time)
+        tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue, precision='double')
+        tc.set_data(time)
+        k = linspace(0.08, 0.12, npv)
+        ldc = tile([0.6, 0.5], (npv, 1))
+        orbit = (zeros(npv), tile(2.0, npv), tile(4.0, npv), tile(0.5 * pi, npv))
+        fc, fn = tc.evaluate(k, ldc, *orbit), tm.evaluate(k, ldc, *orbit)
+        assert fc.shape == (npv, time.size)
+        assert npabs(fc - fn).max() < 5e-6
+
+    def test_double_eccentric_orbit(self, clenv, time, fp64):
+        ctx, queue = clenv
+        tm = RoadRunnerModel('power-2')
+        tm.set_data(time)
+        tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue, precision='double')
+        tc.set_data(time)
+        orbit = (0.1, [0.6, 0.5], 0.0, 2.0, 4.0, 0.5 * pi, 0.2, 0.4)
+        assert npabs(tc.evaluate(*orbit) - tm.evaluate(*orbit)).max() < 5e-6
+
+    def test_double_invalid_parameters_give_nan(self, clenv, time, fp64):
+        ctx, queue = clenv
+        tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue, precision='double')
+        tc.set_data(time)
+        assert isnan(tc.evaluate(float('nan'), [0.6, 0.5], 0.0, 2.0, 4.0, 0.5 * pi)).all()
+        assert isnan(tc.evaluate(0.1, [0.6, 0.5], 0.0, 2.0, 0.9, 0.5 * pi)).all()
+
+
+class TestKernelSourceIsPrecisionAgnostic:
+    """The kernel must contain no single-precision-only spellings.
+
+    Both builds compile the same source with `-DREAL=` set, so a `float` declaration or an
+    `f`-suffixed literal that creeps back in would mix types in the double build, and a bare
+    literal would silently promote the single build to double arithmetic. None of that shows up
+    as a test failure elsewhere, so it is checked at the source level.
+    """
+
+    @staticmethod
+    def _code_lines():
+        source = (Path(__file__).parent.parent / 'pytransit' / 'models' / 'roadrunner' / 'rrmodel.cl').read_text()
+        # Strip block comments, which legitimately mention float and single precision.
+        source = re.sub(r'/\*.*?\*/', '', source, flags=re.DOTALL)
+        return source
+
+    def test_no_float_declarations(self):
+        assert re.search(r'\bfloat\b', self._code_lines()) is None
+
+    def test_no_single_precision_literals(self):
+        assert re.search(r'(?<![\w.])\d*\.?\d+([eE][-+]?\d+)?f\b', self._code_lines()) is None
+
+    def test_no_float_only_constants_or_intrinsics(self):
+        code = self._code_lines()
+        assert re.search(r'\bM_[A-Z_0-9]+_F\b', code) is None
+        assert re.search(r'\b(native|half)_[a-z]+\b', code) is None
+
+    def test_fp64_pragma_is_guarded(self):
+        source = (Path(__file__).parent.parent / 'pytransit' / 'models' / 'roadrunner' / 'rrmodel.cl').read_text()
+        assert '#ifdef USE_FP64' in source
+        assert '#pragma OPENCL EXTENSION cl_khr_fp64 : enable' in source
 
