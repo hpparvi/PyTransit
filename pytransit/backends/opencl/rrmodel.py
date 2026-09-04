@@ -44,10 +44,13 @@ class RRModelCL(CLModel):
 
     Notes
     -----
-    Single precision is noticeably worse here than for the uniform disk: the
-    per-sample flux is ``(ldi - Ip*A)/ldi``, a difference of comparable
-    magnitudes, so the subtraction loses significance on top of the usual
-    contact-point error.
+    The per-sample flux is accumulated as ``-(Ip*A)/ldi``, a deficit added
+    directly to a running total that starts at zero -- not a difference of two
+    comparable-magnitude quantities, so it does not itself lose significance in
+    single precision. What remains is the cancellation `ccia`'s kite-area term
+    already has near the contact points, shared with the uniform disk kernels
+    (see `common.cl`); the single-precision test tolerance here matches the
+    uniform disk's.
 
     The number of limb-darkening coefficients is only known once `ldg` arrives,
     so the gradient program is built on the first gradient evaluation with

@@ -215,7 +215,7 @@ def rrmodel(times, k, t0, p, a, i, e, w,
     Returns
     -------
     array (npt,)
-        Model flux (1.0 out of transit).
+        Model flux deficit dF = F - 1 (0.0 out of transit).
     """
     n1 = ng // 2
     n2 = ng - n1
