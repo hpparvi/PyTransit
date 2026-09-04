@@ -66,12 +66,11 @@ class TestJaxMatchesNumba(unittest.TestCase):
         jk = np.asarray(jac[0])[np.arange(flux.size), self.pb_of_point]
         dk = dflux[:, 0] + dflux[:, 1]
         # k includes the change of the mean intensity under the planet, which numba takes by a
-        # forward difference. The numba transit-centre derivative (meepmeep's `sep_cd`, slot 0)
-        # deviates from finite differences by up to 2e-5 near the contacts, where the JAX
-        # derivative agrees with finite differences to 1e-8; the others are exact on both sides.
+        # forward difference; the orbital columns are exact on both sides (meepmeep's transit-centre
+        # derivative is that of the Taylor polynomial, like the JAX autodiff).
         self._compare(jk, dk, rtol=1e-4, name='k')
-        for name, j, rtol in zip(('t0', 'p', 'a', 'i'), jac[1:], (1e-4, 1e-6, 1e-6, 1e-6)):
-            self._compare(np.asarray(j), dflux[:, self.cols[name]], rtol=rtol, name=name)
+        for name, j in zip(('t0', 'p', 'a', 'i'), jac[1:]):
+            self._compare(np.asarray(j), dflux[:, self.cols[name]], rtol=1e-6, name=name)
 
     def test_autodiff_matches_the_limb_darkening_columns(self):
         flux, dflux = self.numba.evaluate(*self.args, ldc=LDC)
