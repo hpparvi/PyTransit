@@ -30,7 +30,7 @@ from ..limb_darkening import (ld_uniform, ldi_uniform, ld_linear, ldi_linear, ld
                               ld_square_root, ldi_square_root, ld_logarithmic, ldi_logarithmic,
                               ld_exponential, ldi_exponential, ld_power_2, ldi_power_2, ld_power_2_pm, ldi_power_2_pm,
                               evaluate_ld, evaluate_ldi)
-from ..transitmodel import TransitModel
+from ..opencltransitmodel import OpenCLTransitModel
 from .._deprecation import deprecated_evaluation_method
 from numba import njit
 from meepmeep.backends.numba.point2d import solve2d, bounding_box
@@ -80,7 +80,7 @@ def _dtype_for_precision(ctx, precision: str):
         raise ValueError(f"Unknown precision '{precision}', expected 'single' or 'double'.")
 
 
-class RoadRunnerModelCL(TransitModel):
+class RoadRunnerModelCL(OpenCLTransitModel):
     """OpenCL implementation of the RoadRunner transit model (Parviainen, MNRAS 499, 1633, 2020).
 
     A GPU implementation of :class:`~pytransit.models.roadrunner.rrmodel.RoadRunnerModel` with the
@@ -237,8 +237,6 @@ class RoadRunnerModelCL(TransitModel):
         self._b_f = None         # Flux buffer
         self._b_p = None         # Parameter vector buffer
 
-        self._b_time = None
-        self._time_id = None
 
         # MeepMeep's device functions are prepended to the model source: `sep_c2` is the twin of
         # the `sep_c` the Numba model uses, so both backends evaluate the same expansion. Its
@@ -296,42 +294,14 @@ class RoadRunnerModelCL(TransitModel):
              "future. The stellar disk is no longer discretised into annuli, so 'nz' is ignored.", FutureWarning)
         self.init_integration(self.nq, ng)
 
-    def set_data(self, time, lcids=None, pbids=None, nsamples=None, exptimes=None):
-        mf = cl.mem_flags
+    def _on_data_set(self) -> None:
+        """Force the per-population buffers to be reallocated on the next evaluation.
 
-        if self._b_time is not None:
-            self._b_time.release()
-            self._b_lcids.release()
-            self._b_pbids.release()
-            self._b_nsamples.release()
-            self._b_etimes.release()
-
-        self.nlc = uint32(1 if lcids is None else unique(lcids).size)
-        self.npb = uint32(1 if pbids is None else unique(pbids).size)
-        self.nptb = time.size
-
-        self.time = asarray(time, dtype=self.dtype)
-        self.lcids = zeros(time.size, 'uint32') if lcids is None else asarray(lcids, dtype='uint32')
-        self.pbids = zeros(self.nlc, 'uint32') if pbids is None else asarray(pbids, dtype='uint32')
-        # `atleast_1d`, as in `TransitModel.set_data`: a scalar exposure time would otherwise give
-        # a zero-dimensional array, which the compiled expansion loop cannot index.
-        self.nsamples = (ones(self.nlc, 'uint32') if nsamples is None
-                         else atleast_1d(asarray(nsamples, dtype='uint32')))
-        # Zero, as in `TransitModel.set_data`, not one: with `nsamples` of 1 the supersampling
-        # offset is exactly zero either way, but the exposure time widens the transit bounding
-        # box, and a default of one day would stretch it over the far side of a short orbit.
-        self.exptimes = (zeros(self.nlc, self.dtype) if exptimes is None
-                         else atleast_1d(asarray(exptimes, dtype=self.dtype)))
-
-        self._kernel_args_set = False
-        self._b_time = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.time)
-        self._b_lcids = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lcids)
-        self._b_pbids = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pbids)
-        self._b_nsamples = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.nsamples)
-        self._b_etimes = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.exptimes)
-
-        # The passband count enters the buffer sizes, so force their reallocation.
+        Their sizes depend on the passband count and the number of datapoints, and the cached
+        kernel arguments hold the data buffers `set_data` has just replaced.
+        """
         self.npv = None
+        self._kernel_args_set = False
 
     def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Optional[Union[float, ndarray]] = None,

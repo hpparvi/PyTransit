@@ -40,11 +40,11 @@ from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, a
 
 from .numba.ma_quadratic_nb import calculate_interpolation_tables
 from ._deprecation import deprecated_evaluation_method
-from .transitmodel import TransitModel
+from .opencltransitmodel import OpenCLTransitModel
 
 warnings.filterwarnings('ignore', category=CompilerWarning)
 
-class QuadraticModelCL(TransitModel):
+class QuadraticModelCL(OpenCLTransitModel):
     """
     OpenCL implementation of the transit light curve model with quadratic limb darkening by Mandel and Agol (2002).
 
@@ -128,37 +128,6 @@ class QuadraticModelCL(TransitModel):
         orbits_src = opencl_pkg.joinpath('orbits.cl').read_text()
         model_src = opencl_pkg.joinpath('ma_quadratic.cl').read_text()
         self.prg = cl.Program(self.ctx, orbits_src + model_src).build()
-
-    def set_data(self, time, lcids=None, pbids=None, nsamples=None, exptimes=None):
-        mf = cl.mem_flags
-
-        if self._b_time is not None:
-            self._b_time.release()
-            self._b_lcids.release()
-            self._b_pbids.release()
-            self._b_nsamples.release()
-            self._b_etimes.release()
-
-        self.nlc = uint32(1 if lcids is None else unique(lcids).size)
-        self.npb = uint32(1 if pbids is None else unique(pbids).size)
-        self.nptb = time.size
-
-        #TODO: Fix nsamples and exptimes in cases where a scalar is given.
-        self.time = asarray(time, dtype='float32')
-        self.lcids = zeros(time.size, 'uint32') if lcids is None else asarray(lcids, dtype='uint32')
-        self.pbids = zeros(self.nlc, 'uint32') if pbids is None else asarray(pbids, dtype='uint32')
-        # `atleast_1d`, and zero rather than one, as in `TransitModel.set_data`: a default exposure
-        # time of a day spread the supersampling of an exposure over a whole day.
-        self.nsamples = (ones(self.nlc, 'uint32') if nsamples is None
-                         else atleast_1d(asarray(nsamples, dtype='uint32')))
-        self.exptimes = (zeros(self.nlc, 'float32') if exptimes is None
-                         else atleast_1d(asarray(exptimes, dtype='float32')))
-
-        self._b_time = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.time)
-        self._b_lcids = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.lcids)
-        self._b_pbids = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.pbids)
-        self._b_nsamples = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.nsamples)
-        self._b_etimes = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.exptimes)
 
     def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = None,

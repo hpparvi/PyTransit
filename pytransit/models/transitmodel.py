@@ -28,7 +28,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Union, Optional, List
 
-from numpy import ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype, integer, float64
+from numpy import ones, ndarray, asarray, zeros, unique, atleast_1d, issubdtype, integer, float64, full
 
 from ..orbits.orbits_py import ta_ip_calculate_table
 
@@ -98,7 +98,7 @@ class TransitModel(object):
                  pbids: Optional[Union[ndarray, List]] = None,
                  nsamples: Optional[Union[ndarray, List]]  = None,
                  exptimes: Optional[Union[ndarray, List]] = None,
-                 epids: Optional[Union[ndarray, List]] = None) -> None:
+                 epids: Optional[Union[ndarray, List]] = None) -> bool:
         """Set the data for the transit model.
 
         Parameters
@@ -116,12 +116,19 @@ class TransitModel(object):
             Exposure times, again either for all the modelled data, or one value per light curve.
         epids : array-like, optional
             Epoch indices that can be used to link a light curve to a specific zero epoch and period (for TTV calculations).
+
+        Returns
+        -------
+        bool
+            Whether the data were set. False if the call was a no-op because `time` is the array the
+            model already holds and nothing else was given, which lets a subclass skip the work it
+            derives from the data.
         """
 
         # Time samples
         # ------------
         if id(time) == self.time_id and lcids is None and pbids is None and nsamples is None and exptimes is None and epids is None:
-            return
+            return False
 
         self.time_id  = id(time)
         self.time     = asarray(time, float64)
@@ -162,7 +169,26 @@ class TransitModel(object):
         # -------------
         # A number of samples and the exposure time for each light curve.
         self.nsamples = atleast_1d(nsamples) if nsamples is not None else ones(self.nlc, 'int')
-        self.exptimes = atleast_1d(exptimes) if exptimes is not None else zeros(self.nlc, 'int')
+        # Float, not int: the exposure times are a duration in days, and an integer array would
+        # silently truncate an exposure time assigned into it later.
+        self.exptimes = atleast_1d(exptimes) if exptimes is not None else zeros(self.nlc, 'float64')
+
+        # A single value applies to every light curve, as documented. Broadcasting it here rather
+        # than leaving a length-one array is what makes that true: the models index these per light
+        # curve, and a length-one array is read past its end for every light curve but the first,
+        # which in compiled code is a garbage sample count rather than an error.
+        if self.nsamples.size == 1:
+            self.nsamples = full(self.nlc, self.nsamples[0])
+        if self.exptimes.size == 1:
+            self.exptimes = full(self.nlc, self.exptimes[0])
+
+        if self.nsamples.size != self.nlc:
+            raise ValueError(f"The number of sample counts ({self.nsamples.size}) should be one or "
+                             f"equal to the number of light curves ({self.nlc}).")
+        if self.exptimes.size != self.nlc:
+            raise ValueError(f"The number of exposure times ({self.exptimes.size}) should be one or "
+                             f"equal to the number of light curves ({self.nlc}).")
+        return True
 
     def __call__(self, *nargs, **kwargs):
         raise NotImplementedError

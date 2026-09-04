@@ -62,6 +62,12 @@
   single parameter vector, and as one radius ratio per parameter vector for a population. Give a population several
   radius ratios per parameter vector as an `(npv, nk)` array. An array whose leading dimension matches neither the
   number of parameter vectors nor one raises a `ValueError` naming the expected shape.
+- The OpenCL models share `set_data` through a new `OpenCLTransitModel` base class instead of each carrying its own
+  copy. `TransitModel.set_data` does the validation and the bookkeeping, and the base class casts the arrays to the
+  types the kernels index and uploads them, so the OpenCL models now validate the light curve and passband indices
+  as the Numba models do, accept `epids`, and skip the work when `set_data` is called again with the array they
+  already hold. `TransitModel.set_data` returns whether it did anything, which is what lets a subclass skip the work
+  it derives from the data.
 - `LCDataGroup.plot` takes `show_median`, `median_width` and `nsigma` for overlaying the running median with its
   n-sigma limits, and `show_linear_model` for overlaying the linear model of the flux in terms of the covariates.
   `median_kwargs` and `linear_model_kwargs` set the line properties, `nsigma` accepts a sequence to draw one band
@@ -94,6 +100,13 @@
   `RoadRunnerModelCL` returned a depth of 0.0021 where the Numba model gave 0.0114, and `QuadraticModelCL`,
   `QPower2ModelCL` and `UniformModelCL` were wrong by about 1e-2 in flux. A scalar exposure time or sample count was
   also stored as a zero-dimensional array rather than broadcast to one dimension.
+- A single sample count or exposure time was left as a length-one array rather than applied to every light curve as
+  documented. Every model indexes them per light curve, so all but the first read past the end: the Numba models
+  raised a `ZeroDivisionError` from a garbage sample count and the OpenCL ones read out of bounds on the device.
+  Both are now broadcast to the light curves, and a count that matches neither one nor the number of light curves
+  raises a `ValueError`.
+- `TransitModel.set_data` stored the default exposure times as an integer array, which would silently truncate an
+  exposure time assigned into it afterwards. They are now floats.
 - The Numba RoadRunner and oblate planet models built the quadrature nodes of the mean intensity table with the
   first passband's radius ratio for every passband, so with passband-dependent radius ratios the other passbands
   read a table built for the wrong planet size: 0.100 next to 0.114 was off by 140 ppm.
