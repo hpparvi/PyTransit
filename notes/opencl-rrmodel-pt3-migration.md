@@ -168,29 +168,20 @@ of that surfaces in a flux test. `TestKernelSourceIsPrecisionAgnostic` in
 
 ### What double precision actually buys
 
-The difference from the Numba model is the sum of rounding and a difference in the **projected
-distance**, and which dominates depends on the geometry — so a single tolerance number is
-misleading:
+Now that both backends share the orbit (Change 6), the orbit cancels and the only thing double
+precision has left to remove is rounding. Agreement with the Numba model is ~1e-8 or better in
+double and at the float32 floor in single, **independent of geometry**:
 
-| a/R* | single | double | gain |
-|---|---|---|---|
-| 4 | 2.2e-06 | 2.0e-06 | 1.1x |
-| 6 | 6.8e-07 | 3.8e-07 | 1.8x |
-| 10 | 6.2e-07 | 4.8e-08 | 12.8x |
-| 20 | 1.2e-06 | 6.7e-09 | **176x** |
+| a/R* | single | double |
+|---|---|---|
+| 4 | 9.2e-07 | 7.5e-09 |
+| 10 | 9.1e-07 | 7.1e-09 |
+| 20 | 9.5e-07 | 6.3e-09 |
 
-The cause is **not** quadrature, which was the first guess and was wrong. The Numba model takes
-the projected distance from MeepMeep's fifth-order Taylor expansion around the transit centre
-(`model_full.py:63`, `xyc = zeros((npv, 2, 5))`), while the kernel solves the orbit directly.
-Measured against an exact circular orbit, the kernel's `z_iter` is accurate to ~1e-12 while the
-expansion is off by up to 5.6e-5 R_star in transit at a/R* = 4. The flux difference is exactly
-that times dF/dz: predicted and observed agree to three significant figures with a correlation
-of 1.00000 across a/R* = 4, 6 and 10.
-
-Two consequences. **The OpenCL model is the more accurate of the two for the orbit** — do not
-"fix" the kernel to match the Numba reference. And **set test tolerances from the expansion
-error, not from the precision**; use a long transit (a = 20) for a test that actually exercises
-fp64.
+Before the orbits were shared, the double column read 2.0e-06 / 4.8e-08 / 6.7e-09 — a strong
+geometry dependence that was the signature of the mismatch. **If that dependence ever comes
+back, the orbit has stopped matching**; that is what the `TestPrecision` tolerances are set to
+catch.
 
 ### fp64 cost (RTX 5070, kernels only, `copy=False` + `finish()`)
 
@@ -208,7 +199,11 @@ default.
 
 ---
 
-## Change 5 — Kepler's equation by Newton (port to pt3 if it shares this solver)
+## Change 5 — Kepler's equation by Newton (SUPERSEDED by Change 6, kept for the lesson)
+
+The kernel no longer solves Kepler's equation at all — Change 6 moved the orbit to MeepMeep — so
+there is nothing here to port. The finding is kept because it applies to any hand-rolled Kepler
+solver in a GPU kernel.
 
 Found while chasing the above. `z_iter` solved Kepler's equation with the fixed point iteration
 `E = M + e sin(E)`, which converges **linearly at a rate of e**: reaching double precision needs
@@ -233,6 +228,62 @@ performance difference, because the orbit solve is not what the flux kernel is b
 The old loop also declared its counter as `int i`, **shadowing the inclination parameter `i`** of
 the enclosing function. Harmless there because the loop body never read it, but worth not
 reproducing.
+
+---
+
+## Change 6 — Take the orbit from MeepMeep's expansion (the fix for the mismatch)
+
+The kernel now evaluates the *same* Taylor expansion as the Numba model instead of solving the
+orbit itself, which removes the difference of Change 4 entirely. MeepMeep ships its evaluators
+as OpenCL **device functions**, so this is mostly plumbing:
+
+```python
+from meepmeep.backends.opencl import read_kernel_source, build_options
+source = read_kernel_source('point2d.cl') + open('rrmodel.cl').read()
+cl.Program(ctx, source).build(options=build_options(precision))
+```
+
+- `sep_c2(t, c)` is the device twin of `meepmeep.numba2d.sep_c`; `c` is the flattened `(2, 5)`
+  `solve2d` matrix. MeepMeep's `build_options` uses the **same `-DREAL=` / `USE_FP64` convention**
+  as Change 4, so the two compose without changes.
+- Its `common.cl` defines `PI_R`, `TWO_PI_R`, `HALF_PI_R` and the fp64 pragma — **delete your own
+  copies or they clash**. Ours became `TWO_PI_R`, and `PI_R` / the pragma were dropped.
+- Solvers stay host-side by MeepMeep's contract: `solve2d` and `bounding_box` run on the host and
+  the coefficients are uploaded; the device only evaluates the polynomial.
+
+**Two traps, both of which bite silently.**
+
+1. **The expansion is meaningless away from the transit.** It is a degree-4 polynomial, and half
+   an orbit away it happily dips below `1 + k` and produces a full-depth *spurious transit*. The
+   Numba model guards this with `bounding_box`, and the kernel must too — reject on the box
+   before evaluating, never on the value of the separation. The old Keplerian `z_iter` returned
+   -1 on the far side and needed no such guard, so this is a new requirement.
+2. **The bounding box is widened by the exposure time**, so the exposure time default matters.
+   Ours defaulted `exptimes` to `ones` while `TransitModel.set_data` defaults to `zeros`; that
+   was harmless while nothing read it (with `nsamples=1` the supersampling offset is exactly zero
+   either way) but it stretched the box by a full day, across the far side of a two-day orbit,
+   and put a 1.1e-02 spurious transit between every pair of transits. Check this default before
+   wiring in the box, and test with data spanning several epochs — single-transit tests cannot
+   see it.
+
+Match the Numba fold exactly: the epoch comes from the **unshifted** sample time and the
+supersampling offsets are added to the centred time afterwards, so a sample never crosses into a
+neighbouring epoch.
+
+**Performance.** The polynomial is cheaper than the Kepler solve, but the host now precomputes
+the coefficients. Keep that loop **compiled** — a Python loop over `solve2d` costs ~6 us per
+parameter vector in dispatch alone and dominates everything else at npv = 1000. In an `@njit`
+helper it is ~315 ns per vector. Net, kernel-only, against the Keplerian version:
+
+| npt x npv | Kepler | expansion |
+|---|---|---|
+| 1e3 x 1000 | 456 us | 1107 us |
+| 1e4 x 1000 | 950 us | 1431 us |
+| 1e5 x 100 | 874 us | 542 us |
+| 1e5 x 1000 | 5.65 ms | 4.28 ms |
+
+Faster wherever the kernel dominates, slower where the per-call host precompute does — the same
+precompute the Numba model already pays.
 
 ---
 

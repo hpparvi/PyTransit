@@ -13,66 +13,18 @@
  *  2. `calculate_coefficients` turns each table into per-interval cubic coefficients, one work
  *     item per (parameter vector, passband, interval). A port of `common.split_cubic_coefficients`.
  *  3. `rr_flux` evaluates the model, one work item per (parameter vector, time sample), reading
- *     the mean intensity with the split cubic lookup of `common.ldm_lookup`.
+ *     the mean intensity with the split cubic lookup of `common.ldm_lookup`. The projected
+ *     separation comes from MeepMeep's `sep_c2`, the device twin of the `sep_c` the Numba model
+ *     uses, so the two backends share the orbit to the last bit.
+ *
+ *  MeepMeep's `point2d.cl` and its `common.cl` are prepended to this source by the host, and
+ *  supply `taylor5`, `sep_c2`, the fp64 pragma, and `PI_R` / `TWO_PI_R_R`.
  *
  *  The floating point type is set by a -DREAL= build option, with USE_FP64 defined alongside
  *  -DREAL=double. Every floating point literal is cast to REAL: a bare literal is a double in
  *  C, which would silently promote the single precision build to double arithmetic where the
  *  device supports it and fail to compile where it does not.
  */
-
-#ifdef USE_FP64
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
-#endif
-
-#define PI_R    ((REAL)3.14159265358979323846)
-#define TWO_PI  ((REAL)6.28318530717958647693)
-#define HALF_PI ((REAL)1.57079632679489661923)
-
-/* Convergence threshold for Kepler's equation, a little above the rounding of each build. */
-#ifdef USE_FP64
-#define KEPLER_TOL ((REAL)1e-13)
-#else
-#define KEPLER_TOL ((REAL)1e-6)
-#endif
-
-REAL mean_anomaly_offset(const REAL e, const REAL w){
-    REAL offset = atan2(sqrt((REAL)1.0-e*e) * sin(HALF_PI - w), e + cos(HALF_PI - w));
-    return offset - e*sin(offset);
-}
-
-/* Projected star-planet distance, or -1 on the far side of the orbit. */
-REAL z_iter(const REAL t, const REAL t0, const REAL p, const REAL a,
-            const REAL i, const REAL e,  const REAL w, const REAL ma_offset,
-            const REAL eclipse){
-    REAL Ma, Ea, sta, cta, Ta;
-
-    Ma = fmod(TWO_PI * (t - (t0 - ma_offset * p / TWO_PI)) / p, TWO_PI);
-
-    /* Kepler's equation by Newton's method. The fixed point iteration E = M + e sin(E) this
-       replaces converges linearly at a rate of e, so reaching double precision took ~80 steps
-       at e = 0.7 and the loop settled for a 1e-4 threshold instead, which capped the projected
-       distance at ~1e-4 R_star for any eccentric orbit. Newton doubles the correct digits per
-       step and reaches the threshold in four or five from the same starting guess. */
-    Ea = Ma + e*sin(Ma)/((REAL)1.0 - e*cos(Ma));
-    for(int it=0; it<8; it++){
-        const REAL dEa = (Ea - e*sin(Ea) - Ma) / ((REAL)1.0 - e*cos(Ea));
-        Ea -= dEa;
-        if (fabs(dEa) < KEPLER_TOL){
-            break;
-        }
-    }
-    sta = sqrt((REAL)1.0-e*e) * sin(Ea)/((REAL)1.0-e*cos(Ea));
-    cta = (cos(Ea)-e)/((REAL)1.0-e*cos(Ea));
-    Ta  = atan2(sta, cta);
-
-    if (eclipse * sign(sin(w+Ta)) > (REAL)0.0){
-        return a*((REAL)1.0-e*e)/((REAL)1.0+e*cos(Ta)) * sqrt((REAL)1.0 - pow(sin(w+Ta)*sin(i), (REAL)2));
-    }
-    else{
-        return -(REAL)1.0;
-    }
-}
 
 
 REAL circle_circle_intersection_area(REAL r1, REAL r2, REAL b){
@@ -126,10 +78,10 @@ inline REAL g_node(const int ig, const REAL gc, const int n1, const int ng){
 /* Angular extent of the planet disk at stellar radius z for a planet at separation b. */
 inline REAL planet_angular_extent(const REAL z, const REAL b, const REAL k){
     if (b < (REAL)1e-7){
-        return (z < k) ? TWO_PI : (REAL)0.0;
+        return (z < k) ? TWO_PI_R : (REAL)0.0;
     }
     if (z <= k - b){
-        return TWO_PI;
+        return TWO_PI_R;
     }
     if (z < b - k || z > b + k){
         return (REAL)0.0;
@@ -352,11 +304,12 @@ inline REAL ldm_lookup(const REAL g, const REAL gc, const int n1, const int ng, 
     return c[0] + a * (c[1] + a * (c[2] + a * c[3]));
 }
 
-/* Normalised flux for one sample at projected distance z. A negative z is the far side of the
-   orbit, and z beyond the last contact is out of transit. */
+/* Normalised flux for one sample at projected distance z, which is out of transit beyond the
+   last contact. The far side of the orbit is excluded by the caller's bounding box, so z is a
+   separation here and never the negative flag the Keplerian solver used to return. */
 inline REAL rr_flux_sample(const REAL z, const REAL k, const REAL istar,
                            const REAL gc, const int n1, const int ng, __global const REAL *coef){
-    if (z < (REAL)0.0 || z >= (REAL)1.0 + k){
+    if (z >= (REAL)1.0 + k){
         return (REAL)1.0;
     }
     const REAL iplanet = ldm_lookup(z / ((REAL)1.0 + k), gc, n1, ng, coef);
@@ -376,6 +329,8 @@ __kernel void rr_flux(__global const REAL *times,    /* (npt,)                */
                       __global const int   *n1s,     /* (npv, npb)            */
                       __global const REAL *coef,     /* (npv, npb, ng - 2, 4) */
                       __global const int   *valid,   /* (npv,)                */
+                      __global const REAL *xyc,      /* (npv, 2, 5)           */
+                      __global const REAL *bbs,      /* (npv, nlc, 2)         */
                       const int ng,
                       __global const uint *lcids,    /* (npt,)                */
                       __global const uint *pbids,    /* (nlc,)                */
@@ -405,17 +360,31 @@ __kernel void rr_flux(__global const REAL *times,    /* (npt,)                */
 
     const uint ns = nss[lcid];
     const REAL exptime = exptimes[lcid];
-    const REAL ma_offset = mean_anomaly_offset(pv[4], pv[5]);
     const REAL k = ks[ipp];
     const REAL gc = gcs[ipp];
     const int n1 = n1s[ipp];
     const REAL ist = istar[ipp];
 
+    /* Fold the sample into the epoch around the transit centre. As in the Numba model the fold
+       uses the unshifted sample time and the supersampling offsets are added to the centred
+       time, so a sample never lands in a neighbouring epoch. */
+    const REAL epoch = floor((times[i_tm] - pv[0] + (REAL)0.5 * pv[1]) / pv[1]);
+    const REAL tcen  = times[i_tm] - (pv[0] + epoch * pv[1]);
+
+    /* The Taylor expansion of the position is only valid near the transit, so anything outside
+       the bounding box is out of transit by construction and must not be evaluated. */
+    __global const REAL *bb = bbs + (i_pv * nlc + lcid) * 2;
+    if (tcen < bb[0] || tcen > bb[1]){
+        flux[gid] = (REAL)1.0;
+        return;
+    }
+
+    __global const REAL *c = xyc + i_pv * 10;
+
     REAL f = (REAL)0.0;
     for (uint i = 1; i < ns + 1; i++){
         const REAL toffset = exptime * (((REAL) i - (REAL)0.5) / (REAL) ns - (REAL)0.5);
-        const REAL z = z_iter(times[i_tm] + toffset, pv[0], pv[1], pv[2], pv[3], pv[4], pv[5], ma_offset, (REAL)1.0);
-        f += rr_flux_sample(z, k, ist, gc, n1, ng, coef_pb);
+        f += rr_flux_sample(sep_c2(tcen + toffset, c), k, ist, gc, n1, ng, coef_pb);
     }
     flux[gid] = f / (REAL) ns;
 }

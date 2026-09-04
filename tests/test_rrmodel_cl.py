@@ -413,13 +413,11 @@ class TestPrecision:
     """Single and double precision builds of the kernel.
 
     The kernel's floating point type is a `-DREAL=` build option, so both builds come from the
-    same source and the only thing that separates them is the compile-time type. Double precision
-    removes the rounding error, leaving the difference in the projected distance: the Numba model
-    takes it from MeepMeep's fifth order Taylor expansion around the transit centre, while the
-    kernel solves the orbit directly. The expansion's truncation error grows with the transit
-    duration in phase, so it is ~5.6e-5 R_star at a/R* = 4 and swamps the rounding, and falls to
-    ~8e-8 at a/R* = 20, where double precision is then over a hundred times closer to the Numba
-    model. The tolerances below are therefore set by the expansion, not by the precision.
+    same source and the only thing that separates them is the compile-time type. Both backends now
+    take the projected distance from the same MeepMeep expansion, so the orbit cancels and the
+    only difference left in a double precision build is the mean intensity tables, which agree to
+    ~2e-8 regardless of the geometry. The tolerances below are set by that, and they are tight on
+    purpose: an orbit that stopped matching would show up here first.
     """
     args = (0.1, [0.6, 0.5], 0.0, 2.0, 4.0, 0.5 * pi)
 
@@ -453,7 +451,7 @@ class TestPrecision:
         tc = RoadRunnerModelCL(ldmodel, cl_ctx=ctx, cl_queue=queue, precision='double')
         tc.set_data(time)
         orbit = (0.1, ldc, 0.0, 2.0, 4.0, 0.5 * pi)
-        assert npabs(tc.evaluate(*orbit) - tm.evaluate(*orbit)).max() < 5e-6
+        assert npabs(tc.evaluate(*orbit) - tm.evaluate(*orbit)).max() < 5e-8
 
     def _errors(self, clenv, t, orbit, ldmodel='power-2'):
         """Maximum deviation from the Numba model for both precisions."""
@@ -468,15 +466,16 @@ class TestPrecision:
             errs[precision] = npabs(tc.evaluate(*orbit) - fn).max()
         return errs
 
-    def test_double_is_much_closer_to_numba_for_a_long_transit(self, clenv, fp64):
-        """Where rounding rather than the orbit sets the error, double must win big.
+    @pytest.mark.parametrize('a,half', [(4.0, 0.12), (20.0, 0.04)])
+    def test_double_is_much_closer_to_numba_than_single(self, clenv, fp64, a, half):
+        """With the orbit shared, single precision rounding is the only thing left to remove.
 
-        A long transit (a = 20) spans little enough orbital phase that the Taylor expansion of
-        the projected distance in the Numba model drops below the single precision rounding,
-        which is the regime that actually exercises the precision.
+        Checked at a short and a long transit: the gain used to depend strongly on the geometry,
+        because the Numba model's expansion of the projected distance was not matched on the
+        device, and it should not any more.
         """
-        errs = self._errors(clenv, linspace(-0.04, 0.04, 1000),
-                            (0.1, [0.6, 0.5], 0.0, 2.0, 20.0, 0.5 * pi))
+        errs = self._errors(clenv, linspace(-half, half, 1000),
+                            (0.1, [0.6, 0.5], 0.0, 2.0, a, 0.5 * pi))
         assert errs['double'] < errs['single'] / 20.0
 
     @pytest.mark.parametrize('ldmodel,ldc', [('uniform', []), ('linear', [0.6]),
@@ -497,7 +496,7 @@ class TestPrecision:
         orbit = (zeros(npv), tile(2.0, npv), tile(4.0, npv), tile(0.5 * pi, npv))
         fc, fn = tc.evaluate(k, ldc, *orbit), tm.evaluate(k, ldc, *orbit)
         assert fc.shape == (npv, time.size)
-        assert npabs(fc - fn).max() < 5e-6
+        assert npabs(fc - fn).max() < 5e-8
 
     def test_double_eccentric_orbit(self, clenv, time, fp64):
         ctx, queue = clenv
@@ -506,15 +505,16 @@ class TestPrecision:
         tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue, precision='double')
         tc.set_data(time)
         orbit = (0.1, [0.6, 0.5], 0.0, 2.0, 4.0, 0.5 * pi, 0.2, 0.4)
-        assert npabs(tc.evaluate(*orbit) - tm.evaluate(*orbit)).max() < 5e-6
+        assert npabs(tc.evaluate(*orbit) - tm.evaluate(*orbit)).max() < 5e-8
 
     @pytest.mark.parametrize('e,w', [(0.1, 1.0), (0.3, 1.0), (0.5, 1.0), (0.5, 0.0)])
     def test_eccentric_orbit_solver_is_not_the_bottleneck(self, clenv, fp64, e, w):
-        """The kernel's Kepler solver must not limit the accuracy of an eccentric orbit.
+        """An eccentric orbit must agree as closely as a circular one.
 
-        Evaluated at a/R* = 20, where the Numba model's Taylor expansion of the projected
-        distance is accurate to ~1e-8 and the circular case agrees to 7e-9, so anything larger
-        here comes from the kernel solving Kepler's equation, not from the expansion.
+        Eccentricity enters only through the expansion coefficients, which are solved on the host
+        and shared with the Numba model, so it should make no difference at all. It used to: the
+        kernel solved Kepler's equation itself, with a convergence threshold that capped the
+        projected distance at ~1e-4 R_star and cost up to 89 ppm here.
         """
         ctx, queue = clenv
         t = linspace(-0.02, 0.02, 1000)
@@ -523,7 +523,7 @@ class TestPrecision:
         tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue, precision='double')
         tc.set_data(t)
         orbit = (0.1, [0.6, 0.5], 0.0, 2.0, 20.0, 0.5 * pi, e, w)
-        assert npabs(tm.evaluate(*orbit) - tc.evaluate(*orbit)).max() < 1e-6
+        assert npabs(tm.evaluate(*orbit) - tc.evaluate(*orbit)).max() < 5e-8
 
     def test_double_invalid_parameters_give_nan(self, clenv, time, fp64):
         ctx, queue = clenv
@@ -561,7 +561,76 @@ class TestKernelSourceIsPrecisionAgnostic:
         assert re.search(r'\b(native|half)_[a-z]+\b', code) is None
 
     def test_fp64_pragma_is_guarded(self):
-        source = (Path(__file__).parent.parent / 'pytransit' / 'models' / 'roadrunner' / 'rrmodel.cl').read_text()
+        """The guard comes from MeepMeep's `common.cl`, so check the source as the host builds it."""
+        from meepmeep.backends.opencl import read_kernel_source
+        source = read_kernel_source('point2d.cl') + self._code_lines()
         assert '#ifdef USE_FP64' in source
         assert '#pragma OPENCL EXTENSION cl_khr_fp64 : enable' in source
+
+
+class TestEpochFolding:
+    """Data spanning several epochs, where the expansion is only valid near each transit.
+
+    The projected distance is a Taylor expansion around the transit centre, so away from the
+    transit it is a polynomial with no physical meaning and will happily dip below one. The
+    kernel must reject those samples by the transit bounding box instead of evaluating it. The
+    box is widened by the exposure time, so an exposure time defaulting to one day rather than
+    zero stretched it across the far side of a two-day orbit and put a full-depth spurious
+    transit there, in both precisions.
+    """
+    p = 2.0
+    orbit = (0.1, [0.6, 0.5], 0.0, 2.0, 4.0, 0.5 * pi)
+
+    def _times(self, nep=3):
+        return linspace(-0.12, (nep - 1) * self.p + 0.12, 1500)
+
+    @pytest.mark.parametrize('precision', ['single', 'double'])
+    def test_no_spurious_transit_between_epochs(self, clenv, precision):
+        ctx, queue = clenv
+        t = self._times()
+        tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue, precision=precision)
+        tc.set_data(t)
+        f = tc.evaluate(*self.orbit)
+        # Everything more than a quarter period from a transit centre is out of transit.
+        phase = (t + 0.5 * self.p) % self.p - 0.5 * self.p
+        assert (f[npabs(phase) > 0.25 * self.p] == 1.0).all()
+
+    def test_multi_epoch_matches_numba(self, clenv, fp64):
+        ctx, queue = clenv
+        t = self._times()
+        tm = RoadRunnerModel('power-2')
+        tm.set_data(t)
+        tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue, precision='double')
+        tc.set_data(t)
+        fn, fc = tm.evaluate(*self.orbit), tc.evaluate(*self.orbit)
+        assert (fn < 1.0).sum() == (fc < 1.0).sum()
+        assert npabs(fn - fc).max() < 5e-8
+
+    def test_supersampled_multi_epoch_matches_numba(self, clenv, fp64):
+        """A real exposure time widens the bounding box; the two must still agree."""
+        ctx, queue = clenv
+        t = self._times()
+        tm = RoadRunnerModel('power-2')
+        tm.set_data(t, nsamples=10, exptimes=0.02)
+        tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue, precision='double')
+        tc.set_data(t, nsamples=10, exptimes=0.02)
+        assert npabs(tm.evaluate(*self.orbit) - tc.evaluate(*self.orbit)).max() < 5e-8
+
+    def test_scalar_sampling_arguments_are_one_dimensional(self, clenv, time):
+        """A scalar would give a zero-dimensional array, which the compiled expansion cannot index."""
+        ctx, queue = clenv
+        tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue)
+        tc.set_data(time, nsamples=5, exptimes=0.01)
+        assert tc.exptimes.ndim == 1
+        assert tc.nsamples.ndim == 1
+
+    def test_default_exposure_time_is_zero(self, clenv, time):
+        """As in `TransitModel.set_data`; the bounding box depends on it."""
+        ctx, queue = clenv
+        tm = RoadRunnerModel('power-2')
+        tm.set_data(time)
+        tc = RoadRunnerModelCL('power-2', cl_ctx=ctx, cl_queue=queue)
+        tc.set_data(time)
+        assert (tc.exptimes == 0.0).all()
+        assert allclose(tc.exptimes, tm.exptimes)
 

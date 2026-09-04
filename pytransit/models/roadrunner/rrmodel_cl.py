@@ -20,7 +20,8 @@ from warnings import warn, filterwarnings
 import pyopencl as cl
 from pyopencl import CompilerWarning
 
-from numpy import (array, uint32, float32, float64, int32, asarray, zeros, ones, unique, atleast_2d, squeeze, ndarray,
+from numpy import (array, uint32, float32, float64, int32, asarray, ascontiguousarray, zeros, ones,
+                   unique, atleast_1d, atleast_2d, squeeze, ndarray,
                    concatenate, empty, linspace, sqrt, pi, isnan, isscalar, trapezoid)
 
 from ..ldmodel import LDModel
@@ -31,11 +32,38 @@ from ..limb_darkening import (ld_uniform, ldi_uniform, ld_linear, ldi_linear, ld
                               evaluate_ld, evaluate_ldi)
 from ..transitmodel import TransitModel
 from .._deprecation import deprecated_evaluation_method
+from numba import njit
+from meepmeep.backends.numba.point2d import solve2d, bounding_box
+from meepmeep.backends.opencl import read_kernel_source, build_options
+
 from .common import quadrature_rules, profile_grid, radius_ratio_array, CUBIC_MATRICES
 
 filterwarnings('ignore', category=CompilerWarning)
 
 __all__ = ['RoadRunnerModelCL']
+
+
+@njit(cache=True)
+def _expansion_arrays(valid, p, a, i, e, w, k0, exptimes):
+    """Taylor series coefficients for the sky position, and the transit bounding boxes.
+
+    A port of the orbit half of `model_full.rr_precompute`, so that both backends evaluate the
+    same expansion. Compiled because the loop over the parameter vectors is otherwise a Python
+    loop over `solve2d`, whose dispatch overhead dominates the whole evaluation for a large
+    population: ~6 ms for a thousand parameter vectors, against ~7 ms for everything else.
+    """
+    npv, nlc = p.size, exptimes.size
+    xyc = zeros((npv, 2, 5))
+    bbs = zeros((npv, nlc, 2))
+    for ipv in range(npv):
+        if not valid[ipv]:
+            continue
+        xyc[ipv] = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        bt1, bt4 = bounding_box(k0[ipv], xyc[ipv])
+        for ilc in range(nlc):
+            bbs[ipv, ilc, 0] = bt1 - (0.003 + exptimes[ilc])
+            bbs[ipv, ilc, 1] = bt4 + (0.003 + exptimes[ilc])
+    return xyc, bbs
 
 
 def _dtype_for_precision(ctx, precision: str):
@@ -50,15 +78,6 @@ def _dtype_for_precision(ctx, precision: str):
         return float32
     else:
         raise ValueError(f"Unknown precision '{precision}', expected 'single' or 'double'.")
-
-
-def _build_options(precision: str) -> str:
-    """Preprocessor options selecting the kernel's floating point type.
-
-    Deliberately does not enable ``-cl-fast-relaxed-math``: the model is tested for agreement
-    with the Numba model, and relaxed math breaks that.
-    """
-    return '-DREAL=double -DUSE_FP64' if precision == 'double' else '-DREAL=float'
 
 
 class RoadRunnerModelCL(TransitModel):
@@ -213,14 +232,21 @@ class RoadRunnerModelCL(TransitModel):
         self._b_n1s = None       # First segment sizes of the tables
         self._b_coef = None      # Split cubic coefficients of the tables
         self._b_valid = None     # Parameter vector validity flags
+        self._b_xyc = None       # Taylor series coefficients for the (x, y) position
+        self._b_bbs = None       # Transit bounding boxes per (pv, lc)
         self._b_f = None         # Flux buffer
         self._b_p = None         # Parameter vector buffer
 
         self._b_time = None
         self._time_id = None
 
-        self.prg = cl.Program(self.ctx, open(join(dirname(__file__), 'rrmodel.cl'), 'r').read())
-        self.prg.build(options=_build_options(precision))
+        # MeepMeep's device functions are prepended to the model source: `sep_c2` is the twin of
+        # the `sep_c` the Numba model uses, so both backends evaluate the same expansion. Its
+        # `common.cl` also supplies the fp64 pragma and the shared constants, and its build
+        # options use the same `-DREAL=` convention.
+        source = read_kernel_source('point2d.cl') + open(join(dirname(__file__), 'rrmodel.cl')).read()
+        self.prg = cl.Program(self.ctx, source)
+        self.prg.build(options=build_options(precision))
 
         # Bind the kernels once. Every `Program.__getattr__` builds a new Kernel object and
         # regenerates its invoker, which consults PyOpenCL's on-disk (SQLite) cache, so looking
@@ -287,9 +313,15 @@ class RoadRunnerModelCL(TransitModel):
         self.time = asarray(time, dtype=self.dtype)
         self.lcids = zeros(time.size, 'uint32') if lcids is None else asarray(lcids, dtype='uint32')
         self.pbids = zeros(self.nlc, 'uint32') if pbids is None else asarray(pbids, dtype='uint32')
-        self.nsamples = ones(self.nlc, 'uint32') if nsamples is None else asarray(nsamples, dtype='uint32')
-        self.exptimes = (ones(self.nlc, self.dtype) if exptimes is None
-                         else asarray(exptimes, dtype=self.dtype))
+        # `atleast_1d`, as in `TransitModel.set_data`: a scalar exposure time would otherwise give
+        # a zero-dimensional array, which the compiled expansion loop cannot index.
+        self.nsamples = (ones(self.nlc, 'uint32') if nsamples is None
+                         else atleast_1d(asarray(nsamples, dtype='uint32')))
+        # Zero, as in `TransitModel.set_data`, not one: with `nsamples` of 1 the supersampling
+        # offset is exactly zero either way, but the exposure time widens the transit bounding
+        # box, and a default of one day would stretch it over the far side of a short orbit.
+        self.exptimes = (zeros(self.nlc, self.dtype) if exptimes is None
+                         else atleast_1d(asarray(exptimes, dtype=self.dtype)))
 
         self._kernel_args_set = False
         self._b_time = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=self.time)
@@ -431,7 +463,7 @@ class RoadRunnerModelCL(TransitModel):
 
         if self._b_f is not None:
             for name in ('_b_f', '_b_p', '_b_ks', '_b_ldp', '_b_istar', '_b_ldm', '_b_gcs', '_b_n1s',
-                         '_b_coef', '_b_valid'):
+                         '_b_coef', '_b_valid', '_b_xyc', '_b_bbs'):
                 getattr(self, name).release()
 
         self.npv = uint32(npv)
@@ -447,6 +479,8 @@ class RoadRunnerModelCL(TransitModel):
         self._b_n1s = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * int32().nbytes)
         self._b_coef = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * (ng - 2) * 4 * nb)
         self._b_valid = cl.Buffer(self.ctx, mf.READ_ONLY, npv * int32().nbytes)
+        self._b_xyc = cl.Buffer(self.ctx, mf.READ_ONLY, npv * 10 * nb)
+        self._b_bbs = cl.Buffer(self.ctx, mf.READ_ONLY, npv * int(self.nlc) * 2 * nb)
 
     def _set_kernel_args(self) -> None:
         """Bind the kernel arguments that do not change between evaluations.
@@ -462,7 +496,7 @@ class RoadRunnerModelCL(TransitModel):
                              self._b_gcs, self._b_n1s, self._b_ldm)
         self._k_coefficients.set_args(self._b_ldm, self._b_n1s, self._b_cm, int32(self.ng), self._b_coef)
         self._k_flux.set_args(self._b_time, self._b_ks, self._b_istar, self._b_gcs, self._b_n1s,
-                              self._b_coef, self._b_valid, int32(self.ng),
+                              self._b_coef, self._b_valid, self._b_xyc, self._b_bbs, int32(self.ng),
                               self._b_lcids, self._b_pbids, self._b_p, self._b_nsamples, self._b_etimes,
                               self.spv, self.nlc, self.npb, self._b_f)
         self._kernel_args_set = True
@@ -520,10 +554,20 @@ class RoadRunnerModelCL(TransitModel):
         a, e = pvp[:, nk + 2], pvp[:, nk + 4]
         valid = ~(isnan(a) | (a <= 1.0) | (e < 0.0) | isnan(ldp[:, 0, 0])) & ((ks > 0.0) & (ks <= 1.0)).all(1)
 
+        # Taylor series expansion of the sky position and the transit bounding box, computed as
+        # `model_full.rr_precompute` computes them so that both backends evaluate the same orbit.
+        # The solvers and the expansion point placement stay on the host by MeepMeep's contract;
+        # the device only evaluates the polynomial.
+        orb = [ascontiguousarray(pvp[:, nk + j], float64) for j in range(1, 6)]
+        xyc, bbs = _expansion_arrays(valid, *orb, ascontiguousarray(ks[:, 0], float64),
+                                     asarray(self.exptimes, dtype=float64))
+
         cl.enqueue_copy(self.queue, self._b_ks, ks)
         cl.enqueue_copy(self.queue, self._b_ldp, ldp.astype(self.dtype))
         cl.enqueue_copy(self.queue, self._b_istar, istar.astype(self.dtype))
         cl.enqueue_copy(self.queue, self._b_valid, valid.astype(int32))
+        cl.enqueue_copy(self.queue, self._b_xyc, ascontiguousarray(xyc, self.dtype).ravel())
+        cl.enqueue_copy(self.queue, self._b_bbs, ascontiguousarray(bbs, self.dtype).ravel())
 
         self.pv[:] = pvp
         cl.enqueue_copy(self.queue, self._b_p, self.pv)
