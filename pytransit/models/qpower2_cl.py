@@ -19,16 +19,13 @@ import numpy as np
 import pyopencl as cl
 from os.path import dirname, join
 
-import warnings
-from pyopencl import CompilerWarning
 
 from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_1d, atleast_2d, squeeze, ndarray, \
     concatenate, empty
 
 from ._deprecation import deprecated_evaluation_method
-from .opencltransitmodel import OpenCLTransitModel
+from .opencltransitmodel import OpenCLTransitModel, build_program
 
-warnings.filterwarnings('ignore', category=CompilerWarning)
 
 class QPower2ModelCL(OpenCLTransitModel):
     """OpenCL implementation of the power-2 transit model (Maxted & Gill, A&A 622, A33, 2019).
@@ -69,7 +66,8 @@ class QPower2ModelCL(OpenCLTransitModel):
 
         self._time_id = None   # Time array ID
 
-        self.prg = cl.Program(self.ctx, open(join(dirname(__file__),'opencl','qpower2.cl'),'r').read()).build()
+        with open(join(dirname(__file__), 'opencl', 'qpower2.cl')) as f:
+            self.prg = build_program(self.ctx, f.read())
 
 
     def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],

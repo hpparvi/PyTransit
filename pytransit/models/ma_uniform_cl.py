@@ -31,18 +31,15 @@
 """OpenCL implementation of the transit over a uniform disk (Mandel & Agol, ApJ 580, L171-L175 2002).
 """
 
-import warnings
 from importlib.resources import files
 from typing import Union, Optional
 
 import pyopencl as cl
-from pyopencl import CompilerWarning
 from numpy import array, uint32, float32, asarray, zeros, ones, unique, atleast_1d, atleast_2d, squeeze, ndarray, empty, concatenate
 from ._deprecation import deprecated_evaluation_method
-from .opencltransitmodel import OpenCLTransitModel
+from .opencltransitmodel import OpenCLTransitModel, build_program
 from ..orbits.taylor_z import vajs_from_paiew_v
 
-warnings.filterwarnings('ignore', category=CompilerWarning)
 
 
 class UniformModelCL(OpenCLTransitModel):
@@ -86,7 +83,7 @@ class UniformModelCL(OpenCLTransitModel):
         opencl_pkg = files('pytransit.models.opencl')
         orbits_src = opencl_pkg.joinpath('orbits.cl').read_text()
         model_src = opencl_pkg.joinpath('ma_uniform.cl').read_text()
-        self.prg = cl.Program(self.ctx, orbits_src + model_src).build()
+        self.prg = build_program(self.ctx, orbits_src + model_src)
 
 
     def evaluate(self, k: Union[float, ndarray], t0: Union[float, ndarray], p: Union[float, ndarray],

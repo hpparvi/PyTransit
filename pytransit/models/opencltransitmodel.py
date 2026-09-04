@@ -15,13 +15,32 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from typing import List, Optional, Union
+from warnings import catch_warnings, simplefilter
 
 import pyopencl as cl
 from numpy import asarray, atleast_1d, float32, ndarray, uint32
+from pyopencl import CompilerWarning
 
 from .transitmodel import TransitModel
 
-__all__ = ['OpenCLTransitModel']
+__all__ = ['OpenCLTransitModel', 'build_program']
+
+
+def build_program(ctx, source: str, options: str = '', cache_dir=None) -> cl.Program:
+    """Build an OpenCL program without leaving a warning filter behind.
+
+    PyOpenCL raises a `CompilerWarning` whenever the driver writes anything at all while building
+    a program, and some drivers write a banner for a perfectly clean build. Every OpenCL model
+    used to silence that with a module-level `filterwarnings`, which switched the warning off for
+    the whole process the moment the model was imported, including for any OpenCL code the caller
+    builds itself. The filter is scoped to the build here instead, and the build logs of the
+    models' own kernels are asserted to be empty in `tests/test_opencl_kernels.py`, so silencing
+    the warning cannot hide a warning of ours. `cache_dir` is there for that test, which has to
+    force a real compile to get a build log at all.
+    """
+    with catch_warnings():
+        simplefilter('ignore', CompilerWarning)
+        return cl.Program(ctx, source).build(options=options, cache_dir=cache_dir)
 
 
 class OpenCLTransitModel(TransitModel):

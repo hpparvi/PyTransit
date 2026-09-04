@@ -32,17 +32,14 @@ from typing import Union, Optional
 import numpy as np
 import pyopencl as cl
 
-import warnings
-from pyopencl import CompilerWarning
 
 from numpy import array, uint32, float32, int32, asarray, zeros, ones, unique, atleast_1d, atleast_2d, squeeze, ndarray, empty, \
     concatenate
 
 from .numba.ma_quadratic_nb import calculate_interpolation_tables
 from ._deprecation import deprecated_evaluation_method
-from .opencltransitmodel import OpenCLTransitModel
+from .opencltransitmodel import OpenCLTransitModel, build_program
 
-warnings.filterwarnings('ignore', category=CompilerWarning)
 
 class QuadraticModelCL(OpenCLTransitModel):
     """
@@ -127,7 +124,7 @@ class QuadraticModelCL(OpenCLTransitModel):
         opencl_pkg = files('pytransit.models.opencl')
         orbits_src = opencl_pkg.joinpath('orbits.cl').read_text()
         model_src = opencl_pkg.joinpath('ma_quadratic.cl').read_text()
-        self.prg = cl.Program(self.ctx, orbits_src + model_src).build()
+        self.prg = build_program(self.ctx, orbits_src + model_src)
 
     def evaluate(self, k: Union[float, ndarray], ldc: ndarray, t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = None,

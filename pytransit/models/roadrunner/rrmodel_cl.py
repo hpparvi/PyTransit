@@ -15,10 +15,9 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Optional, Union, Callable, Tuple
 from os.path import dirname, join
-from warnings import warn, filterwarnings
+from warnings import warn
 
 import pyopencl as cl
-from pyopencl import CompilerWarning
 
 from numpy import (array, uint32, float32, float64, int32, asarray, ascontiguousarray, zeros, ones,
                    unique, atleast_1d, atleast_2d, squeeze, ndarray,
@@ -30,7 +29,7 @@ from ..limb_darkening import (ld_uniform, ldi_uniform, ld_linear, ldi_linear, ld
                               ld_square_root, ldi_square_root, ld_logarithmic, ldi_logarithmic,
                               ld_exponential, ldi_exponential, ld_power_2, ldi_power_2, ld_power_2_pm, ldi_power_2_pm,
                               evaluate_ld, evaluate_ldi)
-from ..opencltransitmodel import OpenCLTransitModel
+from ..opencltransitmodel import OpenCLTransitModel, build_program
 from .._deprecation import deprecated_evaluation_method
 from numba import njit
 from meepmeep.backends.numba.point2d import solve2d, bounding_box
@@ -38,7 +37,6 @@ from meepmeep.backends.opencl import read_kernel_source, build_options
 
 from .common import quadrature_rules, profile_grid, radius_ratio_array, CUBIC_MATRICES
 
-filterwarnings('ignore', category=CompilerWarning)
 
 __all__ = ['RoadRunnerModelCL']
 
@@ -242,9 +240,9 @@ class RoadRunnerModelCL(OpenCLTransitModel):
         # the `sep_c` the Numba model uses, so both backends evaluate the same expansion. Its
         # `common.cl` also supplies the fp64 pragma and the shared constants, and its build
         # options use the same `-DREAL=` convention.
-        source = read_kernel_source('point2d.cl') + open(join(dirname(__file__), 'rrmodel.cl')).read()
-        self.prg = cl.Program(self.ctx, source)
-        self.prg.build(options=build_options(precision))
+        with open(join(dirname(__file__), 'rrmodel.cl')) as f:
+            source = read_kernel_source('point2d.cl') + f.read()
+        self.prg = build_program(self.ctx, source, build_options(precision))
 
         # Bind the kernels once. Every `Program.__getattr__` builds a new Kernel object and
         # regenerates its invoker, which consults PyOpenCL's on-disk (SQLite) cache, so looking

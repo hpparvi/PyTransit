@@ -100,6 +100,10 @@
   `RoadRunnerModelCL` returned a depth of 0.0021 where the Numba model gave 0.0114, and `QuadraticModelCL`,
   `QPower2ModelCL` and `UniformModelCL` were wrong by about 1e-2 in flux. A scalar exposure time or sample count was
   also stored as a zero-dimensional array rather than broadcast to one dimension.
+- Importing any OpenCL model disabled PyOpenCL's `CompilerWarning` for the whole process, including for OpenCL code
+  the caller builds itself, because each model silenced it with a module-level `filterwarnings`. The filter is now
+  scoped to the model's own program build, and the kernels are checked to build without any compiler output at all,
+  so nothing of ours is hidden by it. Two kernel sources were also read without closing the file.
 - A single sample count or exposure time was left as a length-one array rather than applied to every light curve as
   documented. Every model indexes them per light curve, so all but the first read past the end: the Numba models
   raised a `ZeroDivisionError` from a garbage sample count and the OpenCL ones read out of bounds on the device.
