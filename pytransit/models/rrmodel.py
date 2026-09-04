@@ -286,7 +286,9 @@ class RoadRunnerModel(TransitModel):
             dldi = None
 
         if self.backend == "jax":
-            result = self._model(self.times, k, t0, p, a, i, e, w,
+            # Both the times and the transit centres carry the reference-epoch shift set in
+            # `_on_data_set`; the difference the kernel folds is unchanged.
+            result = self._model(self.times, k, t0 - self.tref, p, a, i, e, w,
                                self.lcids, self.pbids, self.epids,
                                self.nsamples, self.exptimes, ldp, ldg, ldi, dldi,
                                self._rules, self._pt0, self._pdt, self.ng, self.npb, self.nor,

@@ -67,7 +67,10 @@ def evaluate(backend, precision, origin_name):
         m = RoadRunnerModel(backend='jax')
         m.set_data(times)
         single = make_jax_kernel(m, m.npb, m.nor)
-        nrm = _normalize_parameter_shapes(*pars, m.npb, m.ntc, m.nor)
+        # set_data has already shifted m.times by the reference epoch, so t0 needs the
+        # same shift -- this calls the kernel directly and bypasses evaluate()'s handling.
+        nrm = list(_normalize_parameter_shapes(*pars, m.npb, m.ntc, m.nor))
+        nrm[1] = nrm[1] - m.tref
         args = (*[jnp.asarray(x)[0] for x in nrm], jnp.asarray(LDC.reshape(1, -1)))
         f = single(*args)
         jac = jax.jacfwd(single, argnums=tuple(range(8)))(*args)

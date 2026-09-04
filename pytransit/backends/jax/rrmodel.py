@@ -57,7 +57,13 @@ def _planet_angular_extent(z, b, k):
     zs = jnp.where(partial, z, 1.0)
     bs = jnp.where(partial, b, 1.0)
     c = (zs * zs + bs * bs - k * k) / (2.0 * zs * bs)
-    c = jnp.clip(jnp.where(partial, c, 0.0), -1.0 + 1e-12, 1.0 - 1e-12)
+    # Same precision trap as the node margin in `_ldm_nodes`: a bare 1e-12 is far below
+    # float32 eps (1.2e-7), so `1.0 - 1e-12` rounds to exactly 1.0, `arccos` returns 0, and
+    # the planet's angular extent collapses to zero -- taking every quadrature weight in the
+    # row with it and leaving `_ldm_table` dividing 0 by 0. max() pins the float64 bound at
+    # exactly 1e-12, so double precision is unchanged.
+    cf = max(1e-12, 4.0 * float(jnp.finfo(c.dtype).eps))
+    c = jnp.clip(jnp.where(partial, c, 0.0), -1.0 + cf, 1.0 - cf)
     return jnp.where(full, _TWO_PI, jnp.where(partial, 2.0 * jnp.arccos(c), 0.0))
 
 
@@ -73,7 +79,13 @@ def _ldm_nodes(k, gs, rules):
     nq = rules.shape[2]
     tl, wl = rules[0, 0], rules[0, 1]
     tj, wj = rules[1, 0], rules[1, 1]
-    b = (jnp.minimum(gs, 1.0 - 1e-9) * (1.0 + k))[:, None]
+    # Keep b strictly inside the limb. The margin must exceed the working precision's
+    # epsilon or it rounds away and stops guarding: a bare 1e-9 is well below float32 eps
+    # (1.2e-7), so in single precision b landed exactly on 1 + k, `1 - (b - k)**2` became
+    # 0, the quadrature weights underflowed, and _ldm_table's final row was 0/0 = NaN.
+    # max() pins the float64 margin at exactly 1e-9, so double precision is unchanged.
+    margin = max(1e-9, 4.0 * float(jnp.finfo(gs.dtype).eps))
+    b = (jnp.minimum(gs, 1.0 - margin) * (1.0 + k))[:, None]
     on_disk = b + k <= 1.0
     centre = on_disk & (b < k)
 
@@ -128,7 +140,16 @@ def _ldm_table(mu, wf, t0, dt, ldp):
     # The barrier keeps XLA from fusing the profile gathers into the reduction, which
     # serialises them and costs several times the whole table build.
     prof = lax.optimization_barrier(_profile_at(mu, t0, dt, ldp))
-    return jnp.sum(wf * prof, axis=1) / jnp.sum(wf, axis=1)
+    # Normalise each row's weights by their largest entry before reducing. The result is a
+    # ratio of sums over the same weights, so the scale cancels exactly -- but the raw
+    # weights vanish as the planet goes tangent to the limb (g -> 1), where the overlap area
+    # goes to zero. At the last node they reach ~1e-11 in single precision, and XLA fuses
+    # that reduction differently on different backends: on CPU the fused sum underflowed to
+    # exactly 0 and the row became 0/0 = NaN, while the same code eagerly and on GPU did not.
+    # Reducing O(1) values instead removes the dependence on how the sum is compiled.
+    scale = jnp.max(jnp.abs(wf), axis=1, keepdims=True)
+    w = wf / jnp.where(scale > 0.0, scale, 1.0)
+    return jnp.sum(w * prof, axis=1) / jnp.sum(w, axis=1)
 
 
 def _cubic_coefficients(tab):

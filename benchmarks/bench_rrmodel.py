@@ -172,6 +172,9 @@ def bench_jax(results, npts, npvs, precision='double'):
         for npv in npvs:
             nrm = [jnp.asarray(x) for x in
                    _normalize_parameter_shapes(*make_params(npv), m.npb, m.ntc, m.nor)]
+            # m.times carries set_data's reference-epoch shift; t0 must match, since this
+            # calls the kernel directly rather than through evaluate().
+            nrm[1] = nrm[1] - m.tref
             args = (*nrm, ldc2)
             for mode in MODES:
                 record(results, tag, mode, npt, npv,

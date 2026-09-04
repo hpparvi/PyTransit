@@ -163,6 +163,21 @@ raised (measured: 1e-2 flux error, i.e. the full transit depth, before the shift
 Any new OpenCL kernel that consumes absolute times must do the same. `tests/…_class.py`
 `TestRealisticTimeStamps` parametrises over BJD/BTJD/zero origins and is what pins this.
 
+The JAX backend has the same trap and the same guard: `TransitModel.set_data` subtracts the
+shift in float64 *before* `jax.device_put` casts the times, stores it as `self.tref`, and every
+JAX `evaluate` subtracts it from `t0`. Doing it after `device_put` is too late — the damage is
+in the cast. `tref` is `0.0` for the numba and OpenCL backends, so the subtraction is a no-op
+there. `tests/test_jax_fp32.py` pins it.
+
+**Hard-coded epsilons are a float32 trap of their own.** `1 - 1e-9` and `1 - 1e-12` both round
+to exactly `1.0` in single precision (float32 eps is 1.2e-7), so a guard written that way stops
+guarding without any error. Two such guards in `backends/jax/rrmodel.py` — the node margin in
+`_ldm_nodes` and the `arccos` clip in `_planet_angular_extent` — together collapsed the
+limb-tangent quadrature row to all-zero weights and made `_ldm_table` divide 0 by 0. Derive any
+such margin from `jnp.finfo(dtype).eps`, keeping the float64 value unchanged with `max()`. Note
+this can be compilation-dependent: the all-zero row appeared under jitted XLA:CPU while the
+same code eagerly and on XLA:GPU kept the weights alive, so an eager probe can look clean.
+
 **`copy=False` is the point of the backend.** `evaluate(..., copy=False)` skips the readback and
 returns `None`, leaving results in `model._model._b_flux` / `_b_dflux`. For `npv=200, npt=1e5` with
 gradients the Jacobian is 1.12 GB per evaluation, so the transfer, not the physics, sets the

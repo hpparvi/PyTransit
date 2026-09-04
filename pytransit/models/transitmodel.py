@@ -55,6 +55,9 @@ class TransitModel:
         self.parallel = parallel
 
         self.times = None
+        # Reference epoch subtracted from `times` (and from `t0` at evaluate time)
+        # for the JAX backend; 0.0 for every other backend. See `set_data`.
+        self.tref: float = 0.0
         self.lcids = None
         self.pbids = None
         self.epids = None
@@ -166,7 +169,17 @@ class TransitModel:
             self.simple = False
 
         if self.backend == "jax":
-            self.times = jax.device_put(self.times)
+            # Shift the time origin to the centre of the data span while the times are still
+            # float64, before `device_put` casts them -- the same guard `CLModel.set_data`
+            # applies for the OpenCL backend. The models only ever use `t - t0`, so
+            # subtracting the same constant from both is mathematically a no-op, but it is
+            # what makes single precision usable at all: a float32 ULP at BJD 2458325 is
+            # ~0.25 d, so casting an absolute timestamp collapses a whole transit onto a
+            # couple of representable values, silently and with no error raised. Doing this
+            # after `device_put` would be far too late -- the damage is in the cast. Every
+            # JAX evaluate() subtracts `self.tref` from `t0` to match.
+            self.tref = 0.5 * float(self.times.min() + self.times.max())
+            self.times = jax.device_put(self.times - self.tref)
             self.lcids = jax.device_put(self.lcids)
             self.epids = jax.device_put(self.epids)
             self.nsamples = jax.device_put(self.nsamples)

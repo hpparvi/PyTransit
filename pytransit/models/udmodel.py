@@ -85,7 +85,9 @@ class UniformDiskModel(TransitModel):
         npv = _npv_from_k(asarray(k), self.npb)
         k, t0, p, a, i, e, w = _normalize_parameter_shapes(k, t0, p, a, i, e, w, self.npb, self.ntc, self.nor)
         kwargs = {} if self.backend != 'opencl' else {'copy': copy}
-        result = self._model(self.times, k, t0, p, a, i, e, w,
+        # `tref` is the JAX backend's reference-epoch shift and 0.0 for every other
+        # backend, so this subtraction is a no-op outside JAX. See `TransitModel.set_data`.
+        result = self._model(self.times, k, t0 - self.tref, p, a, i, e, w,
                              self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes,
                              self.npb, self.nor, **kwargs)
         if result is None:
@@ -103,7 +105,7 @@ class UniformDiskModel(TransitModel):
     def get_callable(self):
         if self.backend == 'jax':
             def model(k, t0, p, a, i, e, w):
-                return jaxmodel(self.times, k, t0, p, a, i, e, w,
+                return jaxmodel(self.times, k, t0 - self.tref, p, a, i, e, w,
                           self.lcids, self.pbids, self.epids,
                           self.nsamples, self.exptimes,
                           self.npb, self.nor)

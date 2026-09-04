@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The JAX backend is now usable in single precision. Two hard-coded epsilons in
+  `backends/jax/rrmodel.py` sat below float32 eps (1.2e-7) and so rounded away entirely, silently
+  ceasing to guard: the quadrature-node margin `1 - 1e-9` in `_ldm_nodes` and the arc-cosine clip
+  `1 - 1e-12` in `_planet_angular_extent`. With the latter gone, the planet's angular extent at the
+  limb-tangent node collapsed to zero, every quadrature weight in that table row vanished, and the
+  row became `0/0 = NaN` -- which the split-cubic build then spread across every sample with the
+  grazing parameter near 1, i.e. the whole in-window, out-of-transit band. Both margins are now
+  derived from the working precision and are exactly unchanged in float64.
+- The JAX backend now subtracts a reference epoch from `times` in float64 before they are cast, as
+  the OpenCL backend already did. Without it a float32 ULP at BJD 2458325 is ~0.25 d, so an absolute
+  timestamp collapsed a whole transit onto a couple of representable values -- an error the size of
+  the transit depth, raised silently. `TransitModel.set_data` stores the shift as `tref`, and the
+  JAX evaluate paths subtract it from `t0`; `tref` is `0.0` for every other backend.
+
 ### Changed
 
 - **Breaking:** every transit model (`RoadRunnerModel`, `UniformDiskModel`, `TransmissionSpectroscopyModel`)

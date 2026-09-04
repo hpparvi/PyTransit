@@ -252,7 +252,7 @@ class TransmissionSpectroscopyModel(TransitModel):
             dk, dg, weights = None, None, None
 
         if self.backend == "jax":
-            result = self._model(self.times, k, t0, p, a, i, e, w,
+            result = self._model(self.times, k, t0 - self.tref, p, a, i, e, w,
                                  self.nsamples[0], self.exptimes[0],
                                  ldp, istar,
                                  self.weights, self.dk, self.klims[0], self.klims[1], self.dg, self.ze,
