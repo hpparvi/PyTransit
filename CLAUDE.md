@@ -174,7 +174,7 @@ Its consumer is the device-side log-likelihood below, which reduces those buffer
 what turns `copy=False` from a benchmark curiosity into something a sampler can use.
 
 **Porting gotchas** (both already handled, do not "fix" them back):
-- `flux` is a *deficit*, the library-wide convention (see Key Conventions above): it starts at 0 and
+- `flux` is a *deficit*, the library-wide convention (see Key Conventions below): it starts at 0 and
   is only decremented, so out of transit it is 0.0 and at mid-transit `-k**2`. It is not normalised
   to 1. The deleted v2 `ma_uniform.cl` returned `1 - lambdae`; do not copy that.
 - In `ccia_and_grad`'s full-containment branch (`b <= r1 - r2`, most of a non-grazing transit) the

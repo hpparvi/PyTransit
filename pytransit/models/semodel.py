@@ -28,9 +28,11 @@ class SecondaryEclipseModel(TransitModel):
     -----
     The returned flux is on the planet's *absolute* surface-brightness scale
     (out-of-eclipse baseline ``pi * k**2``, dropping to zero at mid-eclipse),
-    not the normalised-deficit scale used by the transit models. Multiply by
-    the planet-to-star surface-brightness (or flux) ratio to place it on the
-    same normalised scale as a transit light curve.
+    not the flux-deficit scale (``dF = F - 1``) the transit models return.
+    Multiply by the planet-to-star surface-brightness (or flux) ratio ``fp``
+    before combining the two: the total light curve is additive,
+    ``F = baseline + dF + fp * se``, where ``dF`` is a transit model's output
+    and ``se`` is this model's output.
     """
 
     def _init_model(self):

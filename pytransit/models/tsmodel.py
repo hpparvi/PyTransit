@@ -206,7 +206,9 @@ class TransmissionSpectroscopyModel(TransitModel):
         Returns
         -------
         ndarray or tuple
-            Model flux (npv, npb, npt), or (flux, dflux) with dflux shape (npv, npb, npt, 8 + nldc) and derivative columns [k, t0, p, a, i, e, w, ldc..., kmean] if return_grad=True.
+            Model flux (npv, npb, npt), returned as the deficit ``dF = F - 1`` (exactly 0.0 out of
+            transit, about -k**2 at mid-transit; observed flux is ``baseline + dF``), or (flux, dflux)
+            with dflux shape (npv, npb, npt, 8 + nldc) and derivative columns [k, t0, p, a, i, e, w, ldc..., kmean] if return_grad=True.
         """
         k = atleast_2d(k)
         t0, p, a, i, e, w = map(atleast_1d, (t0, p, a, i, e, w))

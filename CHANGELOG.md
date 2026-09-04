@@ -4,6 +4,15 @@
 
 ### Changed
 
+- **Breaking:** every transit model (`RoadRunnerModel`, `UniformDiskModel`, `TransmissionSpectroscopyModel`)
+  now returns the flux **deficit** `dF = F - 1` instead of normalised flux: out-of-transit is exactly
+  `0.0` and mid-transit is about `-k**2`. Observed flux is `baseline + dF`. Code that plots or fits
+  `model.evaluate(...)` results directly must add back a baseline (1.0 for normalised photometry) or it
+  will silently be off by 1.0. `SecondaryEclipseModel` is the deliberate exception and keeps its own
+  planet-surface-brightness convention (out-of-eclipse `pi*k**2`). `TransitModel.loglikelihood` and
+  `WNLogLikelihood` gained a keyword-only `baseline` parameter (default `1.0`) so the residual is
+  `(obs - baseline) - dF`; their gradient output gained a matching `d lnL / d baseline` column, placed
+  before the trailing `d lnL / d jitter` column.
 - `RoadRunnerModel` no longer discretises the stellar disk into annuli on any backend. The mean intensity
   under the planet is computed for every radius ratio by Gauss quadrature matched to the transit geometry
   (`pytransit.backends.numba.ldquad`), tabulated against the grazing parameter in two segments split at the

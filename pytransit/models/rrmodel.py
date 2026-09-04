@@ -227,7 +227,9 @@ class RoadRunnerModel(TransitModel):
         Returns
         -------
         NDArray | tuple[NDArray, NDArray]
-            Flux either as a 1D or 2D ndarray, and, optionally, the gradient of the flux with respect to the
+            Flux either as a 1D or 2D ndarray, returned as the deficit ``dF = F - 1`` (exactly ``0.0``
+            out of transit, about ``-k**2`` at mid-transit; observed flux is ``baseline + dF``), and,
+            optionally, the gradient of the flux with respect to the
             parameters. When ``return_grad`` is set, the gradient columns match the parameters as passed, in the
             order ``[k, t0, p, a, i, e, w, ldc]``: a parameter given as a scalar contributes a single shared
             column, while a passband-dependent radius ratio or an epoch-dependent transit centre / orbital
