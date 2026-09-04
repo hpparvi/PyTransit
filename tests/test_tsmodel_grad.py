@@ -233,7 +233,7 @@ class TestTSModelAndGrad(unittest.TestCase):
         mid = self.times.size // 2
         self.assertFalse(np.any(np.isnan(flux)))
         for ipb in range(self.npb):
-            self.assertLess(flux[0, ipb, mid], 1.0)
+            self.assertLess(flux[0, ipb, mid], 0.0)
 
     def test_invalid_params_return_nan(self):
         flux, dflux = self._call(a=array([0.5]))
