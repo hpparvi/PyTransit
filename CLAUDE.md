@@ -174,9 +174,9 @@ Its consumer is the device-side log-likelihood below, which reduces those buffer
 what turns `copy=False` from a benchmark curiosity into something a sampler can use.
 
 **Porting gotchas** (both already handled, do not "fix" them back):
-- `flux` is a *deficit*: it starts at 0 and is only decremented, so out of transit it is 0.0 and at
-  mid-transit `-k**2`. It is not normalised to 1. The deleted v2 `ma_uniform.cl` returned
-  `1 - lambdae`; do not copy that.
+- `flux` is a *deficit*, the library-wide convention (see Key Conventions above): it starts at 0 and
+  is only decremented, so out of transit it is 0.0 and at mid-transit `-k**2`. It is not normalised
+  to 1. The deleted v2 `ma_uniform.cl` returned `1 - lambdae`; do not copy that.
 - In `ccia_and_grad`'s full-containment branch (`b <= r1 - r2`, most of a non-grazing transit) the
   Python source leaves `a_kite` unbound and Numba happens to zero it, giving the correct
   `dadb = 0`. The `.cl` port sets it to zero explicitly — an uninitialised read is UB in C.
@@ -190,9 +190,8 @@ code. Keeping the contraction on the host also keeps the 8 MB weight table off t
 reproduces the out-of-`klims` `calculate_weights_2d` fallback exactly; measured, it is only 5-6% of
 the `copy=False` runtime, so moving it to a device pre-pass kernel is not worth it.
 
-Three RoadRunner conventions differ from the uniform disk and are easy to carry over wrongly:
-- Flux is **normalised** (1.0 out of transit); the uniform disk returns a deficit (0.0). Test masks
-  are `flux < 0.9999`, not `flux < -1e-6`.
+Two RoadRunner conventions differ from the uniform disk and are easy to carry over wrongly (both
+models return the flux deficit, so in-transit masks are `flux < -1e-6` for every model):
 - There is a real per-parameter-vector **validity guard** (`a <= 1`, `e < 0`, NaN in `ldp`), which
   the uniform disk lacks. An invalid vector yields an all-NaN flux and gradient row. It inspects
   **passband 0 only** — a quirk of the reference.
@@ -208,21 +207,28 @@ allocation is lazy and an oversized request otherwise fails as a bare
 `MEM_OBJECT_ALLOCATION_FAILURE` at kernel-enqueue time.
 
 **Device-side log-likelihood** (`reduction.cl`, `CLModel.reduce_loglikelihood`,
-`TransitModel.loglikelihood`). `model.loglikelihood(obs, err, jitter, k, t0, ...)` evaluates with
-`copy=False` and reduces the device-resident flux and Jacobian in place, so the Jacobian never
-crosses the bus; only a handful of doubles come back. `WNLogLikelihood` wraps it. The noise is
-independent Gaussian with fixed per-point `err` and a sampled `jitter` (`e2 = err**2 + jitter**2`);
-a constant `err` gives the i.i.d. case. The returned gradient has `evaluate`'s Jacobian columns plus
-a trailing `d lnL / d jitter`.
+`TransitModel.loglikelihood`). `model.loglikelihood(obs, err, jitter, k, t0, ..., baseline=1.0)`
+evaluates with `copy=False` and reduces the device-resident flux and Jacobian in place, so the
+Jacobian never crosses the bus; only a handful of doubles come back. `WNLogLikelihood` wraps it. The
+noise is independent Gaussian with fixed per-point `err` and a sampled `jitter`
+(`e2 = err**2 + jitter**2`); a constant `err` gives the i.i.d. case. The residual is
+`r = (obs - baseline) - dF`, computed in that order: `obs - baseline` is exact by the Sterbenz lemma
+(both operands are near 1.0), leaving the rest of the reduction on the small deficit scale. Do not
+"simplify" this to `obs - (baseline + dF)` — that re-creates a near-1 value and silently throws away
+the numerical benefit the deficit convention exists for. `baseline` is a fitted parameter, with
+`d lnL/d baseline = sum(r/e2)`. The returned gradient has `evaluate`'s Jacobian columns, then
+`d lnL/d baseline`, then a trailing `d lnL/d jitter` (baseline is inserted before jitter deliberately
+so `grad[..., -1]` remains the jitter derivative).
 
-The reduction runs one work-group per output slot, each scanning the whole time series. Slots 0-3
-are the scalar sums (`sum r^2/e2`, `sum log e2`, `sum r^2/e2^2`, `sum 1/e2`); the rest are gradient
-columns, each carrying a rule saying which points it accepts. That rule is what makes the output
-land directly in `evaluate`'s **expanded** column layout with no host-side scatter: a parameter
-shared across passbands or epochs accepts every point and collapses to one column, while a
-per-passband or per-epoch one gets a slot per group. The compact LD block is already scattered per
-passband, so it uses `MATCH_ALL`. `TransitModel._gradient_slots` builds the table; keep it in step
-with `_expand_gradient`.
+The reduction runs one work-group per output slot, each scanning the whole time series. Slots 0-4
+are the five scalar sums (`sum r^2/e2`, `sum log e2`, `sum r^2/e2^2`, `sum 1/e2`, `sum r/e2`); the
+rest are gradient columns, each carrying a rule saying which points it accepts. That rule is what
+makes the output land directly in `evaluate`'s **expanded** column layout with no host-side scatter:
+a parameter shared across passbands or epochs accepts every point and collapses to one column, while
+a per-passband or per-epoch one gets a slot per group. The compact LD block is already scattered per
+passband, so it uses `MATCH_ALL`. The `baseline` scalar sum does not go through this per-passband/
+per-epoch slot-routing machinery — it is always a single shared column. `TransitModel._gradient_slots`
+builds the table; keep it in step with `_expand_gradient`.
 
 **When the OpenCL backend actually pays off.** It wins on the *parameter-vector* axis, not the
 per-call one. At `npv=200, npt=1e5` with gradients it is ~88x threaded Numba. At `npv=1` -- the
@@ -286,14 +292,20 @@ kernels (`rrmodel_grad`, `tsmodel_grad`, `udmodel_grad`) must include this — i
 shows up when data spans multiple epochs.
 
 **Testing gradients:** verify analytic gradients against central finite differences of the forward-only
-model. Compare only where the model is smooth (e.g. `flux < 0.99`); ingress/egress contact points carry
+model. Compare only where the model is smooth (e.g. `flux < -1e-6`); ingress/egress contact points carry
 finite-difference truncation noise (bounding-box cutoff + supersample steps), not gradient error, so
 exclude them rather than loosening tolerances globally.
 
 ## Key Conventions
 
 - Time is in days (typically BJD)
-- Flux is normalised (out-of-transit = 1.0)
+- Models return the flux **deficit** `dF = F - 1`: out-of-transit is exactly `0.0` and mid-transit is
+  about `-k**2`. Observed flux is `baseline + dF`. This is a 3.0 breaking change, made because storing
+  a value near 1.0 costs ~1 ULP(1) of absolute error regardless of transit depth, so in single
+  precision the error relative to the signal grows as 1/depth (measured: 8.5e-4 at k=0.01). The
+  deficit sits log2(1/depth) binades lower and recovers those bits. `SecondaryEclipseModel` is the
+  documented exception: it returns the planet's visible flux on the planet's own surface-brightness
+  scale (out-of-eclipse `pi*k**2`).
 - Arrays use NumPy with `float64` precision
 - Numba functions use `@njit` with `prange` for parallelisation
 - JAX functions use `jnp`; differentiation is via plain tracing (or `@jax.custom_jvp` in `udmodel`)
