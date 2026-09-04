@@ -78,7 +78,7 @@ def tsmodel(times: ndarray,
             epoch = floor((times[ipt] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
             tc = times[ipt] - (t0[ipv] + epoch * p[ipv])
             if not (bt1 <= tc <= bt4):
-                flux[ipv, :, ipt] = 1.0
+                flux[ipv, :, ipt] = 0.0
             else:
                 for isample in range(1, nsamples[0] + 1):
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
@@ -90,7 +90,7 @@ def tsmodel(times: ndarray,
                         ap0, k0 = ccia_and_k0(1.0, kmean, z)
                         for ipb in range(npb):
                             iplanet = interpolate_mean_limb_darkening(z / (1.0 + kmean), dg, ldm[ipb])
-                            flux[ipv, ipb, ipt] += (1.0 - iplanet * ap0 * afac[ipb] * inv_istar[ipb]) * inv_nsamples
+                            flux[ipv, ipb, ipt] += -(iplanet * ap0 * afac[ipb] * inv_istar[ipb]) * inv_nsamples
                     else:
                         # Edge case: the occulted area and the grazing parameter are
                         # computed exactly for each per-passband radius ratio (matching
@@ -99,7 +99,7 @@ def tsmodel(times: ndarray,
                             kb = k[ipv, ipb]
                             ap_b, _ = ccia_and_k0(1.0, kb, z)
                             iplanet = interpolate_mean_limb_darkening(z / (1.0 + kb), dg, ldm[ipb])
-                            flux[ipv, ipb, ipt] += (1.0 - iplanet * ap_b * inv_istar[ipb]) * inv_nsamples
+                            flux[ipv, ipb, ipt] += -(iplanet * ap_b * inv_istar[ipb]) * inv_nsamples
     return flux
 
 

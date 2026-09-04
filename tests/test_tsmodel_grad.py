@@ -102,17 +102,17 @@ class TestTSModelAndGrad(unittest.TestCase):
         self.assertEqual(flux.shape, (self.npv, self.npb, npt))
         self.assertEqual(dflux.shape, (self.npv, self.npb, npt, 8 + self.nldc))
 
-    def test_out_of_transit_is_one(self):
+    def test_out_of_transit_is_zero(self):
         flux, _ = self._call()
         for ipb in range(self.npb):
-            self.assertAlmostEqual(flux[0, ipb, 0], 1.0, places=10)
-            self.assertAlmostEqual(flux[0, ipb, -1], 1.0, places=10)
+            self.assertEqual(flux[0, ipb, 0], 0.0)
+            self.assertEqual(flux[0, ipb, -1], 0.0)
 
     def test_transit_depth(self):
         flux, _ = self._call()
         mid = self.times.size // 2
         for ipb in range(self.npb):
-            self.assertLess(flux[0, ipb, mid], 1.0)
+            self.assertLess(flux[0, ipb, mid], 0.0)
 
     def test_gradient_k_multi_band(self):
         """k derivative with multi-band (kmean approximation, relaxed tolerance)."""
@@ -127,7 +127,7 @@ class TestTSModelAndGrad(unittest.TestCase):
 
             fd = (fp[0, ipb] - fm[0, ipb]) / (2 * eps)
             anal = dflux0[0, ipb, :, 0]
-            mask = flux0[0, ipb] < 0.9999
+            mask = flux0[0, ipb] < -1e-6
             if mask.any():
                 np.testing.assert_allclose(anal[mask], fd[mask], rtol=0.1, atol=1e-8,
                     err_msg=f"k gradient band {ipb}")
@@ -150,7 +150,7 @@ class TestTSModelAndGrad(unittest.TestCase):
         for ipb in range(self.npb):
             fd = (fp[0, ipb] - fm[0, ipb]) / (2 * eps)
             anal = dflux0[0, ipb, :, 0] + dflux0[0, ipb, :, -1]
-            mask = flux0[0, ipb] < 0.9999
+            mask = flux0[0, ipb] < -1e-6
             if mask.any():
                 np.testing.assert_allclose(anal[mask], fd[mask], rtol=1e-4, atol=1e-6,
                     err_msg=f"kmean-corrected k gradient band {ipb}")
@@ -178,7 +178,7 @@ class TestTSModelAndGrad(unittest.TestCase):
             for ipb in range(self.npb):
                 fd = (fp[0, ipb] - fm[0, ipb]) / (2 * eps)
                 anal = dflux0[0, ipb, :, ip + 1]
-                mask = flux0[0, ipb] < 0.9999
+                mask = flux0[0, ipb] < -1e-6
                 if mask.any():
                     np.testing.assert_allclose(anal[mask], fd[mask], rtol=1e-3, atol=1e-8,
                         err_msg=f"{name} gradient band {ipb}")
@@ -204,7 +204,7 @@ class TestTSModelAndGrad(unittest.TestCase):
             for ipb in range(self.npb):
                 fd = (fp[0, ipb] - fm[0, ipb]) / (2 * eps)
                 anal = dflux0[0, ipb, :, 2]
-                mask = flux0[0, ipb] < 0.999   # smooth region; avoid contact-point FD noise
+                mask = flux0[0, ipb] < -1e-6   # smooth region; avoid contact-point FD noise
                 self.assertTrue(mask.any())
                 np.testing.assert_allclose(anal[mask], fd[mask], rtol=1e-3, atol=1e-7,
                     err_msg=f"period gradient epoch {epoch} band {ipb}")
@@ -223,7 +223,7 @@ class TestTSModelAndGrad(unittest.TestCase):
 
                 fd = (fp[0, ipb] - fm[0, ipb]) / (2 * eps)
                 anal = dflux0[0, ipb, :, 7 + j]
-                mask = flux0[0, ipb] < 0.9999
+                mask = flux0[0, ipb] < -1e-6
                 if mask.any():
                     np.testing.assert_allclose(anal[mask], fd[mask], rtol=1e-3, atol=1e-8,
                         err_msg=f"LD coeff {j} band {ipb}")
@@ -239,6 +239,16 @@ class TestTSModelAndGrad(unittest.TestCase):
         flux, dflux = self._call(a=array([0.5]))
         self.assertTrue(np.all(np.isnan(flux)))
         self.assertTrue(np.all(np.isnan(dflux)))
+
+    def test_out_of_transit_flux_is_exactly_zero(self):
+        """The deficit convention: outside the transit the model contributes nothing at all."""
+        flux, _ = self._call()
+        # Exact equality, not a tolerance: 0.0 is representable and being exactly zero
+        # out of transit is the point of the convention.
+        self.assertEqual(flux.max(), 0.0)
+        self.assertTrue((flux == 0.0).any(),
+                        'test setup should include out-of-transit points')
+        self.assertLess(flux.min(), -1e-3, 'a real transit should be present')
 
     def test_gradient_k_single_band(self):
         """k derivative with single band (kmean == k, relaxed for dldm/dk ≈ 0)."""
@@ -260,7 +270,7 @@ class TestTSModelAndGrad(unittest.TestCase):
 
         fd = (fp[0, 0] - fm[0, 0]) / (2 * eps)
         anal = dflux0[0, 0, :, 0]
-        mask = flux0[0, 0] < 0.9999
+        mask = flux0[0, 0] < -1e-6
         if mask.any():
             # dldm/dk ≈ 0 approximation still affects near-limb points
             np.testing.assert_allclose(anal[mask], fd[mask], rtol=0.1, atol=1e-8,

@@ -68,7 +68,7 @@ def tsmodel(times, k, t0, p, a, i, e, w,
     Returns
     -------
     array (npb, npt)
-        Model flux (1.0 out of transit).
+        Model flux deficit dF = F - 1 (0.0 out of transit).
     """
     nk = weights.shape[0]
 
@@ -115,13 +115,13 @@ def tsmodel(times, k, t0, p, a, i, e, w,
                 area_adj = jnp.where(fully_contained,
                                      ap0 * afac_pb,
                                      ap0 + (k_pb - kmean) * dadk)
-                return (istar_pb - iplanet * area_adj) / istar_pb
+                return -(iplanet * area_adj) / istar_pb
 
             sample_flux = jax.vmap(_per_passband)(k, ldm_all, istar, afac)
             return acc + jnp.where(isample < nsamples, sample_flux, 0.0)
 
         flux = lax.fori_loop(0, max_ns, body, jnp.zeros(npb)) / nsamples
         in_window = jnp.abs(dt) < half_window
-        return jnp.where(in_window, flux, 1.0)
+        return jnp.where(in_window, flux, 0.0)
 
     return jax.vmap(_single_time)(times).T  # (npb, npt)

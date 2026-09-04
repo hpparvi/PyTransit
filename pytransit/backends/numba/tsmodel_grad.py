@@ -158,7 +158,7 @@ def tsmodel_grad(times: ndarray,
             epoch = floor((times[ipt] - t0[ipv] + 0.5 * p[ipv]) / p[ipv])
             tc = times[ipt] - (t0[ipv] + epoch * p[ipv])
             if not (bt1 <= tc <= bt4):
-                flux[ipv, :, ipt] = 1.0
+                flux[ipv, :, ipt] = 0.0
             else:
                 for isample in range(1, nsamples[0] + 1):
                     time_offset = exptimes[0] * ((isample - 0.5) / nsamples[0] - 0.5)
@@ -191,7 +191,7 @@ def tsmodel_grad(times: ndarray,
                             iplanet, dIp_dg = interpolate_mean_limb_darkening_and_grad(g, dg, ldm[ipb])
                             aeff = ap0 * afac[ipb]
 
-                            flux[ipv, ipb, ipt] += (1.0 - iplanet * aeff * inv_is) * inv_nsamples
+                            flux[ipv, ipb, ipt] += -(iplanet * aeff * inv_is) * inv_nsamples
 
                             # k derivative: d(aeff)/dk_ipb = ap0 * 2*k[ipb] / kmean^2
                             daeff_dk = ap0 * 2.0 * k[ipv, ipb] / (kmean * kmean)
@@ -238,7 +238,7 @@ def tsmodel_grad(times: ndarray,
                             iplanet, dIp_dg = interpolate_mean_limb_darkening_and_grad(g, dg, ldm[ipb])
                             aplanet, (dadk, dadz) = ccia_and_grad(1.0, kb, z)
 
-                            flux[ipv, ipb, ipt] += (1.0 - iplanet * aplanet * inv_is) * inv_nsamples
+                            flux[ipv, ipb, ipt] += -(iplanet * aplanet * inv_is) * inv_nsamples
 
                             # k derivative
                             dIp_dk = dIp_dg * (-z / (1.0 + kb) ** 2)
@@ -273,6 +273,7 @@ def tsmodel_grad(times: ndarray,
                 for ipb in range(npb):
                     inv_is = inv_istar[ipb]
                     for j in range(nldc):
-                        dflux[ipv, ipb, ipt, 7 + j] += (1.0 - flux[ipv, ipb, ipt]) * distar[ipv, ipb, j] * inv_is
+                        # flux is the deficit, so the old `(1.0 - flux)` reconstruction is `-flux`.
+                        dflux[ipv, ipb, ipt, 7 + j] += -flux[ipv, ipb, ipt] * distar[ipv, ipb, j] * inv_is
 
     return flux, dflux
