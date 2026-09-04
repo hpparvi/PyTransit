@@ -16,3 +16,4 @@ dist
 
 .idea/*
 notebooks
+benchmarks/results
