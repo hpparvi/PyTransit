@@ -79,8 +79,8 @@ def evaluate(backend, precision, origin_name):
 
 def compare(ref_f, ref_d, got_f, got_d):
     """Flux error, and per-column Jacobian relative error over the in-transit points."""
-    mask = ref_f < 0.9999                       # ingress/egress excluded is not needed here;
-    depth = 1.0 - ref_f.min()                   # we compare two analytic results, not an FD
+    mask = ref_f < -1e-6                        # models return the deficit dF = F - 1
+    depth = -ref_f.min()                        # we compare two analytic results, not an FD
     out = {'flux_abs': float(np.abs(got_f - ref_f).max()),
            'flux_frac_depth': float(np.abs(got_f - ref_f).max() / depth),
            'cols': {}}
@@ -120,13 +120,14 @@ def check_loglikelihood():
         ref_lnl = (-0.5 * npt * np.log(2 * np.pi) - 0.5 * npt * np.log(e2)
                    - 0.5 * np.sum(r * (obs - flux)))
         ref_grad = r @ dflux
+        ref_dbaseline = np.sum(r)
         ref_djit = JITTER * (np.sum(r ** 2) - npt / e2)
-        ref_full = np.concatenate([ref_grad, [ref_djit]])
+        ref_full = np.concatenate([ref_grad, [ref_dbaseline], [ref_djit]])
 
         for precision in ('double', 'single'):
             m = RoadRunnerModel(backend='opencl', return_grad=True, precision=precision)
             m.set_data(times)
-            lnl, grad = m.loglikelihood(obs, ERR, JITTER, *pars, ldc=LDC)
+            lnl, grad = m.loglikelihood(obs, ERR, JITTER, *pars, ldc=LDC, baseline=0.0)
             grad = np.asarray(grad, float)
             scale = np.maximum(np.abs(ref_full), np.abs(ref_full).max() * 1e-6)
             print(f'{npt:8d}{precision:>11s}{abs(lnl - ref_lnl) / abs(ref_lnl):14.2e}'
