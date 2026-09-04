@@ -55,7 +55,7 @@ class TestJaxMatchesNumba(unittest.TestCase):
     def test_flux_matches_the_numba_backend(self):
         flux_jax = np.asarray(self.jax.evaluate(*self.args, ldc=LDC))
         flux_numba = self.numba.evaluate(*self.args, ldc=LDC)[0]
-        self.assertLess(1 - flux_numba.min(), 0.99)
+        self.assertLess(flux_numba.min(), -1e-3)
         np.testing.assert_allclose(flux_jax, flux_numba, atol=1e-12)
 
     def test_autodiff_matches_the_analytic_gradient(self):

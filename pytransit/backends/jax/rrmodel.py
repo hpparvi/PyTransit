@@ -268,12 +268,12 @@ def rrmodel(times, k, t0, p, a, i, e, w,
             z = _pd_t15(tc + offset, t0_val, p_val, cf)
             iplanet = _ldm_lookup(z / (1.0 + k_val), gc, n1, n2, coef, ipb)
             aplanet = ccia(1.0, k_val, z)
-            sample_flux = (ldi_val - iplanet * aplanet) / ldi_val
+            sample_flux = -(iplanet * aplanet) / ldi_val
             return acc + jnp.where(isample < ns, sample_flux, 0.0)
 
         flux = lax.fori_loop(0, max_ns, body, 0.0) / ns
         in_window = jnp.abs(dt) < hw
-        return jnp.where(in_window, flux, 1.0)
+        return jnp.where(in_window, flux, 0.0)
 
     return jax.vmap(_single_time)(
         times, ipbs, k_pt, t0_pt, p_pt, cf_pt, hw_pt,

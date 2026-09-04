@@ -4,8 +4,7 @@ The Numba backend is the reference: it is the finite-difference-tested one and
 carries the period chain-rule term. Every numerical check here compares against
 it directly.
 
-Note the conventions that differ from the uniform-disk backend: RoadRunner
-returns *normalised* flux (1.0 out of transit, not a deficit of 0.0), and it has
+Note the convention that differs from the uniform-disk backend: RoadRunner has
 a real per-parameter-vector validity guard.
 """
 
@@ -38,7 +37,7 @@ I = radians(88.0)
 E = 0.0
 W = pi / 2
 # Wider than the transit window (~+/-0.09 d) so out-of-window points,
-# where the model must return exactly 1.0 with a zero gradient, are covered.
+# where the model must return exactly 0.0 with a zero gradient, are covered.
 TIMES = np.linspace(-0.13, 0.13, 300)
 
 
@@ -91,7 +90,7 @@ class TestForwardMatchesNumba:
         args = _kernel_args(model, params, data, ld, 1, 1)
 
         expected = rrmodel_nb(TIMES, *args)
-        assert (expected < 0.9999).any(), "test setup should produce in-transit points"
+        assert (expected < -1e-6).any(), "test setup should produce in-transit points"
 
         cl_model = RRModelCL(return_grad=False)
         cl_model.set_data(TIMES, **data)
@@ -142,7 +141,7 @@ class TestForwardMatchesNumbaHeterogeneous:
         args = _kernel_args(model, params, data, ld, 2, nor)
 
         expected = rrmodel_nb(times, *args)
-        assert (expected < 0.9999).any(), "test setup should produce in-transit points"
+        assert (expected < -1e-6).any(), "test setup should produce in-transit points"
 
         cl_model = RRModelCL(return_grad=False)
         cl_model.set_data(times, **data)
@@ -173,7 +172,7 @@ class TestLimbDarkeningModels:
         args = _kernel_args(model, params, data, ld, 1, 1)
 
         expected = rrmodel_nb(TIMES, *args)
-        assert (expected < 0.9999).any(), f"{ldmodel} setup should transit"
+        assert (expected < -1e-6).any(), f"{ldmodel} setup should transit"
 
         cl_model = RRModelCL(return_grad=False)
         cl_model.set_data(TIMES, **data)
@@ -202,7 +201,7 @@ class TestMorePassbandsThanCoefficients:
 
         expected = rrmodel_nb(times, *args)
         # Before the `ldc` axis fix this configuration returned ~-8e10.
-        assert np.all(expected > 0.9), \
+        assert np.all(expected > -0.1), \
             f"reference flux should be physical once the ldc axis is right, got {expected.min()}"
 
         cl_model = RRModelCL(return_grad=False)

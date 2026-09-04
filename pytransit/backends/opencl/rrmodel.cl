@@ -4,17 +4,18 @@
  *  OpenCL RoadRunner transit model kernels (Parviainen 2020).
  *
  *  Both kernels reproduce `backends.numba.rrmodel` / `rrmodel_grad` step for
- *  step. Three conventions differ from the uniform-disk kernels and are easy to
+ *  step. Two conventions differ from the uniform-disk kernels and are easy to
  *  carry over wrongly:
  *
- *  1. The flux is *normalised*: it is 1.0 out of transit, and each supersample
- *     contributes `(ldi - Ip*A)/ldi`. It is not a deficit accumulated from zero.
- *  2. There is a per-parameter-vector validity guard. An invalid vector yields
+ *  1. There is a per-parameter-vector validity guard. An invalid vector yields
  *     an all-NaN flux and gradient row.
- *  3. Limb darkening reaches the device only as split cubic tables of the mean
+ *  2. Limb darkening reaches the device only as split cubic tables of the mean
  *     intensity under the planet disk against the grazing parameter g = z/(1+k),
  *     built on the host by `backends.numba.ldquad.rr_tables`. The device code is
  *     therefore independent of which limb-darkening profile was used.
+ *
+ *  Like the uniform-disk kernels, the flux is the *deficit* dF = F - 1: exactly
+ *  0.0 out of transit, and each supersample contributes `-(Ip*A)/ldi`.
  *
  *  NLDC (the number of limb-darkening coefficients) is a build option, so the
  *  private gradient accumulator has a static size.
@@ -28,8 +29,8 @@
    cubic coefficients (ng - 2 rows of 4). `ldm_locate` returns the row, the local
    coordinate a in [0, 1) and the interval width h.
 
-   g > 1 returns 0 so that an untransiting sample degenerates to (ldi-0)/ldi = 1;
-   the numba kernels guard the same case with `z >= 1 + k`.
+   g > 1 returns 0 so that an untransiting sample degenerates to -0/ldi = 0, the
+   correct out-of-transit deficit; the numba kernels guard the same case with `z >= 1 + k`.
 
    NaN g needs its own handling and cannot be folded into the range tests: NaN
    compares false against both, and `(int)NaN` is INT_MIN on at least NVIDIA,
@@ -125,7 +126,7 @@ __kernel void rrmodel(__global const REAL *times,      /* (npt,)          */
     REAL epoch;
     const REAL t = folded_time(times[ipt], t0v, pv, &epoch);
 
-    REAL f = (REAL)1.0;
+    REAL f = (REAL)0.0;
     if (((bt1[ipv] - et) <= t) && (t <= (bt4[ipv] + et))) {
         const REAL kv  = k[ipv * npb + ipb];
         const REAL ldiv = ldi[ipv * npb + ipb];
@@ -139,10 +140,10 @@ __kernel void rrmodel(__global const REAL *times,      /* (npt,)          */
             REAL toff = et * (((REAL)is - (REAL)0.5) / (REAL)ns - (REAL)0.5);
             REAL z = sep_c(t + toff, cf);
             /* No `z <= 1+k` guard: ccia returns 0 and the lookup returns 0
-               for g > 1, so an untransiting sample degenerates to (ldi-0)/ldi = 1. */
+               for g > 1, so an untransiting sample degenerates to -0/ldi = 0. */
             REAL ip = ldm_lookup(z / ((REAL)1.0 + kv), gcv, ng, coef_pb);
             REAL ap = ccia((REAL)1.0, kv, z);
-            f += (ldiv - ip * ap) / ldiv;
+            f += -(ip * ap) / ldiv;
         }
         f /= (REAL)ns;
     }
@@ -203,7 +204,7 @@ __kernel void rrmodel_grad(__global const REAL *times,      /* (npt,)           
     /* Only this point's own passband block is ever non-zero, so the private
        accumulator holds just the 7 orbital slots plus one passband's NLDC
        coefficients; the row is scattered on write-out. */
-    REAL f = (REAL)1.0;
+    REAL f = (REAL)0.0;
     REAL df[7 + NLDC];
     for (int m = 0; m < 7 + NLDC; m++) df[m] = (REAL)0.0;
 
@@ -233,7 +234,7 @@ __kernel void rrmodel_grad(__global const REAL *times,      /* (npt,)           
             REAL dip_dg;
             REAL ip = ldm_lookup_and_grad(g, gcv, ng, coef_pb, &dip_dg);
 
-            f += (ldiv - ip * ap) / ldiv;
+            f += -(ip * ap) / ldiv;
 
             /* dg/dz = 1/(1+k) and dg/dk = -z/(1+k)^2 at fixed z. The tabulated k
                derivative follows the node trajectory g(k); removing the part due
@@ -262,10 +263,12 @@ __kernel void rrmodel_grad(__global const REAL *times,      /* (npt,)           
 
         /* The disk-integrated intensity also depends on the LD coefficients, and
            this term uses the already-averaged flux, so it comes after the
-           division rather than inside the sample loop. */
+           division rather than inside the sample loop.
+           f is the deficit, so the old ((REAL)1.0 - f) reconstruction is just -f.
+           That subtraction was a catastrophic cancellation in the fp32 build. */
         __global const REAL *dldi_pb = dldi + (ipv * npb + ipb) * NLDC;
         for (int j = 0; j < NLDC; j++)
-            df[7 + j] += ((REAL)1.0 - f) * dldi_pb[j] / ldiv;
+            df[7 + j] += -f * dldi_pb[j] / ldiv;
     }
 
     flux[ipv * npt + ipt] = f;

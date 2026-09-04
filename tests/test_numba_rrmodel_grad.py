@@ -62,7 +62,7 @@ class TestRRGradHeterogeneousPassbands(unittest.TestCase):
             fd = (self._eval(k=kp)[0] - self._eval(k=km)[0]) / (2 * eps)
 
             anal = dflux0[:, ipb]                      # column for k of passband ipb
-            in_transit = flux0 < 0.9999
+            in_transit = flux0 < -1e-6
             same = (self.pb_of_point == ipb) & in_transit
             other = (self.pb_of_point != ipb)
             self.assertTrue(same.any())
@@ -83,7 +83,7 @@ class TestRRGradHeterogeneousPassbands(unittest.TestCase):
 
                 slot = self.ld_off + ipb * self.nldc + j
                 anal = dflux0[:, slot]
-                in_transit = flux0 < 0.9999
+                in_transit = flux0 < -1e-6
                 same = (self.pb_of_point == ipb) & in_transit
                 other = (self.pb_of_point != ipb)
                 np.testing.assert_allclose(anal[same], fd[same], rtol=1e-3, atol=1e-7,
@@ -123,7 +123,7 @@ class TestRRGradPerEpoch(unittest.TestCase):
     def test_all_columns_vs_finite_differences(self):
         eps = 1e-6
         flux0, dflux0 = self._eval(self.x)
-        in_transit = flux0 < 0.9999
+        in_transit = flux0 < -1e-6
         self.assertTrue(in_transit.any())
 
         for c in range(self.x.size):
@@ -179,7 +179,7 @@ class TestRRGradSharedOrbit(unittest.TestCase):
             tp = t0.copy(); tp[ep] += eps
             tm = t0.copy(); tm[ep] -= eps
             fd = (self._eval(tp)[0] - self._eval(tm)[0]) / (2 * eps)
-            in_transit = flux0 < 0.9999
+            in_transit = flux0 < -1e-6
             np.testing.assert_allclose(dflux0[in_transit, col], fd[in_transit],
                                        rtol=2e-3, atol=1e-6, err_msg=f"t0 epoch {ep}")
             np.testing.assert_allclose(dflux0[ep_of_point != ep, col], 0.0, atol=1e-12)
@@ -253,7 +253,7 @@ class TestRRGradBackwardCompatible(unittest.TestCase):
     def test_k_and_a_columns(self):
         eps = 1e-6
         flux0, dflux0 = self._eval()
-        in_transit = flux0 < 0.9999
+        in_transit = flux0 < -1e-6
         fd_k = (self._eval(k=0.1 + eps)[0] - self._eval(k=0.1 - eps)[0]) / (2 * eps)
         fd_a = (self._eval(a=6.0 + eps)[0] - self._eval(a=6.0 - eps)[0]) / (2 * eps)
         # k uses the dldm/dk ~= 0 approximation -> looser tol; a is analytic.

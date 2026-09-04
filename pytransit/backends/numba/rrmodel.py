@@ -225,17 +225,18 @@ def rrmodel(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray, i: 
 
             t = _folded_time(times[ipt], t0[ipv, itc], p[ipv, iep])
             if not ((bt1 - exptimes[ilc]) <= t <= (bt4 + exptimes[ilc])):
-                flux[ipv, ipt] = 1.0
+                flux[ipv, ipt] = 0.0
             else:
                 kpb = k[ipv, ipb]
                 for isample in range(1, nsamples[ilc] + 1):
                     time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
                     z = sep_c(t + time_offset, xyc[iep])
                     if z >= 1.0 + kpb:
-                        flux[ipv, ipt] += 1.0
-                    else:
-                        iplanet = ldm_lookup(z / (1.0 + kpb), gcs[ipb], n1, coef[ipb])
-                        aplanet = ccia(1.0, kpb, z)
-                        flux[ipv, ipt] += (ldi[ipv, ipb] - iplanet * aplanet) / ldi[ipv, ipb]
+                        # An untransiting sample contributes no deficit. The branch is
+                        # kept because it skips the lookup and the area computation.
+                        continue
+                    iplanet = ldm_lookup(z / (1.0 + kpb), gcs[ipb], n1, coef[ipb])
+                    aplanet = ccia(1.0, kpb, z)
+                    flux[ipv, ipt] += -(iplanet * aplanet) / ldi[ipv, ipb]
                 flux[ipv, ipt] /= nsamples[ilc]
     return flux

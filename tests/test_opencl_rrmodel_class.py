@@ -58,7 +58,7 @@ class TestMatchesNumbaBackend:
         _, flux_cl = _evaluate('opencl', False, times, data, pars)
 
         assert flux_cl.shape == (times.size,)
-        assert (flux_nb < 0.9999).any(), "test setup should produce in-transit points"
+        assert (flux_nb < -1e-6).any(), "test setup should produce in-transit points"
         np.testing.assert_allclose(flux_cl, flux_nb, atol=1e-12)
 
     def test_expanded_gradient(self):
@@ -100,7 +100,7 @@ class TestMatchesNumbaBackend:
         _, (f_nb, d_nb) = _evaluate('numba', True, times, {}, pars, ldmodel=ldmodel)
         _, (f_cl, d_cl) = _evaluate('opencl', True, times, {}, pars, ldmodel=ldmodel)
 
-        assert (f_nb < 0.9999).any(), f"{ldmodel} setup should transit"
+        assert (f_nb < -1e-6).any(), f"{ldmodel} setup should transit"
         assert d_cl.shape == (times.size, 7 + ldc.size)
         np.testing.assert_allclose(f_cl, f_nb, atol=1e-12)
         np.testing.assert_allclose(d_cl, d_nb, atol=1e-12)

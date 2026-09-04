@@ -132,7 +132,7 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
             t = _folded_time(times[ipt], t0[ipv, itc], pv)
 
             if not ((bt1 - exptimes[ilc]) <= t <= (bt4 + exptimes[ilc])):
-                flux[ipv, ipt] = 1.0
+                flux[ipv, ipt] = 0.0
             else:
                 kpb = k[ipv, ipb]
                 gc = gcs[ipb]
@@ -144,12 +144,11 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
                     t_eval = t + time_offset
                     z, dz = sep_cd(t_eval, xyc[iep], dxyc[iep])
                     if z >= 1.0 + kpb:
-                        flux[ipv, ipt] += 1.0
                         continue
                     aplanet, (dadk, dadz) = ccia_and_grad(1.0, kpb, z)
                     g = z / (1.0 + kpb)
                     iplanet, dIp_dg = ldm_lookup_and_grad(g, gc, n1, coef[ipb])
-                    flux[ipv, ipt] += (ldi_pb - iplanet * aplanet) / ldi_pb
+                    flux[ipv, ipt] += -(iplanet * aplanet) / ldi_pb
 
                     # dI_p/dz = (dI_p/dg) / (1+k)
                     dIp_dz = dIp_dg / (1.0 + kpb)
@@ -188,8 +187,10 @@ def rrmodel_grad(times: ndarray, k: ndarray, t0: ndarray, p: ndarray, a: ndarray
                 for ip in range(7 + npb * nldc):
                     dflux[ipv, ipt, ip] /= nsamples[ilc]
 
-                # Add the dldi contribution for this passband's LD coefficients
+                # Add the dldi contribution for this passband's LD coefficients.
+                # flux is now the deficit, so the old `(1.0 - flux)` reconstruction --
+                # a catastrophic cancellation in single precision -- is just `-flux`.
                 for j in range(nldc):
-                    dflux[ipv, ipt, 7 + ipb * nldc + j] += (1.0 - flux[ipv, ipt]) * dldi[ipv, ipb, j] / ldi_pb
+                    dflux[ipv, ipt, 7 + ipb * nldc + j] += -flux[ipv, ipt] * dldi[ipv, ipb, j] / ldi_pb
 
     return flux, dflux

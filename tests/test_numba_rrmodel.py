@@ -39,6 +39,9 @@ def inclination(b):
     return arccos(b / A)
 
 
+INC = inclination(0.0)
+
+
 class TestFluxAccuracy(unittest.TestCase):
     """Worst-case error over impact parameters 0, 0.7 and 0.9 against nested adaptive quadrature."""
     tolerances_ppm = {0.02: 0.5, 0.05: 1.0, 0.1: 2.5, 0.2: 5.0, 0.3: 10.0}
@@ -54,7 +57,7 @@ class TestFluxAccuracy(unittest.TestCase):
                 xyc = solve2d(0.0, P, A, inc, 0.0, 0.0)
                 z = array([sep_c(t, xyc) for t in times])
                 flux = model.evaluate(k, 0.0, P, A, inc, 0.0, 0.0, ldc=LDC)
-                worst = max(worst, 1e6 * npabs(flux - reference_flux(z, k)).max())
+                worst = max(worst, 1e6 * npabs((1.0 + flux) - reference_flux(z, k)).max())
             self.assertLess(worst, tol, f'k = {k}: {worst:.2f} ppm')
 
     def test_more_nodes_reduce_the_error(self):
@@ -66,8 +69,23 @@ class TestFluxAccuracy(unittest.TestCase):
         for nq, ng in ((8, 100), (16, 400)):
             model = RoadRunnerModel(backend='numba', nq=nq, ng=ng)
             model.set_data(times)
-            errs.append(npabs(model.evaluate(0.2, 0.0, P, A, inc, 0.0, 0.0, ldc=LDC) - reference_flux(z, 0.2)).max())
+            errs.append(npabs((1.0 + model.evaluate(0.2, 0.0, P, A, inc, 0.0, 0.0, ldc=LDC))
+                              - reference_flux(z, 0.2)).max())
         self.assertLess(errs[1], 0.3 * errs[0])
+
+    def test_out_of_transit_flux_is_exactly_zero(self):
+        """The deficit convention: out of transit the model contributes nothing at all."""
+        from pytransit.models.rrmodel import RoadRunnerModel
+        times = linspace(-0.5, 0.5, 500)          # far wider than the transit
+        model = RoadRunnerModel()
+        model.set_data(times)
+        flux = model.evaluate(0.1, 0.0, P, A, INC, 0.0, 0.0, ldc=LDC)
+        oot = npabs(times) > 0.2
+        self.assertTrue(oot.any())
+        # Exact equality, not a tolerance: 0.0 is representable and is the point of the convention.
+        self.assertTrue((flux[oot] == 0.0).all())
+        self.assertLess(flux.min(), -1e-3)         # in transit the deficit is negative
+        self.assertAlmostEqual(flux.max(), 0.0, places=15)
 
 
 class TestRadiusRatioDerivative(unittest.TestCase):

@@ -5,8 +5,7 @@ gradient both against it and, independently, against central finite differences
 of the OpenCL *forward* model, so a shared misconception in both analytic
 kernels would still be caught.
 
-RoadRunner returns normalised flux, so the in-transit mask is ``flux < 0.9999``
-rather than the uniform disk's ``flux < -1e-6``.
+RoadRunner returns the flux deficit, so the in-transit mask is ``flux < -1e-6``.
 """
 
 import numpy as np
@@ -83,7 +82,7 @@ class TestGradientMatchesNumba:
 
         assert flux_cl.shape == (1, TIMES.size)
         assert dflux_cl.shape == (1, TIMES.size, 7 + 2)   # 7 orbital + nldc=2
-        assert (flux_nb < 0.9999).any(), "test setup should produce in-transit points"
+        assert (flux_nb < -1e-6).any(), "test setup should produce in-transit points"
         np.testing.assert_allclose(flux_cl, flux_nb, atol=1e-12)
         np.testing.assert_allclose(dflux_cl, dflux_nb, atol=1e-12)
 
@@ -105,7 +104,7 @@ class TestGradientFiniteDiff:
         flux, dflux = _call(TIMES, params, data)
         fd = _fd(TIMES, name, EPS, self.BASE)
 
-        mask = flux[0] < 0.9999
+        mask = flux[0] < -1e-6
         assert mask.any(), "Should have in-transit points"
         np.testing.assert_allclose(dflux[0, mask, idx], fd[mask], rtol=rtol, atol=atol,
                                    err_msg=f"{name} gradient")
@@ -121,7 +120,7 @@ class TestGradientFiniteDiff:
         fd = (_forward(TIMES, self.BASE, ldc=lp)
               - _forward(TIMES, self.BASE, ldc=lm)) / (2 * EPS)
 
-        mask = flux[0] < 0.9999
+        mask = flux[0] < -1e-6
         assert mask.any(), "Should have in-transit points"
         np.testing.assert_allclose(dflux[0, mask, 7 + j], fd[mask], rtol=1e-3, atol=1e-7,
                                    err_msg=f"ld coefficient {j}")
@@ -134,7 +133,7 @@ class TestGradientFiniteDiff:
         flux, dflux = _call(times, params, data)
         fd = _fd(times, 'p', EPS, self.BASE)
 
-        mask = flux[0] < 0.9999
+        mask = flux[0] < -1e-6
         assert mask.any(), "Should have in-transit points"
         np.testing.assert_allclose(dflux[0, mask, 2], fd[mask], rtol=2e-3, atol=1e-6,
                                    err_msg=f"period gradient at epoch {epoch}")
@@ -160,7 +159,7 @@ class TestGradientMatchesNumbaHeterogeneous:
         flux_cl, dflux_cl = _call(times, params, data, ldc=ldc, npb=2, nor=nor)
 
         assert dflux_cl.shape == (npv, times.size, 7 + 2 * 2)  # 7 + npb*nldc
-        assert (flux_nb < 0.9999).any(), "test setup should produce in-transit points"
+        assert (flux_nb < -1e-6).any(), "test setup should produce in-transit points"
         assert np.abs(dflux_nb[..., 2]).max() > 1e-6, "period gradient should be nonzero"
         np.testing.assert_allclose(flux_cl, flux_nb, atol=1e-12)
         np.testing.assert_allclose(dflux_cl, dflux_nb, atol=1e-12)
@@ -192,7 +191,7 @@ class TestGradientMatchesNumbaHeterogeneous:
         flux_cl, dflux_cl = _call(TIMES, params, data, ldc=ldc, ldmodel=ldmodel)
 
         assert dflux_cl.shape == (1, TIMES.size, 7 + ldc.size)
-        assert (flux_nb < 0.9999).any()
+        assert (flux_nb < -1e-6).any()
         np.testing.assert_allclose(flux_cl, flux_nb, atol=1e-12)
         np.testing.assert_allclose(dflux_cl, dflux_nb, atol=1e-12)
 

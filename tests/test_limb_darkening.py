@@ -299,5 +299,5 @@ class TestMultiPassbandCoefficients:
                        pbids=np.array([0, 1, 2]))
         flux = np.asarray(model.evaluate(0.1, 0.0, 3.0, 6.0, 0.5 * np.pi,
                                          ldc=np.array([[0.3, 0.2], [0.4, 0.2], [0.5, 0.1]])))
-        assert np.all(flux > 0.9) and np.all(flux <= 1.0 + 1e-12), \
+        assert np.all(flux > -0.1) and np.all(flux <= 1e-12), \
             f"flux out of physical range: [{flux.min()}, {flux.max()}]"
