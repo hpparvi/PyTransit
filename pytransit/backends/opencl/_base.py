@@ -22,7 +22,11 @@ from numpy import ascontiguousarray, asarray, concatenate, float64, int32, zeros
 from .context import (build_options, build_program, dtype_for_precision, get_context,
                       get_queue, read_kernel_source)
 
-__all__ = ['CLModel']
+__all__ = ['CLModel', 'NSCALAR']
+
+#: Number of leading scalar reduction slots (chi2, log_e2, chi2_e2, inv_e2, r_e2),
+#: matching `NSCALAR` in `reduction.cl`. Keep the two definitions in step.
+NSCALAR = 5
 
 
 class CLModel:
@@ -295,7 +299,7 @@ class CLModel:
                 build_options(self.precision))
 
         col, kind, grp = slots
-        nslot = 5 + col.size
+        nslot = NSCALAR + col.size
         # The slot table depends only on the parameter shapes, so in a sampling
         # loop it is identical every call; re-uploading it would be three
         # avoidable round trips per likelihood evaluation.
@@ -303,7 +307,7 @@ class CLModel:
         if key != self._slot_key:
             # The five scalar sums occupy the leading slots; their col/kind/grp
             # are unused by the kernel but must be present so the arrays line up.
-            pad = zeros(5, int32)
+            pad = zeros(NSCALAR, int32)
             self._upload('_b_slot_col', concatenate([pad, asarray(col, int32)]))
             self._upload('_b_slot_kind', concatenate([pad, asarray(kind, int32)]))
             self._upload('_b_slot_grp', concatenate([pad, asarray(grp, int32)]))

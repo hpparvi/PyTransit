@@ -35,6 +35,14 @@ from numpy import (ones, ndarray, asarray, concatenate, log, ndim, pi, squeeze, 
 
 from ._utils import _npv_from_k, _param_is_expanded
 
+try:
+    from ..backends.opencl._base import NSCALAR
+except ImportError:                   # pragma: no cover - depends on the local install
+    # Only reached through loglikelihood()'s backend='opencl' path, which already
+    # requires pyopencl to be importable; this fallback just keeps the module
+    # importable without it. Keep in step with NSCALAR in backends/opencl/_base.py.
+    NSCALAR = 5
+
 
 class TransitModel:
     """Exoplanet transit light curve model.
@@ -187,7 +195,7 @@ class TransitModel:
         raise NotImplementedError
 
     def loglikelihood(self, obs, err, jitter, k, t0, p, a, i, e=0.0, w=0.0,
-                       *, baseline: float = 1.0, **kwargs):
+                      *, baseline: float = 1.0, **kwargs):
         """Log-likelihood and its gradient, reduced on the OpenCL device.
 
         Evaluates the model with ``copy=False`` and reduces the device-resident
@@ -259,12 +267,12 @@ class TransitModel:
 
         # Slot order matches reduction.cl: chi2, log_e2, chi2_e2, inv_e2, r_e2,
         # then one reduced column per gradient slot.
-        chi2, log_e2, chi2_e2, inv_e2, r_e2 = (sums[:, j] for j in range(5))
+        chi2, log_e2, chi2_e2, inv_e2, r_e2 = (sums[:, j] for j in range(NSCALAR))
         lnl = -0.5 * self.npt * log(2.0 * pi) - 0.5 * log_e2 - 0.5 * chi2
         djitter = jitter * (chi2_e2 - inv_e2)
         dbaseline = r_e2                      # d lnL/d baseline = sum(r/e2)
         # baseline goes before jitter so that grad[..., -1] is still d lnL/d jitter.
-        grad = concatenate([sums[:, 5:], dbaseline[:, None], djitter[:, None]], axis=1)
+        grad = concatenate([sums[:, NSCALAR:], dbaseline[:, None], djitter[:, None]], axis=1)
         if lnl.size == 1:
             return float(lnl[0]), grad[0]
         return lnl, grad
