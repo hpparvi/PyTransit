@@ -187,7 +187,7 @@ class TransitModel:
         raise NotImplementedError
 
     def loglikelihood(self, obs, err, jitter, k, t0, p, a, i, e=0.0, w=0.0,
-                       baseline: float = 1.0, **kwargs):
+                       *, baseline: float = 1.0, **kwargs):
         """Log-likelihood and its gradient, reduced on the OpenCL device.
 
         Evaluates the model with ``copy=False`` and reduces the device-resident

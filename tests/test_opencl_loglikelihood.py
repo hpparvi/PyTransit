@@ -40,6 +40,8 @@ def reference_loglikelihood(model, obs, err, jitter, baseline=1.0, **pars):
     flux, jac = model.evaluate(**pars)
     flux, jac = np.asarray(flux), np.asarray(jac)
     e2 = np.asarray(err) ** 2 + jitter ** 2
+    # (obs - baseline) before subtracting flux: both operands are near 1.0, so
+    # this subtraction is exact (Sterbenz), and the rest stays on the deficit scale.
     r = (np.asarray(obs) - baseline) - flux
     lnl = (-0.5 * r.size * np.log(2 * np.pi) - 0.5 * np.sum(np.log(e2))
            - 0.5 * np.sum(r ** 2 / e2))
@@ -357,6 +359,18 @@ class TestWNLogLikelihoodClass:
         got = ll(self.PARS['k'], self.PARS['t0'], self.PARS['p'], self.PARS['a'],
                  self.PARS['i'], self.PARS['e'], self.PARS['w'],
                  jitter=jitter, ldc=self.PARS['ldc'])
+        np.testing.assert_allclose(got[0], expected[0], rtol=1e-14)
+        np.testing.assert_allclose(got[1], expected[1], rtol=1e-14)
+
+    def test_matches_the_model_method_with_baseline(self):
+        """The wrapper's baseline=... forward must actually change the result,
+        matching model.loglikelihood(..., baseline=...) directly."""
+        model, obs, err, ll = self._setup()
+        jitter, baseline = 4e-4, 0.9997
+        expected = model.loglikelihood(obs, err, jitter, baseline=baseline, **self.PARS)
+        got = ll(self.PARS['k'], self.PARS['t0'], self.PARS['p'], self.PARS['a'],
+                 self.PARS['i'], self.PARS['e'], self.PARS['w'],
+                 jitter=jitter, baseline=baseline, ldc=self.PARS['ldc'])
         np.testing.assert_allclose(got[0], expected[0], rtol=1e-14)
         np.testing.assert_allclose(got[1], expected[1], rtol=1e-14)
 

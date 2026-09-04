@@ -48,7 +48,7 @@ class WNLogLikelihood(LogLikelihood):
                 self._loglikelihood = jax.jit(loglike)
 
         elif self.tm.backend == 'opencl':
-            def loglike(k, t0, p, a, i, e=0.0, w=0.0, jitter=0.0, baseline=1.0, **kwargs):
+            def loglike(k, t0, p, a, i, e=0.0, w=0.0, baseline=1.0, jitter=0.0, **kwargs):
                 return self.tm.loglikelihood(self.obs, self.err, jitter,
                                              k, t0, p, a, i, e, w,
                                              baseline=baseline, **kwargs)
