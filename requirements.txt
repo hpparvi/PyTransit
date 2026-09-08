@@ -17,4 +17,4 @@ pyopencl
 mako
 corner
 celerite
-meepmeep >= 1.0.0
+meepmeep >= 1.1.0
