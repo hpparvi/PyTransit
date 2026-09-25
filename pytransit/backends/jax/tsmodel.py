@@ -12,7 +12,7 @@ import jax
 import jax.numpy as jnp
 import jax.lax as lax
 
-from meepmeep.backends.jax.ts2d import solve_xy_p5
+from meepmeep.jax2d import solve2d
 from .ccintersection import ccia
 from .rrmodel import _compute_half_window, _pd_t15
 
@@ -78,7 +78,7 @@ def tsmodel(times, k, t0, p, a, i, e, w,
     afac = k ** 2 / kmean ** 2
 
     # Taylor coefficients for the orbit
-    cf = solve_xy_p5(0.0, p, a, i, e, w)
+    cf = solve2d(0.0, p, a, i, e, w)
 
     # Transit half-window
     half_window = _compute_half_window(kmax_val, p, a, i, e, w)

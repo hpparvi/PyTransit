@@ -19,7 +19,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import jax.lax as lax
-from meepmeep.backends.jax.ts2d import solve_xy_p5
+from meepmeep.jax2d import solve2d
 
 from .ccintersection import ccia
 from ..numba.ldquad import CUBIC_MATRICES
@@ -243,7 +243,7 @@ def rrmodel(times, k, t0, p, a, i, e, w,
 
     # Pre-compute Taylor coefficients for all epochs
     cfs = jax.vmap(
-        lambda pp, aa, ii, ee, ww: solve_xy_p5(0.0, pp, aa, ii, ee, ww)
+        lambda pp, aa, ii, ee, ww: solve2d(0.0, pp, aa, ii, ee, ww)
     )(p, a, i, e, w)
 
     # Pre-compute half-window per epoch
