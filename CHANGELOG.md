@@ -18,6 +18,14 @@
   the transit depth, raised silently. `TransitModel.set_data` stores the shift as `tref`, and the
   JAX evaluate paths subtract it from `t0`; `tref` is `0.0` for every other backend.
 
+- A user-supplied `LDModel` now works with `return_grad=True`. `RoadRunnerModel.evaluate` read an
+  `ldigmean` attribute that is only set for the built-in limb darkening laws, so the gradient path
+  raised `AttributeError`, and `LDModel` had no way to supply the gradient of the disk-integrated
+  intensity. `TransmissionSpectroscopyModel` could not evaluate an `LDModel` at all: it unpacked two
+  values from a call that returned three. The base class's numerical disk integral, which raised
+  `IndexError` for 1D coefficients and passed all passbands' coefficients to `_evaluate` at once, is
+  rewritten.
+
 ### Changed
 
 - **Breaking:** every transit model (`RoadRunnerModel`, `UniformDiskModel`, `TransmissionSpectroscopyModel`)
@@ -46,6 +54,17 @@
   planet on the radius ratio, which the weight-table version neglected. The derivative with respect to the
   grazing parameter is the analytic derivative of the tabulated cubic. The JAX backend differentiates through
   the table build, so `jax.grad` of the JAX kernel agrees with the numba gradient.
+
+- **Breaking:** `LDModel.__call__` takes a `return_grad` argument and returns the 4-tuple
+  `(ldp, ldg, ldi, dldi)` instead of `(ldp, ldg, ldi)`; `ldg` and `dldi` are `None` unless gradients
+  are requested, so a forward-only model no longer needs a `_gradient` method. A subclass that
+  overrides `__call__` must return the four values. The methods now always receive the coefficients
+  as `(npv, npb, nldc)`: `__call__` reads a 1D array as one parameter set for one passband and a 2D
+  array as `(npb, nldc)`, as the built-in laws do. The new `_integrate_gradient` method returns the
+  derivatives of the disk-integrated intensity; it and `_integrate` default to Gauss-Legendre
+  quadrature in mu of `_gradient` and `_evaluate`, and can be overridden with analytic expressions.
+  The quadrature replaces a trapezoidal rule in z, whose integrand has a square-root endpoint, and
+  reproduces the analytic integrals of the quadratic law to 1e-12 at the default `niz`.
 
 ### Fixed
 

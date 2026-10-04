@@ -231,7 +231,7 @@ class TransmissionSpectroscopyModel(TransitModel):
         # Limb darkening profiles
         # -----------------------
         if isinstance(self.ldmodel, LDModel):
-            ldp, istar = self.ldmodel(self.mu, ldc)
+            ldp, ldg, istar, distar = self.ldmodel(self.mu, ldc, self.return_grad and self.backend != "jax")
         else:
             ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
 
@@ -259,8 +259,9 @@ class TransmissionSpectroscopyModel(TransitModel):
                                  npb, int(self.nsamples.max()))
             return jnp.squeeze(result)
         elif self.return_grad:
-            ldg = evaluate_ldg(self.ldgrad, self.mu, ldc)
-            distar = evaluate_distar(self.ldigmean, ldc)
+            if not isinstance(self.ldmodel, LDModel):
+                ldg = evaluate_ldg(self.ldgrad, self.mu, ldc)
+                distar = evaluate_distar(self.ldigmean, ldc)
             return self._model(self.times, k, t0, p, a, i, e, w,
                                self.nsamples, self.exptimes,
                                ldp, ldg, istar, distar,

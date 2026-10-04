@@ -251,7 +251,7 @@ class RoadRunnerModel(TransitModel):
         k, t0, p, a, i, e, w = _normalize_parameter_shapes(k, t0, p, a, i, e, w, self.npb, self.ntc, self.nor)
 
         if isinstance(self.ldmodel, LDModel):
-            ldp, ldg, ldi = self.ldmodel(self.mu, ldc)
+            ldp, ldg, ldi, dldi = self.ldmodel(self.mu, ldc, self.return_grad)
         else:
             ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
 
@@ -277,7 +277,8 @@ class RoadRunnerModel(TransitModel):
 
         if self.return_grad:
             # Per-passband integrated-intensity derivatives, shape (npv, npb, nldc).
-            dldi = evaluate_distar(self.ldigmean, ldc)
+            if not isinstance(self.ldmodel, LDModel):
+                dldi = evaluate_distar(self.ldigmean, ldc)
             if ldg.shape[0] < npv:
                 ldg = repeat(ldg, npv, axis=0)
             if dldi.shape[0] < npv:
