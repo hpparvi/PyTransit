@@ -3,9 +3,11 @@
 JAX-compatible (jit + grad) uniform stellar disk transit model supporting
 heterogeneous light curves with multiple passbands, epochs, and supersampling.
 
-Derivative propagation uses @jax.custom_jvp: the explicit Taylor-coefficient
-derivative chain (dcf -> dz -> dflux) is registered as the JVP rule so that
-jax.grad works transparently without tracing through the full computation graph.
+The flux is a plain JAX function of the parameters (`_flux`), and its Jacobian is
+obtained from it by forward-mode autodiff (`_udmodel_fwd`). `udmodel` registers
+that Jacobian as a @jax.custom_jvp rule. The rule is linear in the tangents, so
+jax.grad works on `udmodel` even though the supersampling loop has a traced trip
+count, which reverse-mode autodiff cannot differentiate through directly.
 """
 
 import functools
@@ -13,8 +15,8 @@ import functools
 import jax
 import jax.numpy as jnp
 
-from meepmeep.backends.jax.ts2d import solve_xy_p5_d, pd_t15_d
-from .ccintersection import ccia_and_grad
+from meepmeep.jax2d import solve2d, pos_c
+from .ccintersection import ccia
 
 
 def _compute_half_window(k_max, p, a, inc, e, w):
@@ -23,6 +25,50 @@ def _compute_half_window(k_max, p, a, inc, e, w):
     ae = jnp.sqrt(1.0 - e**2) / (1.0 + e * jnp.sin(w))
     sin_arg = jnp.sqrt(jnp.maximum((1.0 + k_max)**2 - b_imp**2, 0.0)) / (a * jnp.sin(inc))
     return 0.025 + 0.5 * p / jnp.pi * jnp.arcsin(jnp.minimum(sin_arg, 1.0)) * ae
+
+
+def _point_indices(lcids, pbids, epids, nep):
+    """Passband, transit-centre and orbit index of every time point."""
+    itcs = epids[lcids]
+    ieps = itcs if nep > 1 else jnp.zeros_like(lcids)
+    return pbids[lcids], itcs, ieps
+
+
+def _flux(times, k, t0, p, a, i, e, w,
+          lcids, pbids, epids, nsamples, exptimes,
+          npb, nep):
+    """Flux deficit, shape (npt,). See `udmodel` for the parameters."""
+    # Taylor coefficients of the sky-plane position, one set per orbit
+    cfs = jax.vmap(lambda pp, aa, ii, ee, ww: solve2d(0.0, pp, aa, ii, ee, ww))(p, a, i, e, w)
+
+    # Compute half-window per orbit using max k across passbands
+    k_max = jnp.max(k)
+    half_windows = jax.vmap(
+        lambda pp, aa, ii, ee, ww: _compute_half_window(k_max, pp, aa, ii, ee, ww)
+    )(p, a, i, e, w)
+
+    ipbs, itcs, ieps = _point_indices(lcids, pbids, epids, nep)
+
+    def _single_time(tc, k_val, t0_val, p_val, cf, hw, ns, et):
+        # Fold time. The epoch has a zero derivative, so the period derivative picks
+        # up the -epoch * p term of the folded time through autodiff.
+        epoch = jnp.floor((tc - t0_val + 0.5 * p_val) / p_val)
+        dt = tc - (t0_val + epoch * p_val)
+
+        def body(isample, acc):
+            offset = et * ((isample + 0.5) / ns - 0.5)
+            x, y = pos_c(dt + offset, cf)
+            # The separation has no derivative at zero. Clamping keeps it finite
+            # there, and the flux does not depend on z while the planet is fully
+            # inside the disk.
+            z = jnp.sqrt(jnp.maximum(x * x + y * y, 1e-30))
+            return acc - ccia(1.0, k_val, z) / jnp.pi
+
+        flux = jax.lax.fori_loop(0, ns, body, jnp.zeros_like(dt)) / ns
+        return jnp.where(jnp.abs(dt) < hw, flux, 0.0)
+
+    return jax.vmap(_single_time)(times, k[ipbs], t0[itcs], p[ieps], cfs[ieps],
+                                  half_windows[ieps], nsamples[lcids], exptimes[lcids])
 
 
 def _udmodel_fwd(times, k, t0, p, a, i, e, w,
@@ -34,7 +80,7 @@ def _udmodel_fwd(times, k, t0, p, a, i, e, w,
     ----------
     times : array (npt,)
     k : array (npb,)
-    t0 : array (nep,)
+    t0 : array (ntc,)
     p, a, i, e, w : array (nep,)
     lcids : array (npt,)
     pbids : array (nlc,)
@@ -48,79 +94,19 @@ def _udmodel_fwd(times, k, t0, p, a, i, e, w,
     flux : array (npt,)
         Flux deviation (negative during transit, zero outside).
     dflux : array (npt, 7)
-        Jacobian rows: dflux/d(k, t0, p, a, i, e, w).
+        Jacobian rows: dflux/d(k, t0, p, a, i, e, w), each taken with respect to
+        the time point's own passband, transit centre or orbit.
     """
-    # Pre-compute Taylor coefficients for all epochs
-    cfs, dcfs = jax.vmap(
-        lambda pp, aa, ii, ee, ww: solve_xy_p5_d(0.0, pp, aa, ii, ee, ww)
-    )(p, a, i, e, w)
+    params = (k, t0, p, a, i, e, w)
+    flux, jvp = jax.linearize(
+        lambda *x: _flux(times, *x, lcids, pbids, epids, nsamples, exptimes, npb, nep), *params)
 
-    # Compute half-window per epoch using max k across passbands
-    k_max = jnp.max(k)
-    half_windows = jax.vmap(
-        lambda pp, aa, ii, ee, ww: _compute_half_window(k_max, pp, aa, ii, ee, ww)
-    )(p, a, i, e, w)
+    # A time point depends on one element of each parameter array, so a tangent of
+    # ones along a parameter gives the derivative with respect to that element.
+    def column(j):
+        return jvp(*[jnp.ones_like(x) if n == j else jnp.zeros_like(x) for n, x in enumerate(params)])
 
-    # Gather per-time-point parameters using index arrays
-    ilcs = lcids
-    ipbs = pbids[ilcs]
-    if nep > 1:
-        ieps = epids[ilcs]
-    else:
-        ieps = jnp.zeros_like(ilcs)
-
-    k_pt = k[ipbs]
-    t0_pt = t0[ieps]
-    p_pt = p[ieps]
-    cf_pt = cfs[ieps]
-    dcf_pt = dcfs[ieps]
-    hw_pt = half_windows[ieps]
-    ns_pt = nsamples[ilcs]
-    et_pt = exptimes[ilcs]
-
-    def _single_time(tc, k_val, t0_val, p_val, cf, dcf, hw, ns, et):
-        # Fold time
-        epoch = jnp.floor((tc - t0_val + 0.5 * p_val) / p_val)
-        dt = tc - (t0_val + epoch * p_val)
-
-        # Supersampling via lax.fori_loop
-        def body(isample, acc):
-            flux_acc, dflux_acc = acc
-            offset = et * ((isample + 0.5) / ns - 0.5)
-
-            z, dz = pd_t15_d(tc + offset, t0_val, p_val, cf, dcf)
-            z = jnp.abs(z)
-
-            area, dadk, dadz = ccia_and_grad(1.0, k_val, z)
-            flux_sample = -area / jnp.pi
-
-            dflux_sample = jnp.array([
-                -dadk / jnp.pi,
-                 dadz * dz[0] / jnp.pi,
-                -dadz * dz[1] / jnp.pi,
-                -dadz * dz[2] / jnp.pi,
-                -dadz * dz[3] / jnp.pi,
-                -dadz * dz[4] / jnp.pi,
-                -dadz * dz[5] / jnp.pi,
-            ])
-
-            return (flux_acc + flux_sample, dflux_acc + dflux_sample)
-
-        init = (jnp.float64(0.0), jnp.zeros(7))
-        flux, dflux = jax.lax.fori_loop(0, ns, body, init)
-        flux = flux / ns
-        dflux = dflux / ns
-
-        # Window mask
-        in_window = jnp.abs(dt) < hw
-        flux = jnp.where(in_window, flux, 0.0)
-        dflux = jnp.where(in_window, dflux, jnp.zeros(7))
-
-        return flux, dflux
-
-    return jax.vmap(_single_time)(
-        times, k_pt, t0_pt, p_pt, cf_pt, dcf_pt, hw_pt, ns_pt, et_pt
-    )
+    return flux, jnp.stack([column(j) for j in range(7)], axis=1)
 
 
 @functools.partial(jax.custom_jvp, nondiff_argnums=(8, 9, 10, 11, 12, 13, 14))
@@ -135,8 +121,8 @@ def udmodel(times, k, t0, p, a, i, e, w,
         Observation times.
     k : array (npb,)
         Planet-to-star radius ratio.
-    t0 : array (nep,)
-        Mid-transit time.
+    t0 : array (ntc,)
+        Mid-transit time, one per epoch.
     p : array (nep,)
         Orbital period.
     a : array (nep,)
@@ -183,16 +169,11 @@ def udmodel_jvp(lcids, pbids, epids, nsamples, exptimes, npb, nep,
                                lcids, pbids, epids, nsamples, exptimes,
                                npb, nep)
 
-    # Gather per-time-point tangent indices
-    ipbs = pbids[lcids]
-    if nep > 1:
-        ieps = epids[lcids]
-    else:
-        ieps = jnp.zeros_like(lcids)
+    ipbs, itcs, ieps = _point_indices(lcids, pbids, epids, nep)
 
     # Contract Jacobian with tangent vectors
     flux_dot = (dflux[:, 0] * k_dot[ipbs]
-              + dflux[:, 1] * t0_dot[ieps]
+              + dflux[:, 1] * t0_dot[itcs]
               + dflux[:, 2] * p_dot[ieps]
               + dflux[:, 3] * a_dot[ieps]
               + dflux[:, 4] * i_dot[ieps]

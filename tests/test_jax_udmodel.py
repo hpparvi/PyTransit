@@ -432,3 +432,68 @@ class TestValueAndGrad:
         assert float(value) > 0.0
         assert jnp.all(jnp.isfinite(grad))
         assert float(jnp.abs(grad[0])) > 1e-6
+
+
+class TestJacobianMatchesNumba:
+    """The JAX Jacobian against the analytic Numba one, through the model class."""
+
+    @staticmethod
+    def _models(times, lcids=None, epids=None, nsamples=1, exptimes=0.0, **kwargs):
+        from pytransit import UniformDiskModel
+        models = []
+        for backend in ('numba', 'jax'):
+            m = UniformDiskModel(backend=backend, return_grad=True)
+            m.set_data(times, lcids, epids=epids, nsamples=nsamples, exptimes=exptimes, **kwargs)
+            models.append(m)
+        return models
+
+    def _compare(self, models, *pars):
+        (flux_nb, dflux_nb), (flux_jax, dflux_jax) = [m.evaluate(*pars) for m in models]
+        assert np.any(flux_nb < 0.0)
+        np.testing.assert_allclose(np.asarray(flux_jax), flux_nb, rtol=1e-9, atol=1e-12)
+        np.testing.assert_allclose(np.asarray(dflux_jax), dflux_nb, rtol=1e-7, atol=1e-9)
+
+    def test_eccentric_orbit(self):
+        times = np.linspace(-0.12, 0.12, 151)
+        self._compare(self._models(times), 0.1, 0.01, P, A, I, 0.2, 0.4 * np.pi)
+
+    def test_supersampling(self):
+        times = np.linspace(-0.12, 0.12, 60)
+        self._compare(self._models(times, nsamples=5, exptimes=0.02), 0.1, 0.01, P, A, I, 0.2, 0.4 * np.pi)
+
+    def test_later_epochs_fold_the_period(self):
+        """Away from epoch 0 the period derivative includes the folding term."""
+        times = 7 * P + np.linspace(-0.12, 0.12, 151)
+        models = self._models(times)
+        self._compare(models, 0.1, 0.01, P, A, I, 0.2, 0.4 * np.pi)
+        _, dflux = models[1].evaluate(0.1, 0.01, P, A, I, 0.2, 0.4 * np.pi)
+        assert np.abs(np.asarray(dflux)[:, 2]).max() > 1.0
+
+    def test_transit_centres_with_a_shared_orbit(self):
+        """One orbit and a transit centre per epoch: each epoch must use its own centre."""
+        t = np.linspace(-0.12, 0.12, 101)
+        times = np.concatenate([t, P + t])
+        lcids = np.concatenate([np.zeros(t.size, 'int'), np.full(t.size, 1, 'int')])
+        models = self._models(times, lcids, epids=np.array([0, 1]), include_orbit_variations=False)
+        self._compare(models, 0.1, np.array([0.0, P + 0.03]), P, A, I, 0.2, 0.4 * np.pi)
+
+
+class TestReverseModeWithSupersampling:
+    def test_grad_matches_finite_diff(self):
+        """jax.grad must work although the supersampling loop has a traced trip count."""
+        times = jnp.linspace(-0.1, 0.1, 40)
+        lcids = jnp.zeros(times.size, dtype=jnp.int32)
+        ids = jnp.zeros(1, dtype=jnp.int32)
+        nsamples = jnp.full(1, 4, dtype=jnp.int32)
+        exptimes = jnp.full(1, 0.02)
+
+        def total(k, a):
+            pv = _make_1d_params(k, a=a)
+            return jnp.sum(jax_udmodel(times, pv['k'], pv['t0'], pv['p'], pv['a'], pv['i'], pv['e'], pv['w'],
+                                       lcids, ids, ids, nsamples, exptimes, 1, 1) ** 2)
+
+        g = jax.grad(total, argnums=(0, 1))(0.1, A)
+        eps = 1e-6
+        fd_k = (total(0.1 + eps, A) - total(0.1 - eps, A)) / (2 * eps)
+        fd_a = (total(0.1, A + eps) - total(0.1, A - eps)) / (2 * eps)
+        np.testing.assert_allclose([g[0], g[1]], [fd_k, fd_a], rtol=1e-5)

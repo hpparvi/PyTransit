@@ -93,8 +93,9 @@ Jacobian. The JAX backends provide forward evaluation; obtain JAX gradients with
 
 **JAX** (`backends/jax/`): Each model has a single file using `jnp` operations; no separate gradient files —
 JAX autodiff handles differentiation. `rrmodel` and `tsmodel` rely on plain JAX tracing (the branchless
-`jnp.where` kernels are already differentiable); only `udmodel` wraps an explicit `@jax.custom_jvp` to feed
-the Taylor-coefficient derivative chain.
+`jnp.where` kernels are already differentiable); only `udmodel` wraps a `@jax.custom_jvp`, whose rule
+contracts a Jacobian taken by forward-mode autodiff, so that `jax.grad` works despite the supersampling
+loop's traced trip count.
 
 **OpenCL** (`backends/opencl/`, `udmodel` and `rrmodel`): `.cl` device sources next to a Python host
 wrapper. `common.cl` holds the shared device code (circle-circle intersection, Horner separation,

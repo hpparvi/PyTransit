@@ -26,6 +26,17 @@
   `IndexError` for 1D coefficients and passed all passbands' coefficients to `_evaluate` at once, is
   rewritten.
 
+- `import pytransit` works again with MeepMeep's reorganised JAX backend. The JAX uniform-disk
+  kernel still imported `solve_xy_p5_d` and `pd_t15_d` from `meepmeep.backends.jax.ts2d`, which
+  MeepMeep removed in favour of autodiff, so importing the package failed on every backend. The
+  kernel now builds its flux from `meepmeep.jax2d.solve2d` and `pos_c` and takes the Jacobian from
+  that by forward-mode autodiff. `udmodel` keeps its `@jax.custom_jvp` rule, now fed by the autodiff
+  Jacobian, so `jax.grad` still works with supersampling; `udmodel` and `udmodel_grad` keep their
+  signatures and return values. The Jacobian agrees with the analytic Numba one to 1e-7 relative.
+- The JAX `UniformDiskModel` used the first transit centre for every epoch when the orbit was shared
+  across epochs (`include_orbit_variations=False`) and `t0` was passed per epoch. Each epoch now
+  uses its own transit centre, as on the Numba and OpenCL backends.
+
 ### Changed
 
 - **Breaking:** every transit model (`RoadRunnerModel`, `UniformDiskModel`, `TransmissionSpectroscopyModel`)
