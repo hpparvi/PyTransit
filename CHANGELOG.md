@@ -82,55 +82,64 @@
 
 - `pytransit.models.numba.ldmodels`, in favour of `pytransit.models.limb_darkening`.
 
-
 ## [2.8.1] - 2026-06-21
 
-### Changed
+### Fixed
 
-- Fixed broken tests.
-
+- Broken tests.
 
 ## [2.8.0] - 2026-06-19
 
 ### Changed
 
-- Changed to use MeepMeep 1.0.0.
+- **Breaking**: The Numba `QuadraticModel`, `UniformModel`, `QPower2Model`, `ChromosphereModel`, and `EclipseModel`
+  no longer have an `evaluate_pv` method; use `evaluate` instead.
+- All the models use the MeepMeep 1.0 API.
+- The RoadRunner-family models use transit bounding boxes.
+
+### Fixed
+
+- Eclipse model bounding box calculations.
 
 ## [2.7.1] - 2026-05-07
 
 ### Added
 
-- Added pytransit.models.new_eclise_model.EclipseModel to model secondary eclipses. 
+- `pytransit.models.new_eclipse_model.EclipseModel`, a multiplicative secondary eclipse model.
 
 ## [2.7.0] - 2026-04-27
 
 ### Added
 
-- Added a new EclipseSpectroscopyModel to model eclipse spectroscopy.
+- `EclipseSpectroscopyModel` for modelling eclipse spectroscopy.
 
 ## [2.6.19] - 2026-03-18
 
 ### Changed
 
-- Changed NumPy version requirement to >= 2.0.
+- NumPy >= 2.0 is now required.
 
 ## [2.6.18] - 2026-01-28
 
 ### Changed
 
-- Fixed a RoadRunnerModel bug introduced in v2.6.17.
+- Package data is accessed with `importlib.resources` instead of the deprecated `pkg_resources`.
+
+### Fixed
+
+- `RoadRunnerModel` flux array indexing and bounding box handling, broken in 2.6.17.
 
 ## [2.6.17] - 2025-11-27
 
 ### Changed
 
-- Improved RoadRunnerModel transit bounding box calculation for eccentric orbits.
+- Improved the `RoadRunnerModel` transit bounding box calculation for eccentric orbits.
 
 ## [2.6.16] - 2025-10-29
 
-### Changed
+### Fixed
 
- - Nympy 2.0 compatibility fixes.
+- NumPy 2.0 incompatibilities.
 
 ## [2.6.9] - 2025-07-22
 
