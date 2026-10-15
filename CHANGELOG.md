@@ -1,152 +1,80 @@
 # Changelog
 
-## [2.9.2] 2026-09-08
-
-### Added
-
-- `LCDataGroup.plot`, which plots the light curves in a grid of subplots sharing their y limits. The panels can be
-  filtered by passband, instrument, sector and transiting planet, and annotated with the instrument name, the
-  passband, and the light curve's index in the group.
-- `LCData.running_median`, `LCData.outlier_mask`, `LCData.remove_outliers` and `LCDataGroup.remove_outliers` for
-  weeding out outlying flux points. The points are clipped against a running median using a robust MAD estimate of
-  the scatter, so that the outliers cannot inflate the threshold meant to catch them, and the removal methods
-  return the number of points removed.
-- `LCData.marked` and `LCDataGroup.mark_for_removal`, `unmark`, `remove_marked`, `marked` and `n_marked` for weeding
-  out bad light curves interactively: plot the group, mark the bad ones by the index shown in their panels, plot
-  again to check, then remove them. Marking only sets a flag; `remove_marked` modifies the group in place.
-- `LCData.add_time_covariates` and `LCDataGroup.add_time_covariates`, which append the time normalised to -1 ... 1
-  and its powers to the covariates, so that a linear-in-covariates baseline can absorb a polynomial trend in time.
-- `LCData.linear_model`, the least-squares linear model of the flux in terms of the covariates.
-- `LCDataGroup.lcslices`, a list of slices splitting an array of concatenated per-light-curve values back into
-  per-light-curve arrays, matching the slices `BaseLPF` stores under the same name.
-- `ncores` and `start_method` arguments to `LogPosteriorFunction.optimize_global` and `sample_mcmc`. Setting
-  `ncores` creates a pool for the duration of the call and closes it afterwards, also if the run raises or is
-  interrupted. The pool uses 'forkserver' or 'spawn' rather than 'fork', which is unsafe after multithreaded Numba
-  code or an OpenCL context, and restricts each worker to a single Numba thread.
+## [Unreleased]
 
 ### Changed
 
-- The Numba RoadRunner models (`RoadRunnerModel`, `TransmissionSpectroscopyModel`, `OblatePlanetModel`) no longer
-  discretise the stellar disk into annuli. The mean intensity under the planet is computed by Gauss quadrature
-  matched to the transit geometry, tabulated against the grazing parameter in two segments split at the limb
-  contact, and read with a per-interval cubic. The new accuracy parameter is `nq`, the number of quadrature nodes
-  (default 8), alongside `ng` (default 100); `nz`, `nzin`, `nzlimb`, `zcut`, `precompute_weights`, `klims` and `nk`
-  are accepted and ignored with a `FutureWarning`.
-- The OpenCL RoadRunner model (`RoadRunnerModelCL`) uses the same quadrature, evaluated in two kernels that run
-  before the flux kernel, so the host work per evaluation is unchanged. 
-- The OpenCL RoadRunner model takes the projected star-planet separation from the same MeepMeep Taylor series
-  expansion as the Numba model instead of solving the orbit itself, so the two now share the orbit.
-- The OpenCL RoadRunner model takes a `precision` argument, `'single'` (the default, and the previous behaviour) or
-  `'double'`. The kernel's floating point type is a build option, so the precision is fixed when the model is
-  created, and it also sets the dtype of the returned flux.
-- A one-dimensional radius ratio array is interpreted consistently by the Numba and OpenCL RoadRunner models,
-  following the convention already used for the limb darkening coefficients: as the radius ratios per passband for a
-  single parameter vector, and as one radius ratio per parameter vector for a population. Give a population several
-  radius ratios per parameter vector as an `(npv, nk)` array.
-- `optimize_global` and `sample_mcmc` raise a `ValueError` if `pool` or `ncores` is combined with `vectorize=True`.
-  Both `DiffEvol` and `emcee` bypass the pool for a vectorised log posterior function, so the combination used to
-  run in a single process with no indication that the pool was unused.
-- `optimize_global` and `sample_mcmc` attach the pool to the DE optimiser and the MCMC sampler only for the duration
-  of the call. The pool used to be stored permanently, which left them holding a reference to a pool the caller had
-  closed and made the `pool` argument silently ineffective on every subsequent call.
-- `DiffEvol.pool` is a property that also updates the mapping function when set, so the pool can be attached and
-  detached between runs.
+- Updated the RoadRunner documentation for the quadrature-based model, with new figures of the quadrature nodes and
+  the mean intensity table.
+
+## [2.9.2] - 2026-09-08
+
+### Added
+
+- `LCDataGroup.plot` for plotting light curves in a filterable, annotated grid.
+- Robust running-median outlier removal: `LCData.outlier_mask`, `LCData.remove_outliers`, and
+  `LCDataGroup.remove_outliers`.
+- Interactive marking and removal of bad light curves in `LCDataGroup` (`mark_for_removal`, `remove_marked`, etc.).
+- `add_time_covariates` for `LCData` and `LCDataGroup` to model polynomial time trends via the covariates.
+- `LCData.linear_model` and `LCDataGroup.lcslices`.
+- `ncores` and `start_method` arguments to `optimize_global` and `sample_mcmc` for automatic, fork-safe process pools.
+
+### Changed
+
+- The RoadRunner models now use Gauss quadrature instead of stellar disk annuli. The new accuracy parameter is `nq`;
+  `nz`, `nzin`, `nzlimb`, `zcut`, `precompute_weights`, `klims`, and `nk` are deprecated and ignored.
+- `RoadRunnerModelCL` uses the same quadrature and the MeepMeep orbit as the Numba model, and accepts a `precision`
+  argument (`'single'` or `'double'`).
+- 1D radius ratio arrays are interpreted consistently by the Numba and OpenCL RoadRunner models.
+- `optimize_global` and `sample_mcmc` raise a `ValueError` when a pool is combined with `vectorize=True`, and attach
+  the pool only for the duration of the call.
 
 ### Fixed
 
-- The RoadRunner-family models raised a `ZeroDivisionError` for a radius ratio that was NaN, zero, negative or above
-  one, which a differential evolution population can propose. Such a parameter vector is now treated as invalid,
-  like one with a bad semi-major axis or eccentricity, and evaluates to NaN fluxes in every model including the
-  OpenCL one.
-- Evaluating a RoadRunner model for a population with the radius ratios given as a one-dimensional array of one
-  radius ratio per parameter vector, which the documentation allows, silently returned a single light curve computed
-  from the first radius ratio in the Numba model and raised an `IndexError` in the OpenCL one.
-- Every OpenCL model reimplements `set_data`, and all of them defaulted the exposure times to one day instead of
-  zero as `TransitModel.set_data` does.
-- Importing any OpenCL model disabled PyOpenCL's `CompilerWarning` for the whole process, including for OpenCL code
-  the caller builds itself, because each model silenced it with a module-level `filterwarnings`. The filter is now
-  scoped to the model's own program build, and the kernels are checked to build without any compiler output at all,
-  so nothing of ours is hidden by it. 
-- A single sample count or exposure time was left as a length-one array rather than applied to every light curve as
-  documented. Every model indexes them per light curve, so all but the first read past the end: the Numba models
-  raised a `ZeroDivisionError` from a garbage sample count and the OpenCL ones read out of bounds on the device.
-  Both are now broadcast to the light curves, and a count that matches neither one nor the number of light curves
-  raises a `ValueError`.
-- The RoadRunner radius ratio weight table was indexed with the wrong node spacing, `(kmax - kmin) / nk` instead of
-  `(kmax - kmin) / (nk - 1)`, so the interpolation was systematically misplaced and the model read one row past the
-  end of the table at `kmax`.
-- The small-planet profile lookup in the RoadRunner model walked off the start of the node array for a planet
-  centred inside the innermost annulus.
-- Evaluating a RoadRunner-family model for a population read past the ends of the eccentricity and argument of
-  periastron arrays when they were left at their scalar defaults, and past the end of the zero epoch array when it
-  was given as a one-dimensional vector, as documented. The results were silently wrong or raised a
-  `ZeroDivisionError`. The scalars are now broadcast to the population, a one-dimensional zero epoch vector is
-  treated as one zero epoch per parameter vector, and the oblate planet model also broadcasts scalar flattening and
-  obliquity.
-- Fixed the NumPy 2 incompatibilities in `pytransit.lpf`. The `ndarray.ptp()` calls in `BaseLPF`, `TransitAnalysis`,
-  `LegendreBaseline`, `TDVLPF` and `OCLTDVLPF` are replaced with `numpy.ptp`, and the removed `numpy.int` alias is
-  dropped from the `TDVLPF`, `OCLTDVLPF` and `OCLTTVLPF` imports, which made those three modules impossible to
-  import.
-- Fixed `ParameterSet` unpickling. Pickle reconstructs `list` subclasses by calling `extend` before restoring the
-  instance dictionary, so the overridden `extend` failed on the missing `frozen` attribute. This made every log
-  posterior function unpicklable, and any run using a pool hung indefinitely because the worker died while
-  unpickling the task.
-- `LogPosteriorFunction` no longer includes the DE optimiser and the MCMC sampler in its pickled state. Both hold a
-  reference to an unpicklable pool while running, which made the log posterior function impossible to send to the
-  pool workers.
+- RoadRunner models now return NaN instead of raising for invalid radius ratios.
+- RoadRunner population evaluation with 1D radius ratio arrays, scalar `e` and `w`, and 1D `t0` vectors.
+- RoadRunner radius ratio weight table indexing and small-planet profile lookup.
+- Single sample counts and exposure times are now broadcast to all light curves.
+- The OpenCL models defaulted the exposure times to one day instead of zero.
+- Importing an OpenCL model no longer silences PyOpenCL compiler warnings process-wide.
+- NumPy 2 incompatibilities in `pytransit.lpf`.
+- `ParameterSet` and `LogPosteriorFunction` pickling, which made pool-based runs hang.
 
 ## [2.9.1] - 2026-08-24
 
 ### Added
 
-- Added `pytransit.utils.io.LCData` and `LCDataGroup` light curve data containers. `LCData` holds a single light curve
-  with its time, flux, uncertainty, covariate, passband, instrument, and transiting planet (`pids`) metadata, and adding
-  light curves together (`lc1 + lc2`, `sum([lc1, lc2])`) gives an `LCDataGroup` that exposes the per-light-curve lists
-  and arrays `BaseLPF` expects.
-- Added `pytransit.utils.io.RVData` and `RVDataGroup`, the radial velocity counterparts of the light curve containers.
-
+- `LCData` and `LCDataGroup` light curve containers in `pytransit.utils.io`.
+- `RVData` and `RVDataGroup` radial velocity containers in `pytransit.utils.io`.
 
 ## [2.9.0] - 2026-08-18
 
 ### Added
 
-- Added `pytransit.lpf.baselines.lstsqbaseline.LSTSQBaseline`, a parameterless baseline model. Rather than adding free
-  coefficients to the parameter set, it fits the baseline to the relative residuals `flux_obs / flux_mod` by linear
-  least squares at every evaluation.
-- Added analytic disk-integrated intensity functions `ldi_nonlinear`, `ldi_general`, `ldi_square_root`,
-  `ldi_logarithmic`, `ldi_exponential`, and `ldi_power_2_pm`. All limb darkening models now have one.
-- Added `exact_areas`, `exact_ld`, and `nannuli` options to `OblatePlanetModel`, settable in the initializer and
-  overridable per call in `evaluate`. `exact_areas` computes the planet-star intersection areas with an exact analytic
-  algorithm instead of the θ-sampled scanline approximation, and `exact_ld` integrates the limb darkening over the
-  planet's exact elliptical footprint.
-- Added exact and θ-sampled ellipse-circle and ellipse-disk intersection area routines to
-  `pytransit.models.roadrunner.ecintersection`.
-- Added support for non-transiting planets in `RVLPF` via a new `is_transiting` argument.
+- `LSTSQBaseline`, a parameterless baseline fitted by linear least squares at every evaluation.
+- Analytic disk-integrated intensity functions for all limb darkening models.
+- `exact_areas`, `exact_ld`, and `nannuli` options to `OblatePlanetModel`.
+- Exact and θ-sampled ellipse-circle intersection area routines.
+- Support for non-transiting planets in `RVLPF`.
 
 ### Changed
 
-- **Breaking**: `RVLPF.__init__` and `RVModel.__init__` now require `rvis` and a new `is_transiting` sequence with one
-  entry per planet. The zero epoch parameter `tc_{i}` is renamed `t0_{i}`, non-transiting planets are parameterised by a
-  reference mean anomaly `m0_{i}` instead, and the reference time is now `floor(min(times))` rather than the mean time.
-- The limb darkening models moved from `pytransit.models.numba.ldmodels` to `pytransit.models.limb_darkening`, which
-  now holds one module per model and exports them all from its `__init__`. 
-- Changed the `RoadRunnerModel` `small_planet_limit` default from 0.05 to 0.01. 
-- Capped the RoadRunner model thread count to numba's launch-time maximum (`NUMBA_NUM_THREADS`) and set the thread count
-  explicitly with `set_num_threads`. 
-- Improved the RoadRunner model parallelization and updated the single-light-curve model.
+- **Breaking**: `RVLPF` and `RVModel` require `rvis` and `is_transiting` arguments, `tc_{i}` is renamed `t0_{i}`,
+  and the reference time is now `floor(min(times))`.
+- The limb darkening models moved from `pytransit.models.numba.ldmodels` to `pytransit.models.limb_darkening`.
+- The `RoadRunnerModel` `small_planet_limit` default changed from 0.05 to 0.01.
+- Improved the RoadRunner model parallelization and thread count handling.
 - Improved the `OblatePlanetModel` weight calculations and bounding box handling.
 
 ### Fixed
 
-- Fixed a bug in the scanline ellipse-circle intersection area routine that gave incorrect areas for some geometries,
-  affecting `OblatePlanetModel` accuracy.
-- Fixed `BaseLPF.remove_outliers` passing the unmasked covariates to `_init_data`, which left the covariates
-  inconsistent with the clipped data.
-- `BaseLPF` now standardises the covariates it stores correctly.
+- Incorrect scanline ellipse-circle intersection areas for some geometries.
+- `BaseLPF.remove_outliers` left the covariates inconsistent with the clipped data.
+- `BaseLPF` covariate standardisation.
 
 ### Deprecated
 
-- Deprecated `pytransit.models.numba.ldmodels` in favour of `pytransit.models.limb_darkening`.
+- `pytransit.models.numba.ldmodels`, in favour of `pytransit.models.limb_darkening`.
 
 
 ## [2.8.1] - 2026-06-21
