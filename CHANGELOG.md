@@ -4,8 +4,14 @@
 
 ### Changed
 
+- The package version is now derived from Git tags with `setuptools-scm` instead of being hard-coded.
 - Updated the RoadRunner documentation for the quadrature-based model, with new figures of the quadrature nodes and
   the mean intensity table.
+
+### Fixed
+
+- The Read the Docs build, which pointed at the old `doc/` directory and lacked some Sphinx extensions.
+- A `SyntaxWarning` from an invalid escape sequence in the `BaseLPF.add_as_prior` docstring.
 
 ## [2.9.2] - 2026-09-08
 
