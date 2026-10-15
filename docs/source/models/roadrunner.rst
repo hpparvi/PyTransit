@@ -12,17 +12,18 @@ The classical transit models are analytic solutions to the overlap integral of a
 disk and an opaque circle, derived separately for each limb darkening law. A new law needs a new
 derivation, and some laws have no closed-form solution at all.
 
-RoadRunner separates the problem into two parts. The *geometry* -- how much of the stellar disk the
-planet covers at each distance from the disk centre -- is solved numerically once and tabulated as
-a set of weights. The *stellar intensity profile* enters only as a set of samples on a fixed grid
-of normalised distances. The transit is then a weighted sum over that grid.
+RoadRunner separates the problem into two parts. The *geometry* -- which parts of the stellar disk
+the planet covers -- becomes a set of Gauss quadrature nodes and weights matched to the planet's
+position. The *stellar intensity profile* enters only as a table on a fixed grid, which the nodes
+read. Together they give the mean intensity under the planet, tabulated against the planet's
+position once per evaluation and read for every exposure.
 
 Two things follow:
 
 - **Any radially symmetric intensity profile works.** A built-in law, a Python callable, or a
   numerically tabulated profile from a stellar atmosphere model are all equally valid inputs.
 - **The cost barely depends on the law.** A four-coefficient non-linear profile costs about the
-  same as a linear one, because the expensive part -- the geometry -- is shared.
+  same as a linear one, because the profile is evaluated only on the fixed table grid.
 
 Accuracy is controlled by two settings: `nq`, the number of quadrature nodes used to integrate
 the profile over the planet's footprint, and `ng`, the size of the mean intensity table. The error

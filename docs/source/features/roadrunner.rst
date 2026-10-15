@@ -10,7 +10,8 @@ profile is an *input* rather than something baked into the derivation.
     :context:
     :nofigs:
 
-    from _figures.roadrunner import plot_laws, plot_profile_and_transit, plot_accuracy
+    from _figures.roadrunner import (plot_laws, plot_profile_and_transit, plot_accuracy,
+                                     plot_quadrature_nodes, plot_mean_intensity_table)
 
 Geometry and profile, separated
 -------------------------------
@@ -22,18 +23,20 @@ at all.
 
 RoadRunner breaks that coupling by splitting the problem in two.
 
-The **geometry** -- how much of the stellar disk the planet covers at each distance from the disk
-centre -- depends only on the radius ratio and the projected separation, not on how bright the star
-is anywhere. It is solved numerically once, when the model is created, and stored as a table of
-weights.
+The **geometry** -- which parts of the stellar disk the planet covers -- depends only on the radius
+ratio and the projected separation, not on how bright the star is anywhere. RoadRunner turns it
+into quadrature nodes and weights: for each planet position, a handful of distances from the disk
+centre at which to read the intensity, and how much each reading counts towards the mean
+intensity under the planet.
 
-The **intensity profile** then enters only as samples on a fixed grid of normalised distances from
-the disk centre. The transit is a weighted sum over that grid.
+The **intensity profile** enters only through those readings. It is tabulated on a fixed grid once
+per evaluation, and the nodes read it from that table, so the model never sees the function that
+produced it. The mean intensity under the planet is then tabulated against the planet's position,
+and every exposure reads it from there.
 
-Everything expensive lives in the first half, and the first half does not care what the profile
-looks like. That single fact produces the three properties the rest of this page demonstrates: any
-radially symmetric profile works, the choice costs essentially nothing, and accuracy is a
-discretisation setting rather than a property of the law.
+Nothing in this pipeline depends on the form of the profile. That single fact produces the three
+properties the rest of this page demonstrates: any radially symmetric profile works, the choice
+costs essentially nothing, and accuracy is a quadrature setting rather than a property of the law.
 
 The law is a one-line choice
 ----------------------------
@@ -100,29 +103,33 @@ The rings of alternating brightness show up as ripples in the light curve as the
 them. No analytic transit model could integrate this profile; RoadRunner does not notice that
 anything unusual has happened.
 
-A discontinuous profile is no harder:
+A sharp step in brightness is no harder:
 
 .. plot::
     :context: close-figs
     :include-source:
 
-    from numpy import where
+    from numpy import tanh
 
     @njit
     def ld_step(mu, pv):
         z = sqrt(1.0 - mu**2)
-        return where(z < 0.5, 0.8, 0.4)
+        return 0.6 + 0.2 * tanh((0.5 - z) / pv[0])
 
     tm = RoadRunnerModel(ld_step, ng=200)
     tm.set_data(time)
-    flux = tm.evaluate(k, [5], t0, p, a, i)
+    flux = tm.evaluate(k, [0.05], t0, p, a, i)
 
-    plot_profile_and_transit(ld_step, [5], flux, time, 'A step profile')
+    plot_profile_and_transit(ld_step, [0.05], flux, time, 'A step profile')
 
 The light curve reads straight off the profile. While the planet is entirely over the dim outer
-annulus the flux sits on a flat shelf, then drops sharply the moment it crosses onto the bright
-inner disk at :math:`z = 0.5`, and the corners at those crossings are as sharp as the profile's
-own discontinuity.
+annulus the flux sits on a flat shelf, then drops to a deeper minimum as it crosses onto the bright
+inner disk at :math:`z = 0.5`.
+
+The step is smooth on a scale of :math:`0.05\,R_\star`, and that is deliberate. The model
+integrates the profile by quadrature, which assumes the intensity varies smoothly between its
+nodes. A true discontinuity breaks that assumption: it leaves a staircase in the light curve that
+a larger ``nq`` smooths out, but no setting makes it exact.
 
 These two are deliberately unphysical, and that is the point: if the model handles them, the
 realistic cases -- a numerically tabulated profile from a stellar atmosphere grid, a law nobody has
@@ -138,8 +145,8 @@ derived a transit solution for, a profile with a starspot-driven feature -- are 
 The law is nearly free
 ----------------------
 
-Because the expensive half of the calculation is the geometry, and the geometry is shared, the
-choice of law barely registers. Timing a 1500-point light curve on one machine, from a
+Because the profile enters only through a fixed-size table, and the quadrature and the light curve
+never see anything else, the choice of law barely registers. Timing a 1500-point light curve on one machine, from a
 one-coefficient linear law to a six-coefficient general one:
 
 .. list-table::
@@ -168,17 +175,74 @@ one-coefficient linear law to a six-coefficient general one:
 A 1.4% spread across a sixfold change in the number of coefficients. Choosing a more flexible law
 is a modelling decision, not a performance one.
 
+How the mean intensity is computed
+----------------------------------
+
+For each planet position the model needs one number: the mean stellar intensity behind the planet.
+The intensity depends only on the distance :math:`z` from the disk centre, so the region behind the
+planet can be cut into thin rings centred on the star. Every point on a ring is equally bright, and
+only an arc of each ring lies behind the planet. The mean intensity is the intensity of each ring
+weighted by the length of its arc, summed over the rings the planet covers.
+
+That sum is an integral over :math:`z`, and the difficulty is at the planet's edges. Where a ring
+only just touches the planet its arc is vanishingly short, and moving inwards the arc grows like the
+square root of the distance to the edge: steeply at first, then levelling off. Evenly spaced
+samples handle an edge like this poorly, and would need many rings crowded against it.
+
+The model deals with the two edges in two ways.
+
+- **One edge is stretched away.** Writing the distance from that edge as a square,
+  :math:`z = z_\mathrm{edge} - s^2`, turns the steep square-root rise into a smooth curve in
+  :math:`s`.
+- **The other edge is built into the integration rule.** Gauss quadrature estimates an integral
+  from a weighted sum of a few samples, with the sample positions and weights chosen so that the
+  sum is exact for any polynomial up to a high degree. A Gauss-Jacobi rule does the same for a
+  polynomial *multiplied by* a square root that falls to zero at one end. Because the rule already
+  accounts for the square root, its samples only have to describe the smooth remainder: the
+  intensity and the rest of the geometry. On an integrand of this shape, eight Gauss-Jacobi nodes
+  reach machine precision, while eight Gauss-Legendre nodes, the standard rule for smooth
+  integrands, are still wrong in the third decimal place.
+
+The result is a short list: a few distances from the disk centre at which to read the intensity,
+and a weight for each reading. The mean intensity is the weighted average of those readings. Each
+node is a ring, so the figure draws the arc of each ring that lies behind the planet, with the line
+width proportional to the node's weight, for the default eight nodes per segment.
+
+.. plot::
+    :context: close-figs
+
+    plot_quadrature_nodes()
+
+Where the planet is decides how the integral is set up:
+
+- **On the disk**, one Gauss-Jacobi segment covers the planet. The stretched edge is the outer
+  one, and the nodes crowd towards it.
+- **Over the disk centre**, the rings inside the planet are complete circles with no edge to
+  handle, so they take a plain Gauss-Legendre segment. The partial rings further out take a
+  Gauss-Jacobi segment.
+- **Across the limb**, the integral runs in :math:`\mu` from the limb inwards, which also removes
+  the square root the intensity profile itself has at the limb. The planet's inner edge goes to
+  Gauss-Jacobi.
+
 Accuracy and the discretisation
 -------------------------------
 
 Splitting the problem buys flexibility at the cost of integrating the profile numerically, and
-that integration is where the accuracy is decided. For every radius ratio the model computes the
-mean intensity under the planet as a function of the grazing parameter by Gauss quadrature matched
-to the geometry: Gauss-Jacobi rules absorb the square-root zeros of the planet's angular extent
-at its contacts, substitutions regularise the limb, and the integration variable is chosen per
-regime so that each integrand is smooth. The result is tabulated in two segments split at the
-limb contact
--- the one place the exact function has a kink -- and read with a cubic during the evaluation.
+that integration is where the accuracy is decided.
+
+The mean intensity is tabulated against the grazing parameter :math:`g = b/(1+k)` in two segments
+split at the limb contact, where the exact function has a kink, and read with a cubic during the
+evaluation. The lower panel shows what the split buys, as flux error from the table interpolation
+alone.
+
+.. plot::
+    :context: close-figs
+
+    plot_mean_intensity_table()
+
+The split halves the worst error around the limb contact, and cuts it threefold for
+:math:`k = 0.3`. The weaker kink where the planet's edge crosses the disk centre is left unsplit;
+at the default table size it costs well under a ppm (0.1 ppm here, 0.4 ppm at :math:`k = 0.3`).
 
 Two settings control it: `nq`, the number of quadrature nodes, and `ng`, the size of the table.
 The profile itself is tabulated once per evaluation on a fixed grid, which is why a tabulated
