@@ -505,7 +505,7 @@ class BaseLPF(LogPosteriorFunction):
         self._additional_log_priors.append(T14)
 
     def add_as_prior(self, mean: float, std: float) -> None:
-        """Add a normal prior on the scaled semi-major axis :math:`(a / R_\star)`.
+        r"""Add a normal prior on the scaled semi-major axis :math:`(a / R_\star)`.
 
         Parameters
         ----------

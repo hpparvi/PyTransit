@@ -20,3 +20,5 @@ dist
 notebooks
 
 htmlcov
+
+pytransit/_version.py

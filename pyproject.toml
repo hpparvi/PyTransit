@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -27,7 +27,9 @@ homepage = 'https://github.com/hpparvi/PyTransit'
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
-version = {attr = "pytransit.__version__"}
+
+[tool.setuptools_scm]
+version_file = "pytransit/_version.py"
 
 [tool.setuptools]
 include-package-data = true

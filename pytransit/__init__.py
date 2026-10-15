@@ -41,7 +41,10 @@ Date
 
 """
 
-__version__ = '2.9.2'
+try:
+    from ._version import version as __version__
+except ImportError:
+    __version__ = '0+unknown'
 
 # Generic
 # -------

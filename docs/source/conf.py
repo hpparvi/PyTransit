@@ -92,8 +92,9 @@ plot_include_source = False
 # -- nbsphinx ----------------------------------------------------------------
 
 # Execute the example notebooks on every build so that their output always matches the
-# documented version of PyTransit.
-nbsphinx_execute = 'always'
+# documented version of PyTransit. Read the Docs has no OpenCL device and a build time limit, so
+# there the notebooks are rendered from their stored outputs instead.
+nbsphinx_execute = 'never' if os.environ.get('READTHEDOCS') else 'always'
 nbsphinx_timeout = 900
 nbsphinx_allow_errors = False
 

@@ -1,3 +1,5 @@
 ipykernel
 nbsphinx
 sphinx-book-theme
+sphinx-copybutton
+sphinx-design
