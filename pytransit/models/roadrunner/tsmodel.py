@@ -28,7 +28,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Union, List, Optional
 
-from numpy import ndarray, isscalar, atleast_2d, atleast_1d, array, zeros, pi
+from numpy import ndarray, isscalar, atleast_2d, atleast_1d, array, zeros, pi, ascontiguousarray
 from pytransit.models.roadrunner.common import calculate_weights_3d
 from scipy.integrate import trapezoid
 
@@ -154,6 +154,7 @@ class TransmissionSpectroscopyModel(RoadRunnerModel):
                 for ipv in range(npv):
                     for ipb in range(npb):
                         istar[ipv, ipb] = 2 * pi * trapezoid(self._ldz * ldpi[ipv, ipb], self._ldz)
+        ldp = ascontiguousarray(ldp)
 
         if self.parallel:
             flux = tsmodel_parallel(self.time, k, t0, p, a, i, e, w, self.nsamples, self.exptimes,

@@ -2,7 +2,7 @@ from numba import njit
 from typing import Optional
 
 from numpy import (sqrt, sin, arctan2, pi, nan, zeros, floor, arccos, linspace, ndarray, atleast_1d,
-                   atleast_2d, asarray, full, empty, concatenate, array, broadcast_to)
+                   atleast_2d, asarray, full, empty, concatenate, array, broadcast_to, int64)
 from numpy.polynomial import Polynomial
 from scipy.special import roots_jacobi, roots_legendre
 
@@ -578,6 +578,72 @@ def ldm_table(mu: ndarray, wf: ndarray, t0: float, dt: float, ldp: ndarray, out:
         out[ig] = num / den
 
 
+@njit(fastmath=True)
+def ldm_table_map(mu: ndarray, wf: ndarray, t0: float, dt: float, nmu: int):
+    """The linear map from a tabulated profile to the mean intensity table.
+
+    `ldm_table` is linear in the profile, and its nodes, weights, and interpolation stencils depend
+    only on the planet, so the map can be built once and applied to any number of profiles with
+    `ldm_table_banded`. This is what lets the spectroscopy model share the work between its
+    wavelength bins.
+
+    Each table node only reads the profile across the planet, so its row of the map is nonzero in a
+    narrow band. Returns the ``(ng, nmu)`` map and, for every row, the first and one-past-the-last
+    nonzero column.
+    """
+    ng, nn = mu.shape
+    wt = zeros((ng, nmu))
+    lo = empty(ng, dtype=int64)
+    hi = empty(ng, dtype=int64)
+    for ig in range(ng):
+        den = 0.0
+        for q in range(nn):
+            den += wf[ig, q]
+        for q in range(nn):
+            w = wf[ig, q]
+            if w == 0.0:
+                continue
+            w /= den
+            x = (sqrt(mu[ig, q]) - t0) / dt
+            if x <= 0.0:
+                wt[ig, 0] += w
+            elif x >= nmu - 1:
+                wt[ig, nmu - 1] += w
+            else:
+                i = int(x) - 1
+                if i < 0:
+                    i = 0
+                elif i > nmu - 4:
+                    i = nmu - 4
+                u = x - i
+                wt[ig, i] -= w * (u - 1) * (u - 2) * (u - 3) / 6.0
+                wt[ig, i + 1] += w * u * (u - 2) * (u - 3) / 2.0
+                wt[ig, i + 2] -= w * u * (u - 1) * (u - 3) / 2.0
+                wt[ig, i + 3] += w * u * (u - 1) * (u - 2) / 6.0
+
+        lo[ig] = 0
+        while lo[ig] < nmu - 1 and wt[ig, lo[ig]] == 0.0:
+            lo[ig] += 1
+        hi[ig] = nmu
+        while hi[ig] > lo[ig] + 1 and wt[ig, hi[ig] - 1] == 0.0:
+            hi[ig] -= 1
+    return wt, lo, hi
+
+
+@njit(fastmath=True)
+def ldm_table_banded(wt: ndarray, lo: ndarray, hi: ndarray, ldp: ndarray, scale: float, out: ndarray) -> None:
+    """The mean intensity table of one profile from the banded map of `ldm_table_map`, times `scale`."""
+    for ig in range(wt.shape[0]):
+        # Slicing the band first lets the loop index start from zero, which numba needs to drop its
+        # negative index check and vectorise the sum.
+        w = wt[ig, lo[ig]:hi[ig]]
+        p = ldp[lo[ig]:hi[ig]]
+        s = 0.0
+        for j in range(w.size):
+            s += w[j] * p[j]
+        out[ig] = scale * s
+
+
 def _cubic_matrices() -> ndarray:
     """Maps from four stencil values to the cubic's coefficients in the local interval variable.
 
@@ -608,8 +674,15 @@ def cubic_coefficients(tab: ndarray) -> ndarray:
     Lagrange interpolant on a stencil shifted inwards at the ends, so the interpolation is fourth
     order everywhere including the first and last intervals.
     """
+    c = zeros((tab.size - 1, 4))
+    cubic_coefficients_into(tab, c)
+    return c
+
+
+@njit(fastmath=True)
+def cubic_coefficients_into(tab: ndarray, out: ndarray) -> None:
+    """`cubic_coefficients` written into `out`, which has ``tab.size - 1`` rows."""
     n = tab.size
-    c = zeros((n - 1, 4))
     for i in range(n - 1):
         j = i - 1
         if j < 0:
@@ -618,9 +691,31 @@ def cubic_coefficients(tab: ndarray) -> ndarray:
             j = n - 4
         s = i - j
         for r in range(4):
-            c[i, r] = (CUBIC_MATRICES[s, r, 0] * tab[j] + CUBIC_MATRICES[s, r, 1] * tab[j + 1]
-                       + CUBIC_MATRICES[s, r, 2] * tab[j + 2] + CUBIC_MATRICES[s, r, 3] * tab[j + 3])
-    return c
+            out[i, r] = (CUBIC_MATRICES[s, r, 0] * tab[j] + CUBIC_MATRICES[s, r, 1] * tab[j + 1]
+                         + CUBIC_MATRICES[s, r, 2] * tab[j + 2] + CUBIC_MATRICES[s, r, 3] * tab[j + 3])
+
+
+@njit(fastmath=True)
+def ldm_interval(g: float, gc: float, n1: int, nc: int):
+    """The interval of the split cubic table holding grazing parameter g, and g's position in it.
+
+    `nc` is the number of intervals in the table. Returns the interval index and the local
+    position in [0, 1) that `ldm_lookup` evaluates the interval's cubic at.
+    """
+    if g < gc:
+        x = g / gc * (n1 - 1)
+        i = int(x)
+        if i > n1 - 2:
+            i = n1 - 2
+    else:
+        n2 = nc - (n1 - 1) + 1
+        x = (g - gc) / (1.0 - gc) * (n2 - 1)
+        i = int(x)
+        if i > n2 - 2:
+            i = n2 - 2
+        x += n1 - 1
+        i += n1 - 1
+    return i, x - i
 
 
 @njit(fastmath=True)
@@ -630,20 +725,7 @@ def ldm_lookup(g: float, gc: float, n1: int, coef: ndarray) -> float:
     `coef` holds the interval coefficients of both segments back to back: ``n1 - 1`` intervals
     covering [0, gc] and the rest covering [gc, 1].
     """
-    if g < gc:
-        x = g / gc * (n1 - 1)
-        i = int(x)
-        if i > n1 - 2:
-            i = n1 - 2
-    else:
-        n2 = coef.shape[0] - (n1 - 1) + 1
-        x = (g - gc) / (1.0 - gc) * (n2 - 1)
-        i = int(x)
-        if i > n2 - 2:
-            i = n2 - 2
-        x += n1 - 1
-        i += n1 - 1
-    a = x - i
+    i, a = ldm_interval(g, gc, n1, coef.shape[0])
     return coef[i, 0] + a * (coef[i, 1] + a * (coef[i, 2] + a * coef[i, 3]))
 
 
@@ -657,5 +739,5 @@ def split_cubic_coefficients(tab: ndarray, n1: int, out: ndarray) -> None:
     """
     # The split node is stored twice, once as the last node of the first segment and once as
     # the first node of the second, so the second segment starts at index n1.
-    out[:n1 - 1] = cubic_coefficients(tab[:n1])
-    out[n1 - 1:] = cubic_coefficients(tab[n1:])
+    cubic_coefficients_into(tab[:n1], out[:n1 - 1])
+    cubic_coefficients_into(tab[n1:], out[n1 - 1:])
