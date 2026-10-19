@@ -1,11 +1,9 @@
 # Changelog
 
-## [Unreleased]
+## [2.10.0] - 2026-10-19
 
 ### Changed
 
-- Rewrote the `TSModel` and `RoadRunnerModel` feature pages as short showcases, and moved the theory and accuracy
-  details into the model chapters.
 - `TSModel` is about four times faster with many wavelength bins, and with `nthreads > 1` parallelises over the bins
   instead of the exposures.
 
