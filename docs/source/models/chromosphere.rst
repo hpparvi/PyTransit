@@ -18,12 +18,14 @@ This inverts the transit shape. A model built for a limb-darkened photosphere ca
 which is why this model exists as a separate implementation rather than as a limb darkening law.
 
 The effect is large, not subtle. For a planet with :math:`k = 0.1` on a central transit, the shell
-model blocks about half as much light at mid-transit as a uniform disk would, and about three times
-as much near the limb: the transit is shallower in the middle and deeper at the edges than the
-naive :math:`k^2` expectation.
+model blocks half as much light at mid-transit as a uniform disk would, and 1.6 times as much just
+inside the limb: the transit is shallower in the middle and deeper at the edges than the naive
+:math:`k^2` expectation.
 
-The profile follows from the geometry of the shell, so the model takes no limb darkening
-coefficients.
+The model assumes an infinitesimally thin shell, whose surface brightness grows as :math:`1/\mu`
+towards the limb, and evaluates the transit analytically. The profile follows from the geometry of
+the shell, so the model takes no limb darkening coefficients. :doc:`../features/chromosphere` shows
+why limb darkening laws, and RoadRunner's numerical integration, cannot reproduce it.
 
 Usage
 -----
