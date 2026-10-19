@@ -115,7 +115,7 @@ class GravityDarkenedModel(TransitModel):
     """
 
     def __init__(self, filters: Union[float, Filter, Iterable[Filter]], rstar: float = 1.0,
-                 sres: int = 80, pres: int = 5, tres: int = 60, model: str = 'blackbody',
+                 sres: int = 160, pres: int = 20, tres: int = 60, model: str = 'blackbody',
                  tmin: float = 5000, tmax: float = 7000, accurate_mu: bool = True):
         """
 
@@ -126,9 +126,10 @@ class GravityDarkenedModel(TransitModel):
         rstar
             Stellar radius [R_Sun]
         sres
-            Stellar discretization resolution.
+            Stellar discretization resolution. Sets the accuracy of the normalising stellar flux.
         pres
-            Planet discretization resolution.
+            Planet discretization resolution. Sets the accuracy of the mean stellar intensity
+            behind the planet, mostly at ingress and egress.
         tres
             Orbit discretization resolution.
         model
@@ -137,6 +138,11 @@ class GravityDarkenedModel(TransitModel):
             Minimum allowed temperature [K].
         tmax
             Maximum allowed temperature [K].
+
+        Notes
+        -----
+        With the default resolution the model error is 30 to 50 ppm for a radius ratio of 0.1.
+        ``sres=160, pres=40, tres=240`` brings it to 10 to 25 ppm at roughly eight times the cost.
         """
         super().__init__()
 
@@ -271,6 +277,56 @@ class GravityDarkenedModel(TransitModel):
             fig.tight_layout()
         return ax
 
+    def evaluate(self, k: Union[float, ndarray], rho: float, rperiod: float, tpole: float, phi: float,
+                 beta: float, ldc: Union[ndarray, Iterable[float]], t0: float, p: float, a: float, i: float,
+                 l: float = 0.0, e: float = 0.0, w: float = 0.0, copy: bool = True) -> ndarray:
+        """Evaluate the transit model for a single set of parameters.
+
+        Parameters
+        ----------
+        k : float or array-like
+            Radius ratio as a float, or one radius ratio per passband as a 1D array.
+        rho : float
+            Stellar density [g/cm^3].
+        rperiod : float
+            Stellar rotation period [d].
+        tpole : float
+            Temperature at the pole [K].
+        phi : float
+            Star's obliquity to the plane of the sky [rad].
+        beta : float
+            Gravity darkening exponent.
+        ldc : array-like
+            Quadratic limb darkening coefficients, two per passband, as a 1D array or a list.
+        t0 : float
+            Zero epoch.
+        p : float
+            Orbital period [d].
+        a : float
+            Scaled orbital semi-major axis [R_star].
+        i : float
+            Orbital inclination [rad].
+        l : float, optional
+            Orbital azimuth angle, the projected spin-orbit angle [rad].
+        e : float, optional
+            Orbital eccentricity.
+        w : float, optional
+            Argument of periastron [rad].
+        copy : bool, optional
+            Kept for compatibility with the transit model API; currently unused.
+
+        Returns
+        -------
+        ndarray
+            Modelled flux as a 1D ndarray.
+
+        Notes
+        -----
+        Unlike the other transit models, this model evaluates one parameter vector per call.
+        """
+        return self._evaluate(atleast_1d(asarray(k, dtype=float)), rho, rperiod, tpole, phi, beta,
+                              asarray(ldc, dtype=float), t0, p, a, i, l, e, w)
+
     @deprecated_evaluation_method()
     def evaluate_ps(self, k: Union[float, ndarray], rho: float, rperiod: float, tpole: float, phi: float,
                     beta: float, ldc: ndarray, t0: float, p: float, a: float, i: float, l: float = 0.0,
@@ -308,20 +364,16 @@ class GravityDarkenedModel(TransitModel):
         w : float, optional
             Argument of periastron
 
-        Notes
-        -----
-        This version of the `evaluate` method is optimized for calculating a single transit model. If you want to
-        evaluate the model for a large number of parameters simultaneously, use `evaluate`.
-
         Returns
         -------
         ndarray
             Modelled flux as a 1D ndarray.
         """
+        return self._evaluate(asarray(k), rho, rperiod, tpole, phi, beta, asarray(ldc), t0, p, a, i, l, e, w)
 
-        ldc = asarray(ldc)
-        k = asarray(k)
-
+    def _evaluate(self, k: ndarray, rho: float, rperiod: float, tpole: float, phi: float, beta: float,
+                  ldc: ndarray, t0: float, p: float, a: float, i: float, l: float, e: float, w: float) -> ndarray:
+        """The model evaluation shared by `evaluate` and the deprecated `evaluate_ps`."""
         if self.time is None:
             raise ValueError("Need to set the data before calling the transit model.")
         if ldc.size != 2*self.npb:
@@ -381,7 +433,7 @@ class GravityDarkenedModel(TransitModel):
 
         if plot:
             fig, ax = subplots()
-            ax.imshow(fstar[0], extent=(-1, 1, -1, 1))
+            ax.imshow(fstar[0], extent=(-1, 1, -1, 1), origin='lower')
             ax.plot(px, py)
             fig.tight_layout()
 

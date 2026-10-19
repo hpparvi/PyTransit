@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `GravityDarkenedModel.evaluate`, the supported replacement for the deprecated `evaluate_ps`. It also accepts a
+  scalar `k` and a list `ldc`.
+
+### Changed
+
+- **Breaking**: The `GravityDarkenedModel` default resolution is now `sres=160, pres=20` (was `sres=80, pres=5`),
+  reducing the model error from about 165 ppm to 30-50 ppm at about five times the cost.
+
+### Fixed
+
+- `GravityDarkenedModel` computing the planet-star overlap as if the flattened star were circular, which delayed the
+  contacts of paths crossing near the stellar poles and gave errors of up to ~300 ppm for misaligned orbits.
+- `GravityDarkenedModel.evaluate_brute(plot=True)` drawing the star upside down relative to the planet's path.
+
 ## [2.10.0] - 2026-10-19
 
 ### Changed

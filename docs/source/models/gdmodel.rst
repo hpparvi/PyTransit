@@ -63,32 +63,60 @@ Usage
 
 .. code-block:: python
 
-    from numpy import pi, array
+    from numpy import pi, linspace
     from pytransit import GravityDarkenedModel
     from pytransit.contamination import BoxcarFilter
+
+    time = linspace(-0.12, 0.12, 500)
 
     tm = GravityDarkenedModel(filters=BoxcarFilter('TESS', 600, 1000),
                               model='blackbody', tmin=6000, tmax=9000)
     tm.set_data(time)
 
-    flux = tm.evaluate_ps(k=[0.1], rho=0.5, rperiod=0.5, tpole=8000.0, phi=0.3, beta=0.25,
-                          ldc=array([0.2, 0.1]), t0=0.0, p=2.0, a=5.0, i=0.5*pi, l=0.4)
+    flux = tm.evaluate(k=0.1, rho=0.5, rperiod=0.5, tpole=8000.0, phi=0.3, beta=0.25,
+                       ldc=[0.2, 0.1], t0=0.0, p=2.0, a=5.0, i=0.5*pi, l=0.4)
 
-.. warning::
-
-    **This model has no supported evaluation method.** Unlike every other model it never gained an
-    ``evaluate`` method, so its only entry point is ``evaluate_ps`` -- which is deprecated as of
-    PyTransit 2.9 and scheduled for removal in 3.0. Until the model gains an ``evaluate`` method,
-    calling it emits a deprecation warning that has no alternative to point to. The method itself
-    is documented in :doc:`../api/deprecated`.
-
-    ``evaluate_brute`` provides a slower brute-force evaluation useful for checking the fast one,
-    and is not deprecated.
+Unlike the other models, `evaluate` takes a single parameter vector per call.
 
 .. note::
 
-    This model needs ``k`` as a 1D array and ``ldc`` as an ndarray. A scalar ``k`` raises a Numba
-    typing error rather than being broadcast.
+    Before PyTransit 2.11 the model had no ``evaluate`` method, and ``evaluate_ps`` was its only
+    entry point. ``evaluate_ps`` is deprecated and will be removed in PyTransit 3.0; ``evaluate``
+    takes the same arguments, and additionally accepts a scalar ``k`` and a list ``ldc``.
+
+Accuracy and resolution
+-----------------------
+
+The model integrates numerically over a discretised stellar surface and planet, so its accuracy is
+set by three resolutions: ``sres`` for the star, ``pres`` for the planet, and ``tres`` for the
+orbit. For a radius ratio of 0.1, measured against the analytic Mandel & Agol model for a
+non-rotating star, and against the brute-force evaluation for a rapidly rotating star with
+misaligned orbits (whose own error at 1500 pixels is 10 to 15 ppm):
+
+.. list-table::
+    :header-rows: 1
+    :widths: 28 24 24 24
+
+    * - ``sres``, ``pres``, ``tres``
+      - Non-rotating star
+      - Rotating star
+      - Time per 1000 points
+    * - 160, 20, 60 (default)
+      - 30 ppm
+      - 50 ppm
+      - 3 ms
+    * - 160, 40, 240
+      - 10 ppm
+      - 26 ppm
+      - 24 ms
+
+``sres`` sets the accuracy of the normalising stellar flux, and ``pres`` that of the mean stellar
+intensity behind the planet, which matters most at ingress and egress. Before PyTransit 2.11 the
+defaults were ``sres=80, pres=5``, which gave errors of about 165 ppm.
+
+``evaluate_brute`` renders the stellar disk as an image and sums the pixels behind the planet. It
+is far slower, but its only approximation is the image resolution, which makes it the reference for
+checking the fast model in a new region of parameter space.
 
 Visualisation
 -------------
@@ -105,5 +133,5 @@ API
 ---
 
 .. autoclass:: pytransit.models.gdmodel.GravityDarkenedModel
-    :members: evaluate_brute, visualize
+    :members: evaluate, evaluate_brute, visualize
     :special-members: __init__

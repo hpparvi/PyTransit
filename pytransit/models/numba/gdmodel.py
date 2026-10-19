@@ -21,7 +21,7 @@ from numpy import exp, pi, sqrt, zeros, sin, cos, nan, inf, linspace, meshgrid, 
 
 from meepmeep.backends.numba.point2d import solve2d, find_contact_point, bounding_box
 
-from ..roadrunner.common import circle_circle_intersection_area
+from ..roadrunner.ecintersection import ellipse_circle_intersection_area_exact
 
 d2sec = 24.*60.*60.
 
@@ -508,6 +508,28 @@ def find_contact_point_2d(k: float, point: int, az, feff, c):
 
 
 @njit
+def star_planet_overlap(x: float, y: float, k: float, f: float) -> float:
+    """The area of the planet's disk inside the projected stellar disk.
+
+    The stellar disk is an ellipse with semi-axes 1 and 1 - f along x and y, and the planet a
+    circle of radius `k` centred at (x, y). Scaling by 1/k turns the planet into the unit circle and
+    the star into an ellipse with semi-major axis 1/k, which is the problem
+    `ellipse_circle_intersection_area_exact` solves.
+    """
+    z = sqrt(x * x + y * y)
+    if z >= 1.0 + k:
+        return 0.0
+
+    # Points of the planet lie at most k / (1 - f) further out than its centre in the stretched
+    # coordinates where the star is the unit circle, so this test never misclassifies an overlap.
+    b = 1.0 - f
+    if sqrt(x * x + (y / b) ** 2) + k / b <= 1.0:
+        return pi * k * k
+
+    return k * k * ellipse_circle_intersection_area_exact(-x / k, -y / k, z / k, 1.0 / k, f, 0.0)
+
+
+@njit
 def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
                    mstar, rstar, ostar, tpole, gpole,
                    f, feff, sphi, cphi, beta, ftable, teff0, dteff,
@@ -570,8 +592,7 @@ def oblate_model_s(t, k, t0, p, a, aa, i, e, w, ldc,
 
                     x, y = xy_taylor_st(to, sa, ca, c)
 
-                    b = sqrt(x**2 + (y / (1. - feff))**2)
-                    ia = circle_circle_intersection_area(1., _k, b)
+                    ia = star_planet_overlap(x, y, _k, feff)
                     flux[j] += (istar[ipb] - ml * ia) / istar[ipb]
 
                 flux[j] /= nsamples[ilc]
