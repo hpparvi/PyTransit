@@ -53,8 +53,11 @@ Accuracy levels
       - Analytic ellipse-circle
       - Integrated over the exact elliptical footprint
 
-The **default** is below the ppm level for a spherical planet but can reach tens of ppm for a
-strongly oblate planet in a grazing geometry.
+The **default** is below the ppm level for a spherical planet, but its error grows roughly in
+proportion to the flattening and is concentrated at ingress and egress: about 30 ppm for
+:math:`f = 0.1` and up to about 80 ppm for :math:`f = 0.3`. This is enough when the oblateness is a
+nuisance parameter, but not when it is the measurement; :doc:`../features/opmodel` compares the
+settings with the oblateness signal itself.
 
 **``exact_areas``** replaces the scanline intersection areas with an analytic ellipse-circle
 intersection algorithm accurate to machine precision, removing the geometric discretisation error
