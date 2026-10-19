@@ -169,16 +169,14 @@ def tsmodel_parallel(times: ndarray,
                     z = sep_c(tc + time_offset, xyc)
                     ap0, kappa = ccia(1.0, kmean, z)
                     dadk = 2.0*kmean*kappa
-                    for ipb in range(npb):
-                        if z <= 1.0 - kmax:
-                            for ipb in range(npb):
-                                iplanet = ldm_lookup(z / (1.0 + kmean), gc, n1, coef[ipb])
-                                flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * ap0 * afac[ipb]) / istar[ipv, ipb]
-                        else:
-                            for ipb in range(npb):
-                                iplanet = ldm_lookup(z / (1.0 + kmean), gc, n1, coef[ipb])
-                                flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * (
-                                            ap0 + (k[ipv, ipb] - kmean) * dadk)) / istar[ipv, ipb]
+                    if z <= 1.0 - kmax:
+                        for ipb in range(npb):
+                            iplanet = ldm_lookup(z / (1.0 + kmean), gc, n1, coef[ipb])
+                            flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * ap0 * afac[ipb]) / istar[ipv, ipb]
+                    else:
+                        for ipb in range(npb):
+                            iplanet = ldm_lookup(z / (1.0 + kmean), gc, n1, coef[ipb])
+                            flux[ipv, ipb, ipt] += (istar[ipv, ipb] - iplanet * (ap0 + (k[ipv, ipb]-kmean)*dadk)) / istar[ipv, ipb]
                 flux[ipv, :, ipt] /= nsamples[0]
     set_num_threads(nthreads_current)
     return flux

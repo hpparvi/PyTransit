@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Expanded the transmission spectroscopy feature page with worked examples, timings, and accuracy figures.
+
+### Fixed
+
+- `TSModel` with `nthreads > 1` summing each in-transit exposure once per wavelength bin, giving fluxes near `npb`.
+
 ## [2.9.3] - 2026-10-15
 
 ### Changed
