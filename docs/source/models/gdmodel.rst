@@ -80,7 +80,7 @@ Unlike the other models, `evaluate` takes a single parameter vector per call.
 
 .. note::
 
-    Before PyTransit 2.11 the model had no ``evaluate`` method, and ``evaluate_ps`` was its only
+    Before PyTransit 2.10.1 the model had no ``evaluate`` method, and ``evaluate_ps`` was its only
     entry point. ``evaluate_ps`` is deprecated and will be removed in PyTransit 3.0; ``evaluate``
     takes the same arguments, and additionally accepts a scalar ``k`` and a list ``ldc``.
 
@@ -111,7 +111,7 @@ misaligned orbits (whose own error at 1500 pixels is 10 to 15 ppm):
       - 24 ms
 
 ``sres`` sets the accuracy of the normalising stellar flux, and ``pres`` that of the mean stellar
-intensity behind the planet, which matters most at ingress and egress. Before PyTransit 2.11 the
+intensity behind the planet, which matters most at ingress and egress. Before PyTransit 2.10.1 the
 defaults were ``sres=80, pres=5``, which gave errors of about 165 ppm.
 
 ``evaluate_brute`` renders the stellar disk as an image and sums the pixels behind the planet. It
