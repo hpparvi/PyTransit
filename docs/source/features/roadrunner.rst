@@ -6,6 +6,10 @@ is PyTransit's recommended general-purpose transit model. Its distinguishing fea
 stellar intensity profile is an *input* to the model rather than something built into its
 derivation. Any radially symmetric profile works, and the choice costs essentially nothing.
 
+The flexibility does not cost speed either. For most realistic analyses RoadRunner is faster than
+the analytic quadratic model of Mandel & Agol, and for long light curves four times faster, even
+when evaluated to an accuracy of 1 ppm.
+
 .. plot::
     :context:
     :nofigs:
@@ -153,6 +157,37 @@ the six-coefficient general one:
 
 The differences are a few microseconds, about as large as the variation between timing runs.
 Choosing a more flexible law is a modelling decision, not a performance one.
+
+Faster than the analytic model
+------------------------------
+
+An evaluation has two parts: a fixed cost, building the table of the mean stellar intensity behind
+the planet, and one lookup in that table for every exposure. The analytic quadratic model of
+Mandel & Agol, :class:`~pytransit.models.ma_quadratic.QuadraticModel`, has almost no fixed cost,
+but evaluates elliptic integrals for every exposure. Once a light curve is long enough to spread
+the fixed cost, RoadRunner is faster:
+
+.. plot::
+    :context: close-figs
+
+    from _figures.rr_benchmark import plot_benchmark
+    plot_benchmark()
+
+With the default settings RoadRunner overtakes the exact quadratic model at about 900 exposures,
+and for long light curves it needs 13.6 ns per exposure against 55 ns, four times less. This holds
+at every accuracy level from 500 ppm to 1 ppm, since the accuracy changes only the fixed cost.
+RoadRunner is also 1.7 times faster than the quadratic model's interpolated mode, which is accurate
+to only about 11 ppm.
+
+Most analyses are well past the crossover. A single TESS sector at two-minute cadence has about
+20 000 exposures. Long-cadence data are usually supersampled, which multiplies the number of points
+evaluated: 300 long-cadence exposures with ten samples each already run 1.5 times faster with
+RoadRunner. A joint fit of several transits evaluates all of them in one call. The quadratic model
+is faster only for a single short light curve, such as one ground-based transit of a few hundred
+exposures, where both models take a few tens of microseconds per evaluation.
+
+The timings are for a single thread on one machine; :doc:`../models/roadrunner` describes the
+benchmark and how to run it on your own.
 
 Accuracy
 --------

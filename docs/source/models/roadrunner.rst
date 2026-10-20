@@ -184,6 +184,86 @@ The parameters `nz`, `nzin`, `nzlimb`, `zcut`, `precompute_weights`, `klims` and
 versions are accepted and ignored with a `FutureWarning`: the disk is no longer discretised into
 annuli, and there is no weight table to precompute.
 
+Speed against the quadratic model
+---------------------------------
+
+An evaluation has two parts. Building the mean intensity table is a fixed cost that grows with `nq`
+and `ng`, and each exposure then costs one table lookup, whatever the accuracy setting. The analytic
+quadratic model of Mandel & Agol has almost no fixed cost, but evaluates elliptic integrals for
+every exposure. RoadRunner is therefore slower for short light curves and faster for long ones.
+
+The benchmark compares four RoadRunner accuracy levels, and the defaults, with
+:class:`~pytransit.models.ma_quadratic.QuadraticModel`, both exact and with its interpolated mode.
+Each level is the cheapest ``nq, ng`` whose worst-case error against the exact quadratic model stays
+below the target for radius ratios up to 0.2 and impact parameters up to 0.9:
+
+.. list-table::
+    :header-rows: 1
+    :widths: 22 14 14 25 25
+
+    * - Model
+      - ``nq``
+      - ``ng``
+      - Worst-case error
+      - Faster than the exact quadratic model above
+    * - RoadRunner, 1 ppm
+      - 5
+      - 300
+      - 0.9 ppm
+      - 1350 exposures
+    * - RoadRunner, default
+      - 8
+      - 100
+      - 5.9 ppm
+      - 910 exposures
+    * - RoadRunner, 10 ppm
+      - 4
+      - 75
+      - 7.2 ppm
+      - 690 exposures
+    * - RoadRunner, 100 ppm
+      - 3
+      - 20
+      - 48 ppm
+      - 560 exposures
+    * - RoadRunner, 500 ppm
+      - 2
+      - 10
+      - 316 ppm
+      - 530 exposures
+    * - Quadratic, interpolated
+      -
+      -
+      - 11 ppm
+      -
+
+Both models run on a single thread, for a light curve where about half of the exposures are in
+transit:
+
+.. plot::
+    :context: close-figs
+
+    from _figures.rr_benchmark import plot_benchmark
+    plot_benchmark()
+
+For long light curves every RoadRunner level costs the same, 13.6 ns per exposure, against 55 ns
+for the exact quadratic model and 24 ns for the interpolated one. RoadRunner is then four times
+faster than the exact model and 1.7 times faster than the interpolated one, even at an accuracy of
+1 ppm, where the interpolated model is accurate to 11 ppm. The accuracy setting only decides how
+many exposures it takes to reach that point: RoadRunner overtakes the interpolated model above
+2300 exposures at 500 ppm, and above 5900 exposures at 1 ppm.
+
+The accuracy is therefore almost free for the light curves where speed matters most. A fit to a
+short light curve is fast with either model. For a long one, such as a TESS or Kepler light curve
+or a spectroscopic time series, the 1 ppm setting costs 19% more than the 500 ppm one at 10 000
+exposures, and 2% more at 100 000.
+
+.. note::
+
+    The timings were measured on an AMD Ryzen 7 5800X with Numba 0.62, and depend on the machine.
+    To measure them on your own, run ``python docs/source/_figures/rr_benchmark.py`` in a source
+    checkout, which rewrites the data this figure is drawn from.
+
 Examples
 --------
 
