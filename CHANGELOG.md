@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `BFModel`, a brute-force transit model that integrates the stellar brightness numerically, for testing the other
+  models. It supports oblate planets and stars, radial profiles or arbitrary 2D brightness functions, and an exact
+  Keplerian orbit.
+
 ## [2.10.1] - 2026-10-20
 
 ### Added

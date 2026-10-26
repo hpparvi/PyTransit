@@ -35,6 +35,8 @@ Choosing a model
       - :doc:`UniformModel <uniform>`
     * - GPU acceleration
       - :doc:`the OpenCL models <opencl>`
+    * - Testing another model
+      - :doc:`BFModel <bfmodel>`
 
 **Start with RoadRunner.** It supports any radially symmetric limb darkening law, is fast, and is
 accurate to a few ppm with its default settings for typical radius ratios. The specialised models
@@ -137,3 +139,9 @@ The catalogue
     :caption: GPU models
 
     opencl
+
+.. toctree::
+    :maxdepth: 2
+    :caption: Reference model
+
+    bfmodel

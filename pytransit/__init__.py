@@ -61,6 +61,7 @@ from .models.ma_chromosphere import ChromosphereModel
 from .models.general import GeneralModel
 from .models.osmodel import OblateStarModel
 from .models.gdmodel import GravityDarkenedModel
+from .models.bfmodel import BFModel
 
 from .models import RoadRunnerModel, OblatePlanetModel, TransmissionSpectroscopyModel, EclipseSpectroscopyModel, ESModel
 
