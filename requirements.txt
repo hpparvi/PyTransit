@@ -16,5 +16,4 @@ emcee
 pyopencl
 mako
 corner
-celerite
 meepmeep >= 1.1.0

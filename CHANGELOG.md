@@ -8,6 +8,11 @@
   models. It supports oblate planets and stars, radial profiles or arbitrary 2D brightness functions, and an exact
   Keplerian orbit.
 
+### Changed
+
+- `celerite` is an optional dependency, imported only when a Gaussian process log-likelihood
+  (`CeleriteLogLikelihood`, `lnlikelihood='celerite'`) is created.
+
 ## [2.10.1] - 2026-10-20
 
 ### Added

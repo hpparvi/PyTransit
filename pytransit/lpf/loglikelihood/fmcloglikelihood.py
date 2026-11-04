@@ -18,17 +18,13 @@ from numpy import asarray, unique, zeros, inf, squeeze, zeros_like, isfinite, lo
 from scipy.optimize import minimize
 from tqdm.auto import tqdm
 
-try:
-    from celerite import GP
-    from celerite.terms import Matern32Term
-    with_celerite = True
-except ImportError:
-    with_celerite = False
-
 class FrozenMultiCeleriteLogLikelihood:
     def __init__(self, lpf, name: str = 'gp', lcids=None):
-        if not with_celerite:
-            raise ImportError("CeleriteLogLikelihood requires celerite.")
+        # celerite is imported where it is used so that importing PyTransit does not load it.
+        try:
+            import celerite
+        except ImportError:
+            raise ImportError("FrozenMultiCeleriteLogLikelihood requires celerite.") from None
 
         self.name = name
         self.lpf = lpf
@@ -41,6 +37,9 @@ class FrozenMultiCeleriteLogLikelihood:
         self.learn_gps()
 
     def learn_gps(self):
+        from celerite import GP
+        from celerite.terms import Matern32Term
+
         for lcid in tqdm(self.lcids, desc='Learning GPs', leave=False):
             kernel = Matern32Term(log(self.lpf.fluxes[lcid].std()), log(0.1))
             gp = GP(kernel, mean=0.0)
