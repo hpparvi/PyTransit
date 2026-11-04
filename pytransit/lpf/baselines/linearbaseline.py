@@ -16,7 +16,7 @@
 
 from typing import Optional
 from numba import prange, njit
-from numpy import atleast_2d, zeros, dot, array, concatenate, squeeze, r_, inf, unique, full, ndarray, ones
+from numpy import atleast_2d, zeros, array, concatenate, squeeze, r_, inf, unique, full, ndarray, ones
 
 from ...param import LParameter, NormalPrior as NP
 
@@ -32,7 +32,12 @@ def linear_model(pvp, cids, cstart, ncov, cova):
             ilc = cids[ipt]  # Current local light curve index
             cst = cstart[ilc]  # Start of the coefficients in the parameter vector
             nc = ncov[ilc]  # Number of covariates for the current light curve
-            bl[ipv, ipt] = pvp[ipv, cst] + dot(pvp[ipv, cst + 1:cst + nc + 1], cova[ii:ii + nc])
+            # An explicit loop instead of dot: pvp is usually a non-contiguous column slice of the
+            # population, and nc is small enough that the loop is faster than a dot call per point.
+            b = pvp[ipv, cst]
+            for ic in range(nc):
+                b += pvp[ipv, cst + 1 + ic] * cova[ii + ic]
+            bl[ipv, ipt] = b
             ii += nc
     return bl
 
