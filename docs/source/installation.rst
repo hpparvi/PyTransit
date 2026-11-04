@@ -32,7 +32,7 @@ installed automatically.
 Optional dependencies
 ---------------------
 
-Two features depend on packages that are not installed automatically.
+Three features depend on packages that are not installed automatically.
 
 **PyOpenCL** enables the GPU models described in :doc:`guide/opencl`. It also needs a working
 OpenCL runtime for your device, which is installed separately and depends on your hardware and
@@ -50,8 +50,15 @@ profiles from stellar atmosphere models rather than from an analytic law. See
 
     pip install ldtk
 
-Both imports are guarded, so PyTransit works without them; only the corresponding features are
-unavailable.
+**celerite** enables the Gaussian process noise models of the log posterior functions, such as
+``BaseLPF(..., lnlikelihood='celerite')``.
+
+.. code-block:: bash
+
+    pip install celerite
+
+All three imports are guarded, so PyTransit works without them; only the corresponding features
+are unavailable.
 
 Verifying the installation
 --------------------------
