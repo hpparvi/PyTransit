@@ -198,3 +198,14 @@ class TestInternalPool:
         lpf.sample_mcmc(niter=3, thin=1, ncores=2, vectorize=False, use_tqdm=False)
         assert lpf.sampler.pool is None
         assert lpf.sampler.chain.shape[0] == 10
+
+
+def test_optimize_global_is_reproducible_with_the_global_seed():
+    import numpy as np
+    populations = []
+    for _ in range(2):
+        np.random.seed(7)
+        lpf = GaussianLPF()
+        lpf.optimize_global(niter=20, npop=16, plot_convergence=False, use_tqdm=False)
+        populations.append(lpf.de.population.copy())
+    assert (populations[0] == populations[1]).all()

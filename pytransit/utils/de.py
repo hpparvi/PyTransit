@@ -1,5 +1,5 @@
 #  PyTransit: fast and easy exoplanet transit modelling in Python.
-#  Copyright (C) 2010-2019  Hannu Parviainen
+#  Copyright (C) 2010-2026  Hannu Parviainen
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -14,25 +14,43 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Implements the differential evolution optimization method by Storn & Price
-(Storn, R., Price, K., Journal of Global Optimization 11: 341--359, 1997)
+"""Differential evolution global optimiser.
 
-.. moduleauthor:: Hannu Parviainen <hpparvi@gmail.com>
+Implements the differential evolution optimisation method by Storn & Price (Storn, R. & Price,
+K. Journal of Global Optimization 11, 341 (1997)).
 """
 
 from numba import njit
-from numpy import asarray, zeros, zeros_like, tile, array, argmin, mod, ptp
-from numpy.random import random, randint, rand, seed as rseed, uniform
+from numpy import asarray, zeros, zeros_like, tile, array, argmin, mod, ptp, int64, iinfo
+from numpy.random import randint, rand, default_rng
 
 
 def wrap(v, vmin, vmax):
+    """Wrap values periodically into the range [vmin, vmax)."""
     w = vmax - vmin
     return vmin + mod(asarray(v) - vmin, w)
 
 
 @njit
 def evolve_vector(i, pop, f, c):
+    """Create a trial vector for the population member `i` with the DE/rand/1/bin scheme.
+
+    Parameters
+    ----------
+    i : int
+        Index of the population member.
+    pop : ndarray
+        Population as a ``(npop, ndim)`` array.
+    f : float
+        Difference amplification factor.
+    c : float
+        Crossover probability.
+
+    Returns
+    -------
+    ndarray
+        The trial vector.
+    """
     npop, ndim = pop.shape
 
     # --- Vector selection ---
@@ -57,7 +75,27 @@ def evolve_vector(i, pop, f, c):
 
 
 @njit
-def evolve_population(pop, pop2, f, c):
+def evolve_population(pop, pop2, f, c, rng):
+    """Create a trial population with the DE/rand/1/bin scheme.
+
+    Parameters
+    ----------
+    pop : ndarray
+        Current population as a ``(npop, ndim)`` array.
+    pop2 : ndarray
+        Array of the same shape as `pop` that receives the trial population.
+    f : float
+        Difference amplification factor.
+    c : float
+        Crossover probability.
+    rng : Generator
+        NumPy random number generator.
+
+    Returns
+    -------
+    ndarray
+        The trial population, `pop2`.
+    """
     npop, ndim = pop.shape
 
     for i in range(npop):
@@ -65,17 +103,17 @@ def evolve_population(pop, pop2, f, c):
         # --- Vector selection ---
         v1, v2, v3 = i, i, i
         while v1 == i:
-            v1 = randint(npop)
+            v1 = rng.integers(0, npop)
         while (v2 == i) or (v2 == v1):
-            v2 = randint(npop)
+            v2 = rng.integers(0, npop)
         while (v3 == i) or (v3 == v2) or (v3 == v1):
-            v3 = randint(npop)
+            v3 = rng.integers(0, npop)
 
         # --- Mutation ---
         v = pop[v1] + f * (pop[v2] - pop[v3])
 
         # --- Cross over ---
-        co = rand(ndim)
+        co = rng.random(ndim)
         for j in range(ndim):
             if co[j] <= c:
                 pop2[i, j] = v[j]
@@ -83,44 +121,67 @@ def evolve_population(pop, pop2, f, c):
                 pop2[i, j] = pop[i, j]
 
         # --- Forced crossing ---
-        j = randint(ndim)
+        j = rng.integers(0, ndim)
         pop2[i, j] = v[j]
 
     return pop2
 
 
 class DiffEvol(object):
-    """
-    Implements the differential evolution optimization method by Storn & Price
-    (Storn, R., Price, K., Journal of Global Optimization 11: 341--359, 1997)
+    """Differential evolution optimiser.
 
-    :param fun:
-       the function to be minimized
+    Implements the differential evolution optimisation method by Storn & Price (1997) with the
+    DE/rand/1/bin scheme. By default, the amplification factor and the crossover probability are
+    drawn anew for each generation from uniform distributions (dithering), which makes the
+    optimiser robust without tuning.
 
-    :param bounds:
-        parameter bounds as [npar,2] array
-
-    :param npop:
-        the size of the population (5*D - 10*D)
-
-    :param  f: (optional)
-        the difference amplification factor. Values of 0.5-0.8 are good in most cases.
-
-    :param c: (optional)
-        The cross-over probability. Use 0.9 to test for fast convergence, and smaller
-        values (~0.1) for a more elaborate search.
-
-    :param seed: (optional)
-        Random seed
-
-    :param maximize: (optional)
-        Switch setting whether to maximize or minimize the function. Defaults to minimization.
+    Parameters
+    ----------
+    fun : callable
+        The function to minimise, called as ``fun(x, *args, **kwargs)``. With
+        ``vectorize=True``, `x` is the whole population as an ``(npop, npar)`` array and the
+        function must return an array of `npop` values.
+    bounds : array_like
+        Parameter bounds of the initial population as an ``(npar, 2)`` array. The bounds are not
+        enforced after the initialisation.
+    npop : int
+        Population size. Values between 5 and 10 times the number of parameters work well.
+    f : float, optional
+        Difference amplification factor. Values of 0.5-0.8 are good in most cases. If None,
+        the factor is drawn from `fbounds` for each generation.
+    c : float, optional
+        Crossover probability. Use 0.9 to test for fast convergence, and smaller values (~0.1)
+        for a more elaborate search. If None, the probability is drawn from `cbounds` for each
+        generation.
+    seed : int or Generator, optional
+        Seed for the optimiser's random number generator, or the generator itself. If None, the
+        generator is seeded from NumPy's global random number generator, so that
+        ``numpy.random.seed`` makes the optimisation reproducible.
+    maximize : bool
+        Maximise the function instead of minimising it.
+    vectorize : bool
+        Evaluate the function for the whole population in a single call.
+    cbounds : tuple of two floats
+        Range of the crossover probability when `c` is None.
+    fbounds : tuple of two floats
+        Range of the amplification factor when `f` is None.
+    pool : object, optional
+        Parallelisation pool with a `map` method, used to evaluate the trial population when the
+        optimiser is not vectorised.
+    min_ptp : float
+        The optimisation stops when the peak-to-peak range of the population's function values
+        falls below this value.
+    args : list
+        Additional positional arguments passed to `fun`.
+    kwargs : dict
+        Additional keyword arguments passed to `fun`.
     """
 
     def __init__(self, fun, bounds, npop, f=None, c=None, seed=None, maximize=False, vectorize=False, cbounds=(0.25, 1),
                  fbounds=(0.25, 0.75), pool=None, min_ptp=0.01, args=[], kwargs={}):
-        if seed is not None:
-            rseed(seed)
+        if seed is None:
+            seed = randint(0, iinfo(int64).max, dtype=int64)
+        self._rng = default_rng(seed)
 
         self.minfun = _function_wrapper(fun, args, kwargs)
         self.bounds = asarray(bounds)
@@ -145,7 +206,7 @@ class DiffEvol(object):
         self.f = f
         self.c = c
 
-        self._population = asarray(self.bl + random([self.n_pop, self.n_par]) * self.bw)
+        self._population = asarray(self.bl + self._rng.random([self.n_pop, self.n_par]) * self.bw)
         self._fitness = zeros(npop)
         self._minidx = None
 
@@ -177,49 +238,77 @@ class DiffEvol(object):
 
     @property
     def population(self):
-        """The parameter vector population"""
+        """The parameter vector population as an ``(npop, npar)`` array."""
         return self._population
 
     @property
     def minimum_value(self):
-        """The best-fit value of the optimized function"""
+        """The best function value found. The value is negated when maximising."""
         return self._fitness[self._minidx]
 
     @property
     def minimum_location(self):
-        """The best-fit solution"""
+        """The parameter vector giving the best function value."""
         return self._population[self._minidx, :]
 
     @property
     def minimum_index(self):
-        """Index of the best-fit solution"""
+        """Population index of the parameter vector giving the best function value."""
         return self._minidx
 
     def optimize(self, ngen):
-        """Run the optimizer for ``ngen`` generations"""
-        for res in self(ngen):
+        """Run the optimiser for a given number of generations.
+
+        Parameters
+        ----------
+        ngen : int
+            Maximum number of generations. The optimisation stops earlier if the population
+            converges, see `min_ptp`.
+
+        Returns
+        -------
+        tuple
+            The best parameter vector and its function value (negated when maximising).
+        """
+        for _ in self(ngen):
             pass
-        return res
+        return self.minimum_location, self.minimum_value
 
     def __call__(self, ngen=1):
+        """Return a generator that runs the optimiser for a given number of generations.
+
+        The population is evaluated when the generator starts, after which each step evolves
+        the population by one generation. The generator stops after `ngen` generations, or after
+        the generation in which the population converges, see `min_ptp`.
+
+        Parameters
+        ----------
+        ngen : int
+            Maximum number of generations.
+
+        Yields
+        ------
+        tuple
+            The best parameter vector and its function value (negated when maximising) after each
+            generation.
+        """
         return self._eval(ngen)
 
     def _eval_sfun(self, ngen=1):
-        """Run DE for a function that takes a single pv as an input and retuns a single value."""
+        """Run DE for a function that takes a single parameter vector and returns a single value."""
         popc, fitc = self._population, self._fitness
         popt, fitt = self._trial_pop, self._trial_fit
 
-        for ipop in range(self.n_pop):
-            fitc[ipop] = self.m * self.minfun(popc[ipop, :])
-
+        fitc[:] = self.m * array(list(self.map(self.minfun, popc)))
+        self._minidx = argmin(fitc)
         self._prev_pop[:, :] = popc
         self._prev_fit[:] = fitc
 
         for igen in range(ngen):
-            f = self.f or uniform(*self.fbounds)
-            c = self.c or uniform(*self.cbounds)
+            f = self.f or self._rng.uniform(*self.fbounds)
+            c = self.c or self._rng.uniform(*self.cbounds)
 
-            popt[:, :] = evolve_population(popc, popt, f, c)
+            popt[:, :] = evolve_population(popc, popt, f, c, self._rng)
             fitt[:] = self.m * array(list(self.map(self.minfun, popt)))
 
             msk = fitt < fitc
@@ -227,25 +316,26 @@ class DiffEvol(object):
             fitc[msk] = fitt[msk]
 
             self._minidx = argmin(fitc)
+            yield popc[self._minidx, :], fitc[self._minidx]
+
             if ptp(fitc) < self.min_ptp:
                 break
 
-            yield popc[self._minidx, :], fitc[self._minidx]
-
     def _eval_vfun(self, ngen=1):
-        """Run DE for a function that takes the whole population as an input and retuns a value for each pv."""
+        """Run DE for a function that takes the whole population and returns a value for each parameter vector."""
         popc, fitc = self._population, self._fitness
         popt, fitt = self._trial_pop, self._trial_fit
 
         fitc[:] = self.m * self.minfun(self._population)
+        self._minidx = argmin(fitc)
         self._prev_pop[:, :] = popc
         self._prev_fit[:] = fitc
 
         for igen in range(ngen):
-            f = self.f or uniform(*self.fbounds)
-            c = self.c or uniform(*self.cbounds)
+            f = self.f or self._rng.uniform(*self.fbounds)
+            c = self.c or self._rng.uniform(*self.cbounds)
 
-            popt[:, :] = evolve_population(popc, popt, f, c)
+            popt[:, :] = evolve_population(popc, popt, f, c, self._rng)
             fitt[:] = self.m * self.minfun(popt)
 
             msk = fitt < fitc
@@ -253,13 +343,14 @@ class DiffEvol(object):
             fitc[msk] = fitt[msk]
 
             self._minidx = argmin(fitc)
+            yield popc[self._minidx, :], fitc[self._minidx]
+
             if ptp(fitc) < self.min_ptp:
                 break
 
-            yield popc[self._minidx, :], fitc[self._minidx]
-
 
 class _function_wrapper(object):
+    """Picklable wrapper that calls `f` with fixed additional arguments."""
     def __init__(self, f, args=[], kwargs={}):
         self.f = f
         self.args = args
