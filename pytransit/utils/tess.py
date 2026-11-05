@@ -1,5 +1,5 @@
 #  PyTransit: fast and easy exoplanet transit modelling in Python.
-#  Copyright (C) 2010-2021  Hannu Parviainen
+#  Copyright (C) 2010-2026  Hannu Parviainen
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -14,6 +14,8 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Reading TESS SPOC light curves."""
+
 from pathlib import Path
 from typing import List, Union, Optional
 from astropy.table import Table
@@ -27,7 +29,41 @@ def read_tess_spoc(tic: int,
                    use_pdc: bool = False,
                    remove_contamination: bool = True):
 
+    """Read TESS SPOC light curves of a target from a directory.
+
+    Reads the SPOC light curve files (``tess*_lc.fits``) whose TIC number field contains `tic`,
+    removes the points with a non-finite time, SAP flux, or PDCSAP flux, and normalises each light
+    curve to its median.
+
+    Parameters
+    ----------
+    tic
+        TIC number of the target.
+    datadir
+        Directory containing the light curve files.
+    sectors
+        Sectors to read, or ``'all'`` to read all the sectors found.
+    use_pdc
+        Use the PDCSAP flux if True and the SAP flux otherwise.
+    remove_contamination
+        Keep the SPOC crowding correction of the PDCSAP flux if True, and revert it using the
+        ``CROWDSAP`` keyword if False. Has no effect on the SAP flux, which is never corrected.
+
+    Returns
+    -------
+    tuple
+        ``(time, flux, sector, wn)``, where `time` is the concatenated time array [BJD_TDB],
+        `flux` the concatenated normalised flux array, `sector` the sector of each point, and
+        `wn` a list with a point-to-point white noise estimate for each light curve.
+
+    Notes
+    -----
+    The ``QUALITY`` flags are not applied, so points flagged by the SPOC pipeline are kept unless
+    their flux is NaN.
+    """
+
     def file_filter(f, partial_tic, sectors):
+        """Select the files of the target and the requested sectors by their name."""
         _, sector, tic, _, _ = f.name.split('-')
         if sectors != 'all':
             return int(sector[1:]) in sectors and str(partial_tic) in tic

@@ -14,6 +14,8 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Astrometric signals of planets."""
+
 from ..orbits.orbits_py import a_from_mp
 from .constants import msun, mjup
 
@@ -21,20 +23,27 @@ as_c = {'as':1., 'mas':1e3, 'muas':1e6}
 
 def angular_signal(mass, period, distance, mstar=1., units='as'):
     """Angular semi-amplitude of the astrometric signal caused by a planet.
-    
+
+    Calculates the semi-major axis of the star's orbit around the barycentre, ``a mp / mstar``,
+    as seen from the given distance. The relation assumes that the planet's mass is negligible
+    compared to the star's.
+
     Parameters
     ----------
-
-      mass     : planet mass            [M_Jup]
-      period   : orbital period         [d]
-      distance : distance to the system [pc]
-      mstar    : stellar mass           [M_Sun]
-      units    : 'as', 'mas', or 'muas'
+    mass : float or ndarray
+        Planet mass [M_Jup].
+    period : float or ndarray
+        Orbital period [d].
+    distance : float or ndarray
+        Distance to the system [pc].
+    mstar : float or ndarray
+        Stellar mass [M_Sun].
+    units : str
+        Units of the returned angle: ``'as'``, ``'mas'``, or ``'muas'``.
 
     Returns
     -------
-
-      angular semi-amplitude of the astrometric signal by the planet in given units
-
+    float or ndarray
+        Angular semi-amplitude of the astrometric signal in the given units.
     """
     return as_c[units] * (mass*mjup)/(mstar*msun) * a_from_mp(mstar, period) / distance

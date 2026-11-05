@@ -14,33 +14,33 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Astrophysical quantities
+"""Astrophysical constants.
 
- Astrophysical quantities with their error estimates
- ===================================================
+Each quantity ``q`` comes with an uncertainty estimate ``q_e``, which is zero for all the
+quantities at the moment. :mod:`astropy.constants` and :mod:`astropy.units` provide the same
+quantities with up-to-date values.
 
- Notes
- -----
-  Error estimates follow the form Q_e where Q is the
-  quantity in question, and are available only for a
-  subset of quantities.
-
- =============  ============================== ======
- ``au``         astronomical unit                   m
- ``msun``       solar mass                         kg
- ``rsun``       solar radius                        m
- ``dsun``       mean solar mass density        g/cm^3
- ``mjup``       Jupiter mass                       kg
- ``rjup``       volumetric mean Jupiter radius      m
- ``rjup_eq``    equatorial Jupiter radius           m
- ``djup``       mean Jupiter mass density      g/cm^3
- ``mnep``       Neptune mass            radius     kg
- ``rnep``       volumetric mean Neptune radius      m
- ``rnep_eq``    equatorial Neptune radius           m
- ``djup``       mean Neptune mass density      g/cm^3
- ``rearth``     volumetric mean Earth radius        m
- ``rearth_eq``  equatorial Earth radius             m
- =============  ============================== ======
+=============  ===============================  ======
+``d_h``        hours per day                    h
+``d_m``        minutes per day                  min
+``d_s``        seconds per day                  s
+``au``         astronomical unit                m
+``msun``       solar mass                       kg
+``rsun``       solar radius                     m
+``dsun``       mean solar density               g/cm^3
+``mjup``       Jupiter mass                     kg
+``rjup``       volumetric mean Jupiter radius   m
+``rjup_eq``    equatorial Jupiter radius        m
+``djup``       mean Jupiter density             g/cm^3
+``mnep``       Neptune mass                     kg
+``rnep``       volumetric mean Neptune radius   m
+``rnep_eq``    equatorial Neptune radius        m
+``dnep``       mean Neptune density             g/cm^3
+``mearth``     Earth mass                       kg
+``rearth``     volumetric mean Earth radius     m
+``rearth_eq``  equatorial Earth radius          m
+``dearth``     mean Earth density               g/cm^3
+=============  ===============================  ======
 """
 
 from __future__ import division
@@ -58,8 +58,8 @@ rjup, rjup_e           = 6.9911e7, 0.0
 rjup_eq, rjup_eq_e     = 7.1492e7, 0.0
 djup, djup_e           = 1.326, 0.0       
 mnep, mnep_e           = 1.0242e26, 0.0
-rnep, mnep_e           = 2.4622e7, 0.0
-rnep_eq, mnep_eq_e     = 2.4764e7, 0.0
+rnep, rnep_e           = 2.4622e7, 0.0
+rnep_eq, rnep_eq_e     = 2.4764e7, 0.0
 dnep, dnep_e           = 1.638, 0.0       
 mearth, mearth_e       = 5.9726e24, 0.0
 rearth, rearth_e       = 6.371e6, 0.0

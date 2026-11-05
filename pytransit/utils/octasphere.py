@@ -19,6 +19,8 @@
 # Copyright (c) 2019 Philip Rideout
 # Distributed under the MIT License, see bottom of file.
 
+"""Triangle meshes of a unit sphere for visualisation."""
+
 from math import sin, cos, acos, pi
 from numpy import empty, array, vstack, cross, dot
 
@@ -29,10 +31,28 @@ except ImportError:
     with_pyrr = False
 
 def octasphere(ndivisions: int):
-    """Creates a unit sphere using octagon subdivision.
+    """Triangle mesh of a unit sphere created by subdividing an octahedron.
 
-    Creates a unit sphere using octagon subdivision. Modified slightly from the original code
-    by Philip Rideout (https://prideout.net/blog/octasphere).
+    Each octant of the sphere is divided into triangles along geodesics, and the octants are
+    combined by rotation. Modified slightly from the original code by Philip Rideout
+    (https://prideout.net/blog/octasphere). Requires the `pyrr` package.
+
+    Parameters
+    ----------
+    ndivisions : int
+        Number of subdivisions. Each octant edge is divided into ``2**ndivisions`` segments.
+
+    Returns
+    -------
+    vertices : ndarray
+        Vertex coordinates as an ``(nv, 3)`` array.
+    faces : ndarray
+        Vertex indices of each triangle as an ``(nf, 3)`` integer array.
+
+    Raises
+    ------
+    ModuleNotFoundError
+        If `pyrr` is not installed.
     """
 
     if not with_pyrr:
@@ -85,8 +105,24 @@ def octasphere(ndivisions: int):
 
 
 def compute_geodesic(dst, index, point_a, point_b, num_segments):
-    """Given two points on a unit sphere, returns a sequence of surface
-    points that lie between them along a geodesic curve."""
+    """Write the points along a geodesic between two points on a unit sphere into an array.
+
+    Parameters
+    ----------
+    dst : ndarray
+        Vertex array that receives the points.
+    index : int
+        Index of `dst` where the first point is written.
+    point_a, point_b : sequence of three floats
+        End points of the geodesic.
+    num_segments : int
+        Number of segments the geodesic is divided into.
+
+    Returns
+    -------
+    int
+        Index of `dst` following the last written point.
+    """
 
     angle_between_endpoints = acos(dot(point_a, point_b))
     rotation_axis = cross(point_a, point_b)

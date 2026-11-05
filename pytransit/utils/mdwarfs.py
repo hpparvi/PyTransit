@@ -1,5 +1,5 @@
 #  PyTransit: fast and easy exoplanet transit modelling in Python.
-#  Copyright (C) 2010-2020  Hannu Parviainen
+#  Copyright (C) 2010-2026  Hannu Parviainen
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -13,6 +13,8 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""Empirical relations for M dwarf stars."""
+
 from typing import Union
 
 from numpy import array, diag, zeros, log10
@@ -21,23 +23,34 @@ from uncertainties import UFloat
 
 
 def md_rs_from_rho(rho: Union[UFloat, float], nsamples: int = 100):
-    """M dwarf stellar radius from stellar density (Hartman et al. 2015)
+    """M dwarf stellar radius from the stellar density.
 
-    Calculates the stellar radius from a stellar density estimate using the
-    empirical M dwarf density-radius relation presented by Hartman et al. (2015).
+    Calculates the stellar radius from a stellar density estimate using the empirical M dwarf
+    density-radius relation by Hartman et al. (2015). The uncertainties in the relation's
+    coefficients are propagated by Monte Carlo sampling.
 
     Parameters
     ----------
-    rho: float or UFloat
-        Stellar density in g/cm^3
+    rho
+        Stellar density [g/cm^3], either as a float or as a `UFloat` with an uncertainty that
+        is propagated to the radius samples.
     nsamples
-        Number of samples to compute
+        Number of samples to draw.
 
     Returns
     -------
     ndarray
-        Stellar radius in Solar radii
+        Stellar radius samples [R_Sun].
 
+    Raises
+    ------
+    NotImplementedError
+        If `rho` is neither a float nor a `UFloat`.
+
+    References
+    ----------
+    Hartman, J. D. et al. HATS-6b: a warm Saturn transiting an early M dwarf star, and a set of
+    empirical relations for characterizing K and M dwarf planet hosts. AJ 149, 166 (2015).
     """
 
     arm = array([0.054, -0.2989, 0.0815, -0.18280])

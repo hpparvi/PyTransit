@@ -1,5 +1,5 @@
 #  PyTransit: fast and easy exoplanet transit modelling in Python.
-#  Copyright (C) 2010-2019  Hannu Parviainen
+#  Copyright (C) 2010-2026  Hannu Parviainen
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -13,6 +13,8 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Utility functions and classes, and the data containers in :mod:`pytransit.utils.io`."""
 
 from .mdwarfs import md_rs_from_rho
 from .rv import mp_from_kiepms, surface_gravity

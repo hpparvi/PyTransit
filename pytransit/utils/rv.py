@@ -1,5 +1,5 @@
 #  PyTransit: fast and easy exoplanet transit modelling in Python.
-#  Copyright (C) 2010-2020  Hannu Parviainen
+#  Copyright (C) 2010-2026  Hannu Parviainen
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -14,6 +14,8 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Planet properties from radial velocity observations."""
+
 import astropy.units as u
 
 from astropy.units import Quantity
@@ -22,24 +24,32 @@ from numpy import pi, sin, sqrt
 
 
 def mp_from_kiepms(k, i, e, p, mstar):
-    """Calculates the planet's mass from RV parameters.
+    """Planet mass from the radial velocity semi-amplitude.
+
+    Calculates the planet mass as ``mp = K (P / 2 pi G)**(1/3) mstar**(2/3) sqrt(1 - e**2) / sin(i)``.
 
     Parameters
     ----------
-    k: float, ndarray, or Quantity
-        RV semiamplitude [m/s]
-    i: float, ndarray, or Quantity
-        Inclination [rad]
-    e: float, ndarray, or Quantity
-        Eccentricity [-]
-    p: float, ndarray, or Quantity
-        Orbital period [d]
-    mstar: float, ndarray, or Quantity
-        Stellar mass [Solar mass]
+    k : float, ndarray, or Quantity
+        Radial velocity semi-amplitude [m/s].
+    i : float, ndarray, or Quantity
+        Orbital inclination [rad].
+    e : float or ndarray
+        Eccentricity.
+    p : float, ndarray, or Quantity
+        Orbital period [d].
+    mstar : float, ndarray, or Quantity
+        Stellar mass [M_Sun].
 
     Returns
     -------
-    Planet mass [M_Jup]
+    float or ndarray
+        Planet mass [M_Jup].
+
+    Notes
+    -----
+    The relation assumes that the planet's mass is negligible compared to the star's, which
+    underestimates the planet mass by a fraction of about ``(2/3) mp / mstar``.
     """
     k = k.to(u.m/u.s) if isinstance(k, Quantity) else k * u.m/u.s
     i = i.to(u.rad) if isinstance(i, Quantity) else i*u.rad
@@ -49,24 +59,35 @@ def mp_from_kiepms(k, i, e, p, mstar):
 
 
 def surface_gravity(k, i, e, p, ar):
-    """Calculates the planet's surface gravity from RV parameters.
+    """Planet surface gravity from the radial velocity semi-amplitude and transit parameters.
+
+    Calculates the planet's surface gravity as ``g = (2 pi / P) sqrt(1 - e**2) K / ((Rp/a)**2 sin(i))``
+    following Southworth et al. (2007). The relation needs no knowledge of the stellar mass.
 
     Parameters
     ----------
-    k: float, ndarray, or Quantity
-        RV semiamplitude [m/s]
-    i: float, ndarray, or Quantity
-        Inclination [rad]
-    e: float, ndarray, or Quantity
-        Eccentricity [-]
-    p: float, ndarray, or Quantity
-        Orbital period [d]
-    ar: float, ndarray, or Quantity
-        Planet-star area ratio [-]
+    k : float, ndarray, or Quantity
+        Radial velocity semi-amplitude [m/s].
+    i : float, ndarray, or Quantity
+        Orbital inclination [rad].
+    e : float or ndarray
+        Eccentricity.
+    p : float, ndarray, or Quantity
+        Orbital period [d].
+    ar : float or ndarray
+        The squared ratio of the planet radius and the semi-major axis, ``(Rp/a)**2``. With the
+        radius ratio `k` and the scaled semi-major axis `a` of the transit model, this is
+        ``(k / a)**2``.
 
     Returns
     -------
-    Surface gravity [m/s^2]
+    float or ndarray
+        Surface gravity [m/s^2].
+
+    References
+    ----------
+    Southworth, J., Wheatley, P. J. & Sams, G. A method for the direct determination of the surface
+    gravities of transiting extrasolar planets. MNRAS 379, L11 (2007).
     """
     k = k.to(u.m / u.s) if isinstance(k, Quantity) else k * u.m / u.s
     i = i.to(u.rad) if isinstance(i, Quantity) else i * u.rad
