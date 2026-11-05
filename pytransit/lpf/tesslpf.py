@@ -26,8 +26,7 @@ from astropy.timeseries import TimeSeries
 from corner import corner
 from matplotlib.pyplot import setp
 from matplotlib.pyplot import subplots
-from numba import njit
-from numpy import zeros, squeeze, ceil, arange, digitize, full, nan, \
+from numpy import zeros, squeeze, ceil, arange, full, nan, \
     sqrt, percentile, isfinite, floor, argsort, ones_like, atleast_2d, median, ndarray, unique, nanmedian, concatenate
 from numpy.random import permutation
 from pytransit.utils.tess import read_tess_spoc
@@ -36,6 +35,7 @@ from .loglikelihood import CeleriteLogLikelihood
 from .lpf import BaseLPF
 from .. import TransitModel
 from ..orbits import epoch
+from ..utils.downsample import downsample_time_1d
 from ..utils.keplerlc import KeplerLC
 from ..utils.misc import fold
 
@@ -45,23 +45,25 @@ try:
 except ImportError:
     with_ldtk = False
 
-@njit
 def downsample_time(time, vals, inttime=1.):
-    duration = time.max() - time.min()
-    nbins = int(ceil(duration / inttime))
-    bins = arange(nbins)
-    edges = time[0] + bins * inttime
-    bids = digitize(time, edges) - 1
-    bt, bv, be = full(nbins, nan), zeros(nbins), zeros(nbins)
-    for i, bid in enumerate(bins):
-        bmask = bid == bids
-        if bmask.sum() > 0:
-            bt[i] = time[bmask].mean()
-            bv[i] = vals[bmask].mean()
-            if bmask.sum() > 2:
-                be[i] = vals[bmask].std() / sqrt(bmask.sum())
-            else:
-                be[i] = nan
+    """Bin a time series into bins of a fixed duration, keeping the bins with at least three points.
+
+    Parameters
+    ----------
+    time : ndarray
+        1D array of times.
+    vals : ndarray
+        1D array of values with the same length as `time`.
+    inttime : float
+        Bin duration, in the same units as `time`.
+
+    Returns
+    -------
+    tuple
+        The mean times, mean values, and standard errors of the mean values of the bins, see
+        :func:`~pytransit.utils.downsample.downsample_time_1d`.
+    """
+    bt, bv, be = downsample_time_1d(time, vals, inttime)
     m = isfinite(be)
     return bt[m], bv[m], be[m]
 
