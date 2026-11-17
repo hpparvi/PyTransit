@@ -13,6 +13,28 @@
 
 - `celerite` is an optional dependency, imported only when a Gaussian process log-likelihood
   (`CeleriteLogLikelihood`, `lnlikelihood='celerite'`) is created.
+- The `pytransit.utils` docstrings follow the numpydoc format and document the units and approximations.
+
+### Fixed
+
+- `ellipsoidal_variation_amplitude` dividing by `3 - g` instead of `3 - u` (Morris 1985).
+- The default `r` of `reflected_fr`, `flux_ratio`, `solve_teq`, and `solve_ab` being the Lambertian phase integral
+  (1.5) instead of its inverse (2/3), which overestimated the reflected light by a factor of 2.25.
+- `thermal_fr` and `solve_teq` adding the internal temperature `ti` to the equilibrium temperature linearly instead
+  of as `(Teq**4 + ti**4)**(1/4)`.
+- `solve_redistribution` always raising a `TypeError`. It now accepts `r` and `ti`, and returns NaN when no
+  redistribution factor between 1/4 and 2/3 matches the flux ratio.
+- `phasecurves.emission` failing for every `Filter`. The passband integration is now photon-weighted.
+- `downsample_time_1d` and `downsample_time_2d` writing past the end of their output arrays, including points outside
+  `tmin`-`tmax`, giving empty bins a zero value, and failing for 1D values in `downsample_time_2d`.
+- `DiffEvol(seed=...)` and `numpy.random.seed` not making `DiffEvol` and `optimize_global` reproducible, since the
+  trial vectors used Numba's separate generator. `DiffEvol` now has its own generator and leaves the global one alone.
+- `DiffEvol.optimize` raising `UnboundLocalError` when the population converged in the first generation, and
+  `DiffEvol` evaluating the initial population without the pool.
+- `KeplerLC` removing the wrong orbits when the orbit numbers have gaps, giving NaN fluxes for transits without
+  out-of-transit points, and mis-slicing unsorted data; and `KeplerLC.remove_common_orbits` failing with NumPy 2.
+- `pytransit.utils.constants` assigning the Neptune radius uncertainties to `mnep_e` instead of `rnep_e` and
+  `rnep_eq_e`.
 
 ## [2.10.1] - 2026-10-20
 
