@@ -116,6 +116,24 @@ def _validate_covariates(covariates, npt: int, name: str = 'covariates') -> ndar
     return cv
 
 
+def _validate_covariate_names(names, ncov: int, name: str = 'covariate_names') -> Optional[tuple]:
+    """Return `names` as a tuple of `ncov` unique strings, or None when not given."""
+    if names is None:
+        return None
+    if isinstance(names, str):
+        names = (names,)
+    try:
+        out = tuple(str(n) for n in names)
+    except TypeError as e:
+        raise ValueError(f"'{name}' must be a string or a sequence of strings, "
+                         f"got {names!r}.") from e
+    if len(out) != ncov:
+        raise ValueError(f"'{name}' has {len(out)} names but there are {ncov} covariates.")
+    if len(set(out)) != len(out):
+        raise ValueError(f"'{name}' contains duplicate names: {out!r}.")
+    return out
+
+
 def _validate_names(names, name: str = 'passband') -> tuple:
     """Return `names` as a non-empty tuple of strings."""
     if isinstance(names, str):
@@ -173,6 +191,26 @@ class _Data:
 
     _group_type = None
 
+    # A class-level default so that a dataset pickled before this attribute existed unpickles
+    # with the placeholder names instead of raising an AttributeError.
+    _covariate_names: Optional[tuple] = None
+
+    @property
+    def covariate_names(self) -> tuple:
+        """Names of the covariate columns, one per column of `covariates`.
+
+        Covariates that were not given names are called ``cov_0``, ``cov_1``, ... Setting
+        the names validates them against the current number of covariates, and setting
+        `None` restores the placeholders.
+        """
+        if self._covariate_names is None:
+            return tuple(f'cov_{i}' for i in range(self.ncov))
+        return self._covariate_names
+
+    @covariate_names.setter
+    def covariate_names(self, names) -> None:
+        self._covariate_names = _validate_covariate_names(names, self.ncov)
+
     def __add__(self, other):
         gt = self._group_type
         if isinstance(other, gt):
@@ -227,6 +265,11 @@ class _DataGroup:
     def covariates(self) -> list:
         """List of 2D covariate matrices."""
         return [d.covariates for d in self.data]
+
+    @property
+    def covariate_names(self) -> list:
+        """List of per-dataset tuples of covariate names."""
+        return [d.covariate_names for d in self.data]
 
     @property
     def errors(self) -> list:

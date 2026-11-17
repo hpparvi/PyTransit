@@ -127,6 +127,54 @@ class TestValidation:
             RVData(arange(10), ones(10), ones(10), pids=[0])
 
 
+class TestCovariateNames:
+    def test_names_are_stored_as_a_tuple(self):
+        d = RVData(arange(10), ones(10), ones(10), covariates=zeros((10, 2)),
+                   covariate_names=['fwhm', 'bis'])
+        assert d.covariate_names == ('fwhm', 'bis')
+
+    def test_default_names_are_placeholders(self):
+        assert make_rv(ncov=2).covariate_names == ('cov_0', 'cov_1')
+        assert make_rv(ncov=0).covariate_names == ()
+
+    def test_single_string_names_a_single_covariate(self):
+        d = RVData(arange(10), ones(10), ones(10), covariates=arange(10), covariate_names='fwhm')
+        assert d.covariate_names == ('fwhm',)
+
+    def test_wrong_number_of_names_raises(self):
+        with pytest.raises(ValueError, match="has 1 names but there are 2 covariates"):
+            RVData(arange(10), ones(10), ones(10), covariates=zeros((10, 2)),
+                   covariate_names=['fwhm'])
+
+    def test_names_without_covariates_raise(self):
+        with pytest.raises(ValueError, match="has 1 names but there are 0 covariates"):
+            RVData(arange(10), ones(10), ones(10), covariate_names=['fwhm'])
+
+    def test_duplicate_names_raise(self):
+        with pytest.raises(ValueError, match="duplicate names"):
+            RVData(arange(10), ones(10), ones(10), covariates=zeros((10, 2)),
+                   covariate_names=['fwhm', 'fwhm'])
+
+    def test_non_sequence_names_raise(self):
+        with pytest.raises(ValueError, match="must be a string or a sequence of strings"):
+            RVData(arange(10), ones(10), ones(10), covariates=arange(10), covariate_names=1)
+
+    def test_names_can_be_set_and_reset(self):
+        d = make_rv(ncov=2)
+        d.covariate_names = ['fwhm', 'bis']
+        assert d.covariate_names == ('fwhm', 'bis')
+        with pytest.raises(ValueError, match="has 3 names"):
+            d.covariate_names = ['a', 'b', 'c']
+        assert d.covariate_names == ('fwhm', 'bis')
+        d.covariate_names = None
+        assert d.covariate_names == ('cov_0', 'cov_1')
+
+    def test_group_lists_the_names_per_dataset(self):
+        a, b = make_rv(instrument='A', ncov=2), make_rv(instrument='B', ncov=0)
+        a.covariate_names = ['fwhm', 'bis']
+        assert (a + b).covariate_names == [('fwhm', 'bis'), ()]
+
+
 class TestNoise:
     def test_noise_is_the_point_to_point_scatter(self):
         rng = default_rng(0)

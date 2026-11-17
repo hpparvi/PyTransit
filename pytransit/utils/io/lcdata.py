@@ -150,6 +150,10 @@ class LCData(_Data):
         Exposure time **in days**.
     nsamples
         Number of supersamples used to integrate the model over the exposure.
+    covariate_names
+        Names of the covariate columns, such as ``('airmass', 'fwhm')``: a sequence of `ncov`
+        unique strings, or a single string for a single covariate. `None` gives the
+        placeholder names ``cov_0``, ``cov_1``, ...
 
     Notes
     -----
@@ -178,7 +182,8 @@ class LCData(_Data):
                  sector: int = -1,
                  segment: int = 0,
                  exptime: float = 0.0,
-                 nsamples: int = 1) -> None:
+                 nsamples: int = 1,
+                 covariate_names: Optional[Union[str, Sequence[str]]] = None) -> None:
 
         self.time = _validate_time(time)
         npt = self.time.size
@@ -186,6 +191,7 @@ class LCData(_Data):
         self.flux = _validate_series(flux, npt, 'flux')
         self._error = _validate_error(error, npt)
         self.covariates = _validate_covariates(covariates, npt)
+        self.covariate_names = covariate_names
         self.passband = _validate_names(passband, 'passband')
         self.pids = _validate_pids(pids)
 
@@ -331,6 +337,9 @@ class LCData(_Data):
         in time. The powers start from one because the intercept is added by the baseline model
         itself, and a constant column would only make the design matrix singular.
 
+        The new columns are named ``time_1`` ... ``time_{order}`` in `covariate_names`, with a
+        numeric suffix added to any name that is already taken.
+
         Parameters
         ----------
         order
@@ -340,7 +349,14 @@ class LCData(_Data):
         if o < 1:
             raise ValueError(f"'order' must be a positive integer, got {order!r}.")
         tn = _normalised_time(self.time)
+        names = list(self.covariate_names)
+        for i in range(1, o + 1):
+            name, k = f'time_{i}', 2
+            while name in names:
+                name, k = f'time_{i}_{k}', k + 1
+            names.append(name)
         self.covariates = hstack([self.covariates] + [(tn ** i)[:, None] for i in range(1, o + 1)])
+        self._covariate_names = tuple(names)
 
     def linear_model(self) -> ndarray:
         """Least-squares linear model of the flux in terms of the covariates.

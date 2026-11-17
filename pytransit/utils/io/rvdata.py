@@ -69,6 +69,10 @@ class RVData(_Data):
         Instrument name. `RVLPF` interpolates it into the names of the systemic velocity
         and jitter parameters, `rv_shift_{instrument}` and `rv_err_{instrument}`, so it
         must be unique within a group.
+    covariate_names
+        Names of the covariate columns, such as ``('fwhm', 'bis')``: a sequence of `ncov`
+        unique strings, or a single string for a single covariate. `None` gives the
+        placeholder names ``cov_0``, ``cov_1``, ...
 
     Notes
     -----
@@ -81,7 +85,8 @@ class RVData(_Data):
                  rv: Union[Sequence, ndarray],
                  error: Union[Sequence, ndarray],
                  covariates: Optional[Union[Sequence, ndarray]] = None,
-                 instrument: str = '') -> None:
+                 instrument: str = '',
+                 covariate_names: Optional[Union[str, Sequence[str]]] = None) -> None:
 
         self.time = _validate_time(time)
         npt = self.time.size
@@ -95,6 +100,7 @@ class RVData(_Data):
 
         self.covariates = _validate_covariates(covariates, npt)
         self.instrument = str(instrument)
+        self.covariate_names = covariate_names
 
     @property
     def size(self) -> int:

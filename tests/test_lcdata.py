@@ -748,6 +748,77 @@ class TestTimeCovariates:
         assert_array_equal(lc.covariates[40:44, 0], array([40.0, 41.0, 43.0, 44.0]))
 
 
+class TestCovariateNames:
+    def test_names_are_stored_as_a_tuple(self):
+        d = LCData(arange(10), ones(10), covariates=zeros((10, 2)),
+                   covariate_names=['fwhm', 'bis'])
+        assert d.covariate_names == ('fwhm', 'bis')
+
+    def test_default_names_are_placeholders(self):
+        assert make_lc(ncov=2).covariate_names == ('cov_0', 'cov_1')
+        assert make_lc(ncov=0).covariate_names == ()
+
+    def test_single_string_names_a_single_covariate(self):
+        d = LCData(arange(10), ones(10), covariates=arange(10), covariate_names='fwhm')
+        assert d.covariate_names == ('fwhm',)
+
+    def test_wrong_number_of_names_raises(self):
+        with pytest.raises(ValueError, match="has 1 names but there are 2 covariates"):
+            LCData(arange(10), ones(10), covariates=zeros((10, 2)),
+                   covariate_names=['fwhm'])
+
+    def test_names_without_covariates_raise(self):
+        with pytest.raises(ValueError, match="has 1 names but there are 0 covariates"):
+            LCData(arange(10), ones(10), covariate_names=['fwhm'])
+
+    def test_duplicate_names_raise(self):
+        with pytest.raises(ValueError, match="duplicate names"):
+            LCData(arange(10), ones(10), covariates=zeros((10, 2)),
+                   covariate_names=['fwhm', 'fwhm'])
+
+    def test_non_sequence_names_raise(self):
+        with pytest.raises(ValueError, match="must be a string or a sequence of strings"):
+            LCData(arange(10), ones(10), covariates=arange(10), covariate_names=1)
+
+    def test_names_can_be_set_and_reset(self):
+        d = make_lc(ncov=2)
+        d.covariate_names = ['fwhm', 'bis']
+        assert d.covariate_names == ('fwhm', 'bis')
+        with pytest.raises(ValueError, match="has 3 names"):
+            d.covariate_names = ['a', 'b', 'c']
+        assert d.covariate_names == ('fwhm', 'bis')
+        d.covariate_names = None
+        assert d.covariate_names == ('cov_0', 'cov_1')
+
+    def test_group_lists_the_names_per_dataset(self):
+        a, b = make_lc(instrument='A', ncov=2), make_lc(instrument='B', ncov=0)
+        a.covariate_names = ['fwhm', 'bis']
+        assert (a + b).covariate_names == [('fwhm', 'bis'), ()]
+
+    def test_time_covariates_are_named(self):
+        lc = make_lc(ncov=2)
+        lc.add_time_covariates(2)
+        assert lc.covariate_names == ('cov_0', 'cov_1', 'time_1', 'time_2')
+
+    def test_time_covariates_keep_the_given_names(self):
+        lc = make_lc(ncov=2)
+        lc.covariate_names = ['airmass', 'fwhm']
+        lc.add_time_covariates(1)
+        assert lc.covariate_names == ('airmass', 'fwhm', 'time_1')
+
+    def test_repeated_time_covariates_get_unique_names(self):
+        lc = make_lc(ncov=0)
+        lc.add_time_covariates(1)
+        lc.add_time_covariates(2)
+        assert lc.covariate_names == ('time_1', 'time_1_2', 'time_2')
+
+    def test_names_survive_an_outlier_removal(self):
+        lc = make_spiked_lc(spikes=(42,))
+        lc.covariate_names = ['x']
+        lc.remove_outliers(5.0, 15)
+        assert lc.covariate_names == ('x',)
+
+
 class TestLinearModel:
     def test_a_flux_linear_in_the_covariates_is_reproduced(self):
         rng = default_rng(0)
