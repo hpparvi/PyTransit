@@ -75,8 +75,8 @@ def evolve_vector(i, pop, f, c):
 
 
 @njit
-def evolve_population(pop, pop2, f, c, rng):
-    """Create a trial population with the DE/rand/1/bin scheme.
+def _evolve_population(pop, pop2, f, c, rng):
+    """Write a trial population created with the DE/rand/1/bin scheme into `pop2`.
 
     Parameters
     ----------
@@ -90,11 +90,6 @@ def evolve_population(pop, pop2, f, c, rng):
         Crossover probability.
     rng : Generator
         NumPy random number generator.
-
-    Returns
-    -------
-    ndarray
-        The trial population, `pop2`.
     """
     npop, ndim = pop.shape
 
@@ -123,8 +118,6 @@ def evolve_population(pop, pop2, f, c, rng):
         # --- Forced crossing ---
         j = rng.integers(0, ndim)
         pop2[i, j] = v[j]
-
-    return pop2
 
 
 class DiffEvol(object):
@@ -308,7 +301,7 @@ class DiffEvol(object):
             f = self.f or self._rng.uniform(*self.fbounds)
             c = self.c or self._rng.uniform(*self.cbounds)
 
-            popt[:, :] = evolve_population(popc, popt, f, c, self._rng)
+            _evolve_population(popc, popt, f, c, self._rng)
             fitt[:] = self.m * array(list(self.map(self.minfun, popt)))
 
             msk = fitt < fitc
@@ -335,7 +328,7 @@ class DiffEvol(object):
             f = self.f or self._rng.uniform(*self.fbounds)
             c = self.c or self._rng.uniform(*self.cbounds)
 
-            popt[:, :] = evolve_population(popc, popt, f, c, self._rng)
+            _evolve_population(popc, popt, f, c, self._rng)
             fitt[:] = self.m * self.minfun(popt)
 
             msk = fitt < fitc

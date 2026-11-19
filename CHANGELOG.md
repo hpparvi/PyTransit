@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.11.0] - 2026-11-19
 
 ### Added
 
@@ -13,6 +13,9 @@
 
 - `celerite` is an optional dependency, imported only when a Gaussian process log-likelihood
   (`CeleriteLogLikelihood`, `lnlikelihood='celerite'`) is created.
+- `downsample_time_1d`, `downsample_time_2d`, and `tesslpf.downsample_time` are plain Python functions that can no
+  longer be called from Numba-compiled code, and the first two raise a `ValueError` for invalid input.
+- `DiffEvol` accepts a NumPy `Generator` as `seed`.
 - The `pytransit.utils` docstrings follow the numpydoc format and document the units and approximations.
 
 ### Fixed
