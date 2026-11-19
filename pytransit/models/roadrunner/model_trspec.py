@@ -77,12 +77,12 @@ def _tsmodel(times: ndarray,
     npb = k.shape[1]
     nmu = ldp.shape[2]
     ns = nsamples[0]
-    nc = ng - 2                      # Number of intervals in the split mean intensity table
+    nc = ng - 3                      # Number of intervals in the three-piece mean intensity table
 
     flux = empty((npv, npb, npt))  # Model flux
     nq = rules.shape[2]
     tables = empty((npb, ng))      # Mean intensity tables
-    coef = empty((npb, nc, 4))     # Split cubic coefficients of the mean intensity tables
+    coef = empty((npb, nc, 4))     # Cubic coefficients of the mean intensity tables
     mu = empty((ng, 2 * nq))
     wf = zeros((ng, 2 * nq))
 

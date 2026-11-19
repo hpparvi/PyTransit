@@ -140,19 +140,64 @@ larger ``nq`` reduces but no setting removes.
 The mean intensity table
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-The mean intensity is tabulated against the grazing parameter :math:`g = b/(1+k)` in two segments
-split at the limb contact, where the exact function has a kink, and read with a cubic during the
-evaluation. The lower panel shows what the split buys, as flux error from the table interpolation
-alone.
+The mean intensity is tabulated against the grazing parameter :math:`g = b/(1+k)` and read with a
+cubic during the evaluation. The planet touches the limb from the inside at
+:math:`g_\mathrm{c} = (1-k)/(1+k)` and from the outside at :math:`g = 1`, and near both contacts
+the mean intensity changes like a square root of the distance to the contact. A cubic cannot follow
+a square root, so a table spaced evenly in :math:`g` stays inaccurate around the contacts however
+many nodes it has.
+
+The table is therefore split into three pieces, and each piece is spaced evenly in a coordinate
+:math:`s` that itself grows like the square root of the distance to the piece's contact. The mean
+intensity is a smooth function of :math:`s`, which a cubic follows well:
+
+.. list-table::
+    :header-rows: 1
+    :widths: 30 30 40
+
+    * - Piece
+      - Range
+      - Coordinate
+    * - Full transit
+      - :math:`0 \le g \le g_\mathrm{c}`
+      - :math:`s = \sqrt{1 - (g/g_\mathrm{c})^2}`
+    * - Inner half of the ingress
+      - :math:`0 \le x \le 1/2`
+      - :math:`s = \sqrt{2x}`
+    * - Outer half of the ingress
+      - :math:`1/2 \le x \le 1`
+      - :math:`s = \sqrt{2(1-x)}`
+
+Here :math:`x = (g - g_\mathrm{c}) / (1 - g_\mathrm{c})` runs from zero to one across the ingress.
+In every piece :math:`s` is zero at the contact and one at the far end, and the pieces have about
+``ng / 3`` nodes each.
+
+The full-transit coordinate uses the square of :math:`g/g_\mathrm{c}` for two reasons.
+
+- **It suits both ends of the piece.** Near the contact,
+  :math:`1 - (g/g_\mathrm{c})^2 = (1 - g/g_\mathrm{c})(1 + g/g_\mathrm{c})` is proportional to the
+  distance to the contact, so :math:`s` is the square root the table needs there. At the disk
+  centre the mean intensity depends on the impact parameter only through its square, since a
+  planet at :math:`+b` and at :math:`-b` blocks the same light, and :math:`s` is a smooth function
+  of :math:`g^2`.
+- **It needs no distance.** For a planet at a projected distance :math:`z` from the disk centre,
+  :math:`g/g_\mathrm{c} = z/(1-k)`, so :math:`s = \sqrt{1 - z^2/(1-k)^2}` follows from
+  :math:`z^2 = x_\mathrm{p}^2 + y_\mathrm{p}^2` directly. A sample taken while the planet is
+  fully on the disk then costs one square root, for :math:`s`, instead of one for :math:`z` and
+  another for the table coordinate, and it needs no overlap area calculation because the planet
+  blocks its whole disk. Only the ingress and egress samples compute :math:`z` and the exact
+  overlap area.
+
+The lower panel shows what the spacing buys, as flux error from the table interpolation alone.
 
 .. plot::
     :context: close-figs
 
     plot_mean_intensity_table()
 
-The split halves the worst error around the limb contact, and cuts it threefold for
-:math:`k = 0.3`. The weaker kink where the planet's edge crosses the disk centre is left unsplit;
-at the default table size it costs well under a ppm (0.1 ppm here, 0.4 ppm at :math:`k = 0.3`).
+The square-root spacing makes the interpolation fourth-order accurate across the contacts, so a
+table of 39 nodes is several times more accurate than an evenly spaced one of 100. The weaker kink
+where the planet's edge crosses the disk centre is left unsplit.
 
 Accuracy
 --------
@@ -170,11 +215,10 @@ integration error alone.
 
     plot_accuracy()
 
-With the default settings the error is about 0.3 ppm at :math:`k = 0.02`, 1.5 ppm at
-:math:`k = 0.1`, and 5.4 ppm at :math:`k = 0.3`, taking the worst case over impact parameters up to
-0.9 -- three to five times better than the annulus discretisation this replaced, at the same
-cost. ``nq=12, ng=200`` roughly halves that again, and ``nq=16, ng=400`` is below 1 ppm at every
-radius ratio.
+With the default settings (``nq=8, ng=39``) the error is below 0.5 ppm for radius ratios up to 0.2
+and about 1.4 ppm at :math:`k = 0.3`, taking the worst case over impact parameters from zero to
+grazing. ``ng=60`` brings it to 0.5 ppm and ``nq=12, ng=200`` to 0.05 ppm for radius ratios up to
+0.3.
 
 For most work the defaults are appropriate: a few ppm is far below the noise of a real transit
 observation. Raise the resolution when the *model* error would compete with the signal you are
@@ -194,8 +238,10 @@ every exposure. RoadRunner is therefore slower for short light curves and faster
 
 The benchmark compares four RoadRunner accuracy levels, and the defaults, with
 :class:`~pytransit.models.ma_quadratic.QuadraticModel`, both exact and with its interpolated mode.
-Each level is the cheapest ``nq, ng`` whose worst-case error against the exact quadratic model stays
-below the target for radius ratios up to 0.2 and impact parameters up to 0.9:
+Each level is the cheapest ``nq, ng`` whose worst-case error stays below the target for radius
+ratios up to 0.2 and impact parameters up to 0.9. The errors are measured against a direct
+high-order quadrature of the blocked flux, because the analytic model as implemented is itself
+only accurate to about 2 ppm in this range:
 
 .. list-table::
     :header-rows: 1
@@ -207,34 +253,39 @@ below the target for radius ratios up to 0.2 and impact parameters up to 0.9:
       - Worst-case error
       - Faster than the exact quadratic model above
     * - RoadRunner, 1 ppm
-      - 5
-      - 300
+      - 6
+      - 30
       - 0.9 ppm
-      - 1350 exposures
+      - 150 exposures
     * - RoadRunner, default
       - 8
-      - 100
-      - 5.9 ppm
-      - 910 exposures
+      - 39
+      - 0.4 ppm
+      - 200 exposures
     * - RoadRunner, 10 ppm
       - 4
-      - 75
-      - 7.2 ppm
-      - 690 exposures
+      - 21
+      - 9.3 ppm
+      - 110 exposures
     * - RoadRunner, 100 ppm
       - 3
-      - 20
-      - 48 ppm
-      - 560 exposures
+      - 12
+      - 87 ppm
+      - 80 exposures
     * - RoadRunner, 500 ppm
       - 2
-      - 10
-      - 316 ppm
-      - 530 exposures
+      - 12
+      - 398 ppm
+      - 80 exposures
+    * - Quadratic, exact
+      -
+      -
+      - 2.3 ppm
+      -
     * - Quadratic, interpolated
       -
       -
-      - 11 ppm
+      - 12 ppm
       -
 
 Both models run on a single thread, for a light curve where about half of the exposures are in
@@ -246,16 +297,17 @@ transit:
     from _figures.rr_benchmark import plot_benchmark
     plot_benchmark()
 
-For long light curves every RoadRunner level costs the same, 13.6 ns per exposure, against 55 ns
-for the exact quadratic model and 24 ns for the interpolated one. RoadRunner is then four times
-faster than the exact model and 1.7 times faster than the interpolated one, even at an accuracy of
-1 ppm, where the interpolated model is accurate to 11 ppm. The accuracy setting only decides how
+For long light curves every RoadRunner level costs the same, 13 ns per exposure, against 57 ns
+for the exact quadratic model and 24 ns for the interpolated one. RoadRunner is then 4.4 times
+faster than the exact model and 1.9 times faster than the interpolated one, even at an accuracy of
+1 ppm, where the interpolated model is accurate to 12 ppm. The accuracy setting only decides how
 many exposures it takes to reach that point: RoadRunner overtakes the interpolated model above
-2300 exposures at 500 ppm, and above 5900 exposures at 1 ppm.
+300 exposures at 500 ppm, and above 600 exposures at 1 ppm. The default settings are more accurate
+than the 1 ppm level and so have a larger fixed cost.
 
 The accuracy is therefore almost free for the light curves where speed matters most. A fit to a
 short light curve is fast with either model. For a long one, such as a TESS or Kepler light curve
-or a spectroscopic time series, the 1 ppm setting costs 19% more than the 500 ppm one at 10 000
+or a spectroscopic time series, the 1 ppm setting costs 3% more than the 500 ppm one at 10 000
 exposures, and 2% more at 100 000.
 
 .. note::

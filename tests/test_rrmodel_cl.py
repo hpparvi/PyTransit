@@ -76,7 +76,7 @@ class TestInit:
         ctx, queue = clenv
         tm = RoadRunnerModelCL(cl_ctx=ctx, cl_queue=queue)
         assert tm.nq == 8
-        assert tm.ng == 100
+        assert tm.ng == 39
         tm = RoadRunnerModelCL(cl_ctx=ctx, cl_queue=queue, nq=12, ng=200)
         assert tm.nq == 12
         assert tm.ng == 200
@@ -122,7 +122,7 @@ class TestTables:
         assert npabs(ldm_dev - ldm).max() < 1e-5
 
         from pytransit.models.roadrunner.common import split_cubic_coefficients
-        coef_ref = zeros((tm.ng - 2, 4))
+        coef_ref = zeros((tm.ng - 3, 4))
         split_cubic_coefficients(ldm, n1, coef_ref)
         for g in linspace(0, 1, 2001):
             ref = ldm_lookup(g, gcs[0, 0], n1, coef_ref)

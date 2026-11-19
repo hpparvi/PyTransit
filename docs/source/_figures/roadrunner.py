@@ -130,7 +130,7 @@ def plot_accuracy(ks=(0.02, 0.04, 0.06, 0.08, 0.10, 0.14, 0.18, 0.22), ldc=(0.3,
     -------
     matplotlib.figure.Figure
     """
-    settings = {'Defaults (nq = 8, ng = 100)': {},
+    settings = {'Defaults (nq = 8, ng = 39)': {},
                 'nq = 12, ng = 200': dict(nq=12, ng=200)}
 
     reference = QuadraticModel()
@@ -216,12 +216,13 @@ def _uniform_cubic_lookup(g, coef):
     return c[:, 0] + a * (c[:, 1] + a * (c[:, 2] + a * c[:, 3]))
 
 
-def plot_mean_intensity_table(k=0.2, ng=100, nq=8, ldc=(0.3, 0.1)):
+def plot_mean_intensity_table(k=0.2, ng=39, nq=8, ldc=(0.3, 0.1)):
     """Draw the mean intensity table against the grazing parameter, and its interpolation error.
 
     The table and the reference curve use the same quadrature, so the lower panel shows the error
-    of the table interpolation alone: the split table beside a single uniform table of the same
-    size, whose cubic has to bridge the kink at the limb contact. The error is shown in flux, the
+    of the table interpolation alone: the three-piece table laid out in the square root of the
+    distance to the limb contacts beside a single uniform table of the same size, whose cubic
+    cannot follow the square roots at the contacts. The error is shown in flux, the
     mean intensity error times the overlap area over the disk-integrated intensity, because a
     large mean intensity error where the planet barely overlaps the star costs almost nothing.
     The dotted line marks the planet's edge crossing the disk centre, a weaker kink that the table
@@ -248,7 +249,7 @@ def plot_mean_intensity_table(k=0.2, ng=100, nq=8, ldc=(0.3, 0.1)):
 
     gs, n1 = g_nodes(k, ng)
     tab = table(gs)
-    coef = empty((ng - 2, 4))
+    coef = empty((ng - 3, 4))
     split_cubic_coefficients(tab, n1, coef)
     split = array([ldm_lookup(g, gc, n1, coef) for g in gf])
 
@@ -261,7 +262,7 @@ def plot_mean_intensity_table(k=0.2, ng=100, nq=8, ldc=(0.3, 0.1)):
     fig, (at, ab) = subplots(2, 1, figsize=(9, 5.5), sharex=True, height_ratios=(3, 2))
     at.plot(gf, reference, 'k', lw=1)
     at.plot(gs, tab, 'o', c='C0', ms=3, label=f'Table nodes (ng = {ng})')
-    ab.plot(gf, scale * npabs(split - reference), c='C0', zorder=2, label='Split at the limb contact')
+    ab.plot(gf, scale * npabs(split - reference), c='C0', zorder=2, label='Square-root spacing from the contacts')
     ab.plot(gf, scale * npabs(uniform - reference), c='C1', zorder=1, label='Single uniform table')
 
     gz = k / (1.0 + k)

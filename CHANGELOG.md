@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `pytransit.models.limb_darkening.ld_evaluator`, a cached compiled evaluator of a limb darkening law and its integral.
+
+### Changed
+
+- **Breaking**: `RoadRunnerModel`, `TSModel`, `OblatePlanetModel`, and `RoadRunnerModelCL` space the mean intensity
+  table in the square root of the distance to the limb contacts; fluxes change at the ppm level and `ng` must be >= 12.
+- **Breaking**: The default `ng` of `RoadRunnerModel`, `TSModel`, and `RoadRunnerModelCL` is 39 (was 100).
+- `RoadRunnerModel` is about twice as fast for a short light curve, and builds its tables in parallel with `nthreads > 1`.
+
 ## [2.11.0] - 2026-11-19
 
 ### Added

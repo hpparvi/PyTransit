@@ -110,7 +110,7 @@ class RoadRunnerModelCL(OpenCLTransitModel):
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  interpolate: Optional[bool] = None, klims: Optional[tuple] = None, nk: Optional[int] = None,
                  nzin: Optional[int] = None, nzlimb: Optional[int] = None, zcut: Optional[float] = None,
-                 ng: int = 100, parallel: bool = False, small_planet_limit: float = 0.05, cl_ctx=None,
+                 ng: int = 39, parallel: bool = False, small_planet_limit: float = 0.05, cl_ctx=None,
                  cl_queue=None, nz: Optional[int] = None, nq: int = 8,
                  precision: str = 'single') -> None:
         """The OpenCL RoadRunner transit model.
@@ -125,8 +125,10 @@ class RoadRunnerModelCL(OpenCLTransitModel):
             Number of quadrature nodes per segment used to integrate the intensity profile over
             the planet's footprint.
         ng : int, optional
-            Number of grazing parameter nodes in the mean intensity table, split at the limb
-            contact and interpolated with cubics.
+            Number of grazing parameter nodes in the mean intensity table. The table is divided
+            into a full-transit piece and two ingress pieces of about ``ng / 3`` nodes each, laid
+            out uniformly in the square root of the distance to the limb contacts and interpolated
+            with cubics. Must be at least 12.
         precision : str, optional
             Device floating point type, ``'single'`` (the default) or ``'double'``. Double
             precision needs `cl_khr_fp64`, which most GPUs support but run at a fraction of the
@@ -227,7 +229,7 @@ class RoadRunnerModelCL(OpenCLTransitModel):
         self._b_istar = None     # Disk-integrated intensities
         self._b_ldm = None       # Mean intensity tables
         self._b_gcs = None       # Limb contacts, the table split points
-        self._b_n1s = None       # First segment sizes of the tables
+        self._b_n1s = None       # First piece sizes of the tables
         self._b_coef = None      # Split cubic coefficients of the tables
         self._b_valid = None     # Parameter vector validity flags
         self._b_xyc = None       # Taylor series coefficients for the (x, y) position
@@ -267,6 +269,8 @@ class RoadRunnerModelCL(OpenCLTransitModel):
         ng : int
             Number of grazing parameter nodes in the mean intensity table.
         """
+        if ng < 12:
+            raise ValueError(f"The mean intensity table needs at least 12 nodes, got ng={ng}.")
         mf = cl.mem_flags
         self.nq = int(nq)
         self.ng = int(ng)
@@ -445,7 +449,7 @@ class RoadRunnerModelCL(OpenCLTransitModel):
         self._b_ldm = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * ng * nb)
         self._b_gcs = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * nb)
         self._b_n1s = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * int32().nbytes)
-        self._b_coef = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * (ng - 2) * 4 * nb)
+        self._b_coef = cl.Buffer(self.ctx, mf.READ_WRITE, npv * npb * (ng - 3) * 4 * nb)
         self._b_valid = cl.Buffer(self.ctx, mf.READ_ONLY, npv * int32().nbytes)
         self._b_xyc = cl.Buffer(self.ctx, mf.READ_ONLY, npv * 10 * nb)
         self._b_bbs = cl.Buffer(self.ctx, mf.READ_ONLY, npv * int(self.nlc) * 2 * nb)
@@ -545,7 +549,7 @@ class RoadRunnerModelCL(OpenCLTransitModel):
 
         # Tabulate the mean intensity under the planet and fit the cubics
         cl.enqueue_nd_range_kernel(self.queue, self._k_ldm, (npv, npb, self.ng), None)
-        cl.enqueue_nd_range_kernel(self.queue, self._k_coefficients, (npv, npb, self.ng - 2), None)
+        cl.enqueue_nd_range_kernel(self.queue, self._k_coefficients, (npv, npb, self.ng - 3), None)
 
         # Evaluate the model
         cl.enqueue_nd_range_kernel(self.queue, self._k_flux, (npv, self.nptb), None)
@@ -564,16 +568,16 @@ class RoadRunnerModelCL(OpenCLTransitModel):
         gcs : ndarray
             Limb contacts (the table split points) with a shape ``(npv, npb)``.
         n1s : ndarray
-            Number of nodes in the first segment of each table, shape ``(npv, npb)``.
+            Number of nodes in the first piece of each table, shape ``(npv, npb)``.
         coef : ndarray
-            Split cubic coefficients of the tables, shape ``(npv, npb, ng - 2, 4)``.
+            Cubic coefficients of the tables, shape ``(npv, npb, ng - 3, 4)``.
         """
         if self.npv is None:
             raise ValueError('The model has not been evaluated yet.')
         npv, npb = int(self.npv), int(self.npb)
         gcs = empty((npv, npb), self.dtype)
         n1s = empty((npv, npb), int32)
-        coef = empty((npv, npb, self.ng - 2, 4), self.dtype)
+        coef = empty((npv, npb, self.ng - 3, 4), self.dtype)
         cl.enqueue_copy(self.queue, gcs, self._b_gcs)
         cl.enqueue_copy(self.queue, n1s, self._b_n1s)
         cl.enqueue_copy(self.queue, coef, self._b_coef)

@@ -30,7 +30,8 @@ from typing import Tuple, Callable, Union, List, Optional
 from warnings import warn
 
 from numba import config as numba_config, get_num_threads, njit, set_num_threads
-from numpy import ndarray, linspace, isscalar, unique, atleast_1d, squeeze, atleast_2d, sqrt, zeros, pi
+from numpy import (ndarray, linspace, isscalar, unique, atleast_1d, squeeze, atleast_2d, sqrt, zeros, pi, asarray,
+                   float64)
 from scipy.integrate import trapezoid
 
 from ..ldmodel import LDModel
@@ -38,7 +39,7 @@ from ..limb_darkening import (ld_uniform, ldi_uniform, ld_linear, ldi_linear, ld
                               ld_quadratic_tri, ldi_quadratic_tri, ld_nonlinear, ldi_nonlinear, ld_general, ldi_general,
                               ld_square_root, ldi_square_root, ld_logarithmic, ldi_logarithmic,
                               ld_exponential, ldi_exponential, ld_power_2, ldi_power_2, ld_power_2_pm, ldi_power_2_pm,
-                              evaluate_ld, evaluate_ldi)
+                              evaluate_ld, evaluate_ldi, ld_evaluator)
 from ..transitmodel import TransitModel
 
 from .common import population_arrays, quadrature_rules, profile_grid, radius_ratio_array
@@ -55,8 +56,8 @@ class RoadRunnerModel(TransitModel):
     models, which are analytic solutions derived for one specific limb darkening law,
     RoadRunner separates the *geometry* of the transit from the *stellar intensity profile*.
     The mean intensity under the planet is computed for every radius ratio by Gauss quadrature
-    matched to the transit geometry, tabulated against the grazing parameter, and read with a
-    cubic lookup during the evaluation; the limb darkening enters only as a profile tabulated
+    matched to the transit geometry, tabulated against the grazing parameter in coordinates that
+    keep it smooth across the limb contacts, and read with a cubic lookup during the evaluation; the limb darkening enters only as a profile tabulated
     on a fixed grid of mu. This has two consequences:
 
     - **Any radially symmetric limb darkening model works.** Besides the eleven built-in
@@ -111,7 +112,7 @@ class RoadRunnerModel(TransitModel):
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  precompute_weights: Optional[bool] = None, klims: Optional[tuple] = None, nk: Optional[int] = None,
                  nzin: Optional[int] = None, nzlimb: Optional[int] = None, zcut: Optional[float] = None,
-                 ng: int = 100, nthreads: int = 1, small_planet_limit: float = 0.01, nz: Optional[int] = None,
+                 ng: int = 39, nthreads: int = 1, small_planet_limit: float = 0.01, nz: Optional[int] = None,
                  nq: int = 8, **kwargs):
         """The RoadRunner transit model by Parviainen (2020).
 
@@ -128,8 +129,10 @@ class RoadRunnerModel(TransitModel):
         nz, nzin, nzlimb, zcut : optional
             Deprecated and ignored: the stellar disk is no longer discretised into annuli.
         ng : int, optional
-            Number of grazing parameter nodes in the mean intensity table, split at the limb
-            contact and interpolated with cubics.
+            Number of grazing parameter nodes in the mean intensity table. The table is divided
+            into a full-transit piece and two ingress pieces of about ``ng / 3`` nodes each, laid
+            out uniformly in coordinates that grow like the square root of the distance to the
+            limb contacts, and interpolated with cubics. Must be at least 12, defaults to 39.
         nthreads: int, optional
             Number of threads to use for the model computation. Values above one enable the
             parallel model version and set the numba thread count. Note that the numba thread
@@ -146,10 +149,12 @@ class RoadRunnerModel(TransitModel):
 
         Notes
         -----
-        Measured against the analytic Mandel & Agol model for the quadratic law, over impact
-        parameters up to 0.9, the defaults (``nq=8``, ``ng=100``) are accurate to about 0.3 ppm
-        at k = 0.02, 1.5 ppm at k = 0.1 and 5.4 ppm at k = 0.3. ``nq=12, ng=200`` reaches 0.5 ppm
-        at k = 0.1 and 1.9 ppm at k = 0.3, and ``nq=16, ng=400`` is below 1 ppm everywhere.
+        Measured against a direct high-order quadrature of the blocked flux for the quadratic,
+        power-2 and non-linear laws, over impact parameters from zero to grazing, the defaults
+        (``nq=8``, ``ng=39``) are accurate to better than 0.5 ppm for radius ratios up to 0.2 and
+        to about 1.4 ppm at k = 0.3. ``ng=60`` is accurate to 0.5 ppm and ``nq=12, ng=200`` to
+        0.05 ppm for radius ratios up to 0.3. The accuracy degrades quickly for radius ratios above
+        about 0.45.
         """
         super().__init__()
 
@@ -216,6 +221,10 @@ class RoadRunnerModel(TransitModel):
 
         self.init_integration(nq, ng)
 
+        # The profile and its disk integral evaluated by a single compiled function with the law
+        # bound into it, when both are Numba-compiled; None otherwise.
+        self._ld_evaluator = None if self.ldmmean is None else ld_evaluator(self.ldmodel, self.ldmmean)
+
     def set_data(self, time: Union[ndarray, List],
                  lcids: Optional[Union[ndarray, List]] = None,
                  pbids: Optional[Union[ndarray, List]] = None,
@@ -238,8 +247,10 @@ class RoadRunnerModel(TransitModel):
         ng : int
             Number of grazing parameter nodes in the mean intensity table.
         """
-        self.nq = nq
-        self.ng = ng
+        if ng < 12:
+            raise ValueError(f"The mean intensity table needs at least 12 nodes, got ng={ng}.")
+        self.nq = int(nq)
+        self.ng = int(ng)
         self._rules = quadrature_rules(nq)
         self.mu, self._t0, self._dt = profile_grid()
 
@@ -283,6 +294,16 @@ class RoadRunnerModel(TransitModel):
             Modelled flux either as a 1D or 2D ndarray.
         """
 
+        # A single light curve evaluated for scalar parameters is the most common case, and for a
+        # short light curve the argument normalisation below would cost as much as the model.
+        if (self.nlc == 1 and self._ld_evaluator is not None and isscalar(k) and isscalar(p) and isscalar(t0)
+                and isscalar(a) and isscalar(i) and isscalar(e) and isscalar(w)):
+            ldp, istar = self._ld_evaluator(self.mu, asarray(ldc, dtype=float64).reshape((1, 1, -1)))
+            splimit = self.splimit if self.splimit is not None else 0.0
+            return rr_simple(self.time, float(k), float(t0), float(p), float(a), float(i), float(e), float(w),
+                             self.parallel, splimit, self.nsamples[0], self.exptimes[0], ldp[0, 0], self._t0,
+                             self._dt, istar[0, 0], self._rules, self.ng)
+
         npv = 1 if isscalar(p) else p.size
         ldc = atleast_2d(ldc)
         if ldc.ndim == 2:
@@ -293,6 +314,8 @@ class RoadRunnerModel(TransitModel):
 
         if isinstance(self.ldmodel, LDModel):
             ldp, istar = self.ldmodel(self.mu, ldc)
+        elif self._ld_evaluator is not None and ldc.ndim == 3:
+            ldp, istar = self._ld_evaluator(self.mu, ldc)
         else:
             ldp = evaluate_ld(self.ldmodel, self.mu, ldc)
 

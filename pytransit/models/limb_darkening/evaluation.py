@@ -1,4 +1,5 @@
 from numba import njit
+from numba.core.dispatcher import Dispatcher
 from numpy import zeros
 
 
@@ -53,3 +54,45 @@ def evaluate_ldi(ldi, pvo):
         for ipb in range(npb):
             istar[ipv, ipb] = ldi(pv[ipv, ipb])
     return istar
+
+
+_ld_evaluators = {}
+
+
+def ld_evaluator(ld, ldi):
+    """A compiled function evaluating a limb darkening law and its disk integral together.
+
+    `evaluate_ld` and `evaluate_ldi` take the law as an argument, which costs several
+    microseconds of dispatch overhead per call. Binding the law into a compiled closure removes
+    that overhead, which matters when a transit model is evaluated for a short light curve. The
+    closures are cached, so each law is compiled only once.
+
+    Parameters
+    ----------
+    ld, ldi
+        The Numba-compiled limb darkening profile and its disk integral.
+
+    Returns
+    -------
+    callable or None
+        A function ``f(mu, ldc) -> (ldp, istar)`` taking the ``(npv, npb, nldc)`` coefficient
+        array and returning the ``(npv, npb, nmu)`` profiles and the ``(npv, npb)`` disk
+        integrals, or None if either argument is not a Numba-compiled function.
+    """
+    if not (isinstance(ld, Dispatcher) and isinstance(ldi, Dispatcher)):
+        return None
+    key = (ld, ldi)
+    if key not in _ld_evaluators:
+        @njit
+        def evaluate(mu, pv):
+            npv = pv.shape[0]
+            npb = pv.shape[1]
+            ldp = zeros((npv, npb, mu.size))
+            istar = zeros((npv, npb))
+            for ipv in range(npv):
+                for ipb in range(npb):
+                    ldp[ipv, ipb, :] = ld(mu, pv[ipv, ipb])
+                    istar[ipv, ipb] = ldi(pv[ipv, ipb])
+            return ldp, istar
+        _ld_evaluators[key] = evaluate
+    return _ld_evaluators[key]

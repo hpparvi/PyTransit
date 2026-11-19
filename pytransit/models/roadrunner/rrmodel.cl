@@ -7,7 +7,8 @@
  *
  *  1. `calculate_ldm` integrates the tabulated stellar intensity profile over the planet's
  *     footprint by Gauss quadrature matched to the transit geometry, giving the mean intensity
- *     under the planet at every node of a grazing parameter table split at the limb contact.
+ *     under the planet at every node of a grazing parameter table split at the limb contact
+ *     and laid out uniformly in the square root of the distance to the contacts.
  *     One work item per (parameter vector, passband, node). This is a port of
  *     `common.ldm_nodes` and `common.ldm_table`.
  *  2. `calculate_coefficients` turns each table into per-interval cubic coefficients, one work
@@ -50,29 +51,73 @@ REAL circle_circle_intersection_area(REAL r1, REAL r2, REAL b){
 /* ------------------------------------------------------------------------------------------ */
 
 /* The grazing parameter at which the planet first touches the stellar limb. The mean intensity
-   under the planet has a kink here, so the g table is split at it. */
+   under the planet has a square-root singularity here, so the g table is split at it. */
 inline REAL split_point(const REAL k){
     return ((REAL)1.0 - k) / ((REAL)1.0 + k);
 }
 
-/* Number of table nodes in the first segment, [0, gc]: proportional to its length, but at least
-   four nodes in either segment so that a cubic can be fitted. Port of `common.g_nodes`. */
-inline int first_segment_size(const REAL gc, const int ng){
-    int n1 = (int) rint(ng * gc);
-    if (n1 < 4) n1 = 4;
-    if (ng - n1 < 4) n1 = ng - 4;
-    return n1;
+/* The mean intensity table is split into three pieces, each uniform in the square root of the
+   distance to its limb contact, which keeps the tabulated function smooth and the cubic
+   interpolation fourth order (see `common.g_nodes`):
+
+     piece 1, g in [0, gc]:    s = sqrt(1 - (g / gc)^2),
+     piece 2, x in [0, 1/2]:   s = sqrt(2 x),          x = (g - gc) / (1 - gc),
+     piece 3, x in [1/2, 1]:   s = sqrt(2 (1 - x)).
+
+   Number of table nodes in the first piece; the two ingress pieces have (ng - n1) / 2 nodes
+   each. Port of `common.table_sizes`. */
+inline int first_segment_size(const int ng){
+    return ng - 2 * (ng / 3);
 }
 
-/* Grazing parameter of table node `ig`: two uniform segments meeting at gc, which is stored
-   twice, as the last node of the first segment and the first node of the second. */
+/* Grazing parameter of table node `ig`. The pieces are stored back to back, each ordered from
+   its contact outwards. Port of `common.g_nodes`. */
 inline REAL g_node(const int ig, const REAL gc, const int n1, const int ng){
+    const int n2 = (ng - n1) / 2;
     if (ig < n1){
-        return gc * (REAL) ig / (REAL) (n1 - 1);
+        const REAL s = (REAL) ig / (REAL) (n1 - 1);
+        return gc * sqrt((REAL)1.0 - s * s);
+    }
+    else if (ig < n1 + n2){
+        const REAL s = (REAL) (ig - n1) / (REAL) (n2 - 1);
+        return gc + ((REAL)1.0 - gc) * (REAL)0.5 * s * s;
     }
     else{
-        return gc + ((REAL)1.0 - gc) * (REAL) (ig - n1) / (REAL) (ng - n1 - 1);
+        /* The last contact itself, exactly, so that rounding cannot leave it a hair inside. */
+        if (ig == n1 + n2) return (REAL)1.0;
+        const REAL s = (REAL) (ig - n1 - n2) / (REAL) (n2 - 1);
+        return gc + ((REAL)1.0 - gc) * ((REAL)1.0 - (REAL)0.5 * s * s);
     }
+}
+
+/* Distance of the planet's inner edge from the stellar limb, 1 - (b - k), at node `ig` of the
+   two ingress pieces, from the node's piece coordinate. Forming it as (1 - g)(1 + k) would lose
+   it to rounding next to the last contact, where the nodes of the third piece crowd. */
+inline REAL limb_distance(const int ig, const REAL k, const int n1, const int ng){
+    const int n2 = (ng - n1) / 2;
+    if (ig < n1 + n2){
+        const REAL s = (REAL) (ig - n1) / (REAL) (n2 - 1);
+        return (REAL)2.0 * k * ((REAL)1.0 - (REAL)0.5 * s * s);
+    }
+    const REAL s = (REAL) (ig - n1 - n2) / (REAL) (n2 - 1);
+    return k * s * s;
+}
+
+/* Angular extent of the planet disk at stellar radius z for a planet crossing the limb, from
+   the distances to the limb of the radius, `omz` = 1 - z, and of the planet's inner edge,
+   `dlimb`. Equal to `planet_angular_extent`, but written as 4 asin(sqrt((1 - c) / 2)) with
+   1 - c formed from the two small distances, which keeps it accurate in single precision when
+   the planet barely overlaps the star. */
+inline REAL planet_angular_extent_limb(const REAL z, const REAL omz, const REAL dlimb, const REAL b, const REAL k){
+    if (z <= k - b){
+        return TWO_PI_R;
+    }
+    const REAL t = dlimb - omz;               /* k + z - b */
+    if (t <= (REAL)0.0){
+        return (REAL)0.0;
+    }
+    const REAL v = clamp(t * ((REAL)2.0 * k - t) / ((REAL)4.0 * z * b), (REAL)0.0, (REAL)1.0);
+    return (REAL)4.0 * asin(sqrt(v));
 }
 
 /* Angular extent of the planet disk at stellar radius z for a planet at separation b. */
@@ -118,7 +163,7 @@ inline REAL mu_from_z(const REAL z){
    quadrature nodes and geometric factors for this node's geometry are generated and consumed
    on the fly. `rules` holds the Gauss-Legendre nodes and weights followed by the Gauss-Jacobi
    (0.5, 0) nodes and weights, nq of each. The work item of node 0 also stores the limb contact
-   and the first segment size for the other kernels. A NaN radius ratio gives a NaN table. */
+   and the first piece size for the other kernels. A NaN radius ratio gives a NaN table. */
 __kernel void calculate_ldm(__global const REAL *ks,    /* (npv, npb)      */
                             __global const REAL *ldp,   /* (npv, npb, nmu) */
                             __global const REAL *rules, /* (4, nq)         */
@@ -146,7 +191,7 @@ __kernel void calculate_ldm(__global const REAL *ks,    /* (npv, npb)      */
         return;
     }
 
-    const int n1 = first_segment_size(gc, ng);
+    const int n1 = first_segment_size(ng);
     if (ig == 0){
         gcs[ipp] = gc;
         n1s[ipp] = n1;
@@ -216,14 +261,14 @@ __kernel void calculate_ldm(__global const REAL *ks,    /* (npv, npb)      */
     else{
         /* z in [b - k, 1]: integrated in mu from the limb, where the profile is regular, to
            mu_lo, where theta has its sqrt zero. The distance of the inner contact from the limb,
-           1 - (b - k) = (1 - g)(1 + k), is formed without the cancellation of b - k near 1. */
-        const REAL dlimb = ((REAL)1.0 - g) * ((REAL)1.0 + k);
+           1 - (b - k), is formed without the cancellation of b - k near 1. */
+        const REAL dlimb = (ig >= n1) ? limb_distance(ig, k, n1, ng) : ((REAL)1.0 - g) * ((REAL)1.0 + k);
         const REAL mu_lo = sqrt(dlimb * ((REAL)2.0 - dlimb));
         c = h = (REAL)0.5 * mu_lo;
         for (int q = 0; q < nq; q++){
             m = c + h * t_gj[q];
             z = mu_from_z(m);
-            w = w_gj[q] * planet_angular_extent(z, b, k) * m * h;
+            w = w_gj[q] * planet_angular_extent_limb(z, m * m / ((REAL)1.0 + z), dlimb, b, k) * m * h;
             num += w * profile_at(m, pt0, pdt, prof, nmu);
             den += w;
         }
@@ -231,17 +276,17 @@ __kernel void calculate_ldm(__global const REAL *ks,    /* (npv, npb)      */
     ldm[ipp * ng + ig] = num / den;
 }
 
-/* Per-interval cubic coefficients of the split mean intensity tables.
+/* Per-interval cubic coefficients of the three-piece mean intensity tables.
 
-   Global size (npv, npb, ng - 2). Port of `common.split_cubic_coefficients`: interval `ii`
-   belongs to the first segment if ii < n1 - 1 and to the second otherwise, and its cubic is
-   the four-point Lagrange interpolant on a stencil shifted inwards at the segment ends. `cm`
+   Global size (npv, npb, ng - 3). Port of `common.split_cubic_coefficients`: the first n1 - 1
+   intervals belong to the first piece and the rest to the two ingress pieces in turn, and each
+   cubic is the four-point Lagrange interpolant on a stencil shifted inwards at the piece ends. `cm`
    holds the three (4, 4) stencil matrices of `common.CUBIC_MATRICES`. */
 __kernel void calculate_coefficients(__global const REAL *ldm,  /* (npv, npb, ng)         */
                                      __global const int   *n1s, /* (npv, npb)             */
                                      __global const REAL *cm,   /* (3, 4, 4)              */
                                      const int ng,
-                                     __global REAL *coef)       /* (npv, npb, ng - 2, 4)  */
+                                     __global REAL *coef)       /* (npv, npb, ng - 3, 4)  */
 {
     const int ipv = get_global_id(0);
     const int ipb = get_global_id(1);
@@ -251,29 +296,35 @@ __kernel void calculate_coefficients(__global const REAL *ldm,  /* (npv, npb, ng
 
     const int n1 = n1s[ipp];
     __global const REAL *tab = ldm + ipp * ng;
+    const int n2 = (ng - n1) / 2;
     int nseg, i;
     if (ii < n1 - 1){
         nseg = n1;
         i = ii;
     }
-    else{
-        nseg = ng - n1;
+    else if (ii < n1 + n2 - 2){
+        nseg = n2;
         i = ii - (n1 - 1);
         tab += n1;
+    }
+    else{
+        nseg = n2;
+        i = ii - (n1 + n2 - 2);
+        tab += n1 + n2;
     }
     int j = i - 1;
     if (j < 0) j = 0;
     else if (j > nseg - 4) j = nseg - 4;
     const int s = i - j;
 
-    __global REAL *c = coef + (ipp * (ng - 2) + ii) * 4;
+    __global REAL *c = coef + (ipp * (ng - 3) + ii) * 4;
     for (int r = 0; r < 4; r++){
         __global const REAL *row = cm + (s * 4 + r) * 4;
         c[r] = row[0] * tab[j] + row[1] * tab[j + 1] + row[2] * tab[j + 2] + row[3] * tab[j + 3];
     }
 }
 
-/* The mean intensity under the planet at grazing parameter g from the split cubic table.
+/* The mean intensity under the planet at grazing parameter g from the three-piece cubic table.
 
    Port of `common.ldm_lookup`. The NaN test is not decorative: NaN compares false against
    both range tests, and `(int) NAN` is INT_MIN on at least NVIDIA, which would index the table
@@ -282,25 +333,32 @@ inline REAL ldm_lookup(const REAL g, const REAL gc, const int n1, const int ng, 
     if (isnan(g) || isnan(gc)) return NAN;
     if (g < (REAL)0.0) return NAN;
     if (g > (REAL)1.0) return (REAL)0.0;
-    REAL x;
-    int i;
+    REAL u;
+    int m, i0;
     if (g < gc){
-        x = g / gc * (REAL) (n1 - 1);
-        i = (int) x;
-        if (i < 0) i = 0;
-        if (i > n1 - 2) i = n1 - 2;
+        const REAL r = g / gc;
+        u = sqrt(fmax((REAL)0.0, (REAL)1.0 - r * r)) * (REAL) (n1 - 1);
+        m = n1 - 2;
+        i0 = 0;
     }
     else{
-        const int n2 = ng - n1;
-        x = (g - gc) / ((REAL)1.0 - gc) * (REAL) (n2 - 1);
-        i = (int) x;
-        if (i < 0) i = 0;
-        if (i > n2 - 2) i = n2 - 2;
-        x += (REAL) (n1 - 1);
-        i += n1 - 1;
+        const int m2 = (ng - n1) / 2 - 1;       /* Intervals in each ingress piece */
+        const REAL x = (g - gc) / ((REAL)1.0 - gc);
+        if (x < (REAL)0.5){
+            u = sqrt((REAL)2.0 * x) * (REAL) m2;
+            i0 = n1 - 1;
+        }
+        else{
+            u = sqrt((REAL)2.0 * fmax((REAL)0.0, (REAL)1.0 - x)) * (REAL) m2;
+            i0 = n1 - 1 + m2;
+        }
+        m = m2 - 1;
     }
-    const REAL a = x - (REAL) i;
-    __global const REAL *c = coef + i * 4;
+    int i = (int) u;
+    if (i < 0) i = 0;
+    if (i > m) i = m;
+    const REAL a = u - (REAL) i;
+    __global const REAL *c = coef + (i0 + i) * 4;
     return c[0] + a * (c[1] + a * (c[2] + a * c[3]));
 }
 
@@ -327,7 +385,7 @@ __kernel void rr_flux(__global const REAL *times,    /* (npt,)                */
                       __global const REAL *istar,    /* (npv, npb)            */
                       __global const REAL *gcs,      /* (npv, npb)            */
                       __global const int   *n1s,     /* (npv, npb)            */
-                      __global const REAL *coef,     /* (npv, npb, ng - 2, 4) */
+                      __global const REAL *coef,     /* (npv, npb, ng - 3, 4) */
                       __global const int   *valid,   /* (npv,)                */
                       __global const REAL *xyc,      /* (npv, 2, 5)           */
                       __global const REAL *bbs,      /* (npv, nlc, 2)         */
@@ -356,7 +414,7 @@ __kernel void rr_flux(__global const REAL *times,    /* (npt,)                */
     const uint nks  = pv_length - 6;
 
     __global const REAL *pv = &pv_pop[i_pv * pv_length + nks];
-    __global const REAL *coef_pb = coef + ipp * (ng - 2) * 4;
+    __global const REAL *coef_pb = coef + ipp * (ng - 3) * 4;
 
     const uint ns = nss[lcid];
     const REAL exptime = exptimes[lcid];

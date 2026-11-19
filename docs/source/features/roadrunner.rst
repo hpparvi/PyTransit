@@ -173,18 +173,18 @@ the fixed cost, RoadRunner is faster:
     from _figures.rr_benchmark import plot_benchmark
     plot_benchmark()
 
-With the default settings RoadRunner overtakes the exact quadratic model at about 900 exposures,
-and for long light curves it needs 13.6 ns per exposure against 55 ns, four times less. This holds
+With the default settings RoadRunner overtakes the exact quadratic model at about 200 exposures,
+and for long light curves it needs 13 ns per exposure against 57 ns, 4.4 times less. This holds
 at every accuracy level from 500 ppm to 1 ppm, since the accuracy changes only the fixed cost.
-RoadRunner is also 1.7 times faster than the quadratic model's interpolated mode, which is accurate
-to only about 11 ppm.
+RoadRunner is also 1.9 times faster than the quadratic model's interpolated mode, which is accurate
+to only about 12 ppm.
 
 Most analyses are well past the crossover. A single TESS sector at two-minute cadence has about
 20 000 exposures. Long-cadence data are usually supersampled, which multiplies the number of points
-evaluated: 300 long-cadence exposures with ten samples each already run 1.5 times faster with
+evaluated: 300 long-cadence exposures with ten samples each already run 2.5 times faster with
 RoadRunner. A joint fit of several transits evaluates all of them in one call. The quadratic model
-is faster only for a single short light curve, such as one ground-based transit of a few hundred
-exposures, where both models take a few tens of microseconds per evaluation.
+is faster only for a single short light curve of up to a couple of hundred exposures, where both
+models take ten to twenty microseconds per evaluation.
 
 The timings are for a single thread on one machine; :doc:`../models/roadrunner` describes the
 benchmark and how to run it on your own.

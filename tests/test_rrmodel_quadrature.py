@@ -23,8 +23,8 @@ from numpy import pi, linspace, sqrt, zeros, empty, abs, allclose, isfinite, arc
 from scipy.integrate import quad
 
 from pytransit import RoadRunnerModel, QuadraticModel, OblatePlanetModel, TSModel
-from pytransit.models.roadrunner.common import (quadrature_rules, ldm_nodes, split_point, g_nodes,
-                                                cubic_coefficients, ldm_lookup,
+from pytransit.models.roadrunner.common import (quadrature_rules, ldm_nodes, split_point, g_nodes, table_sizes,
+                                                split_cubic_coefficients, ldm_lookup, ldm_lookup_full,
                                                 circle_circle_intersection_area as area)
 from pytransit.models.limb_darkening import ld_quadratic
 
@@ -83,33 +83,78 @@ class TestGTable:
     def test_split_point_is_the_limb_contact(self):
         assert split_point(0.1) == pytest.approx(0.9 / 1.1)
 
-    def test_g_nodes_share_the_split_node_and_have_at_least_four_per_segment(self):
+    def test_g_nodes_form_three_pieces_meeting_at_the_contacts(self):
         for k in (0.005, 0.1, 0.5):
-            gs, n1 = g_nodes(k, 100)
-            assert gs.size == 100
-            assert gs[0] == 0.0 and gs[n1 - 1] == pytest.approx(split_point(k)) and gs[n1] == pytest.approx(split_point(k))
-            assert n1 >= 4 and gs.size - n1 >= 4
+            gc = split_point(k)
+            for ng in (12, 39, 100):
+                gs, n1 = g_nodes(k, ng)
+                n1_, n2 = table_sizes(ng)
+                assert gs.size == ng and n1 == n1_ and n1 + 2 * n2 == ng and n1 >= 4 and n2 >= 4
+                # Full transit: from the limb contact to the disk centre
+                assert gs[0] == pytest.approx(gc) and gs[n1 - 1] == pytest.approx(0.0, abs=1e-15)
+                # Ingress: from each contact to the middle of the ingress
+                gm = 0.5 * (gc + 1.0)
+                assert gs[n1] == pytest.approx(gc) and gs[n1 + n2 - 1] == pytest.approx(gm)
+                assert gs[n1 + n2] == pytest.approx(1.0) and gs[-1] == pytest.approx(gm)
 
-    def test_cubic_lookup_reproduces_a_cubic_exactly(self):
-        f = lambda x: 1.0 - 0.3 * x + 0.2 * x ** 2 - 0.5 * x ** 3
+    def test_nodes_are_uniform_in_the_piece_coordinates(self):
+        k, ng = 0.1, 39
+        gc = split_point(k)
+        gs, n1 = g_nodes(k, ng)
+        n2 = table_sizes(ng)[1]
+        assert allclose(sqrt(1.0 - (gs[:n1] / gc) ** 2), linspace(0, 1, n1), atol=1e-7)
+        assert allclose(sqrt(2.0 * (gs[n1:n1 + n2] - gc) / (1.0 - gc)), linspace(0, 1, n2), atol=1e-7)
+        assert allclose(sqrt(2.0 * (1.0 - gs[n1 + n2:]) / (1.0 - gc)), linspace(0, 1, n2), atol=1e-7)
+
+    @staticmethod
+    def _lookup_error(f, k, ng, gmin=0.0, gmax=1.0):
+        gs, n1 = g_nodes(k, ng); gc = split_point(k)
+        coef = zeros((ng - 3, 4))
+        split_cubic_coefficients(f(gs), n1, coef)
+        return max(abs(ldm_lookup(g, gc, n1, coef) - f(g)) for g in linspace(gmin, gmax, 1001))
+
+    # The mean intensity is an even function of the impact parameter, and the first piece's
+    # coordinate, sqrt(1 - (g / gc)**2), is built for even functions; the test functions that
+    # cover the first piece are therefore even in g.
+
+    def test_cubic_lookup_is_exact_for_the_lowest_orders(self):
         for k in (0.1, 0.3):
-            gs, n1 = g_nodes(k, 40); gc = split_point(k)
-            coef = concatenate([cubic_coefficients(f(gs[:n1])), cubic_coefficients(f(gs[n1:]))])
-            for g in linspace(0.0, 0.999, 200):
-                assert abs(ldm_lookup(g, gc, n1, coef) - f(g)) < 1e-12
+            gc = split_point(k)
+            # g**2 is quadratic in the first piece's coordinate, and g in the ingress pieces'
+            assert self._lookup_error(lambda x: 1.0 - 0.3 * x ** 2, k, 39, 0.0, gc - 1e-9) < 1e-12
+            assert self._lookup_error(lambda x: 1.0 - 0.3 * x, k, 39, gc, 1.0) < 1e-12
 
-    def test_cubic_lookup_is_fourth_order(self):
-        f = lambda x: cos(3.0 * x)
-        errs = []
-        for ng in (50, 100, 200):
-            gs, n1 = g_nodes(0.1, ng); gc = split_point(0.1)
-            coef = concatenate([cubic_coefficients(f(gs[:n1])), cubic_coefficients(f(gs[n1:]))])
-            errs.append(max(abs(ldm_lookup(g, gc, n1, coef) - f(g)) for g in linspace(0, 0.999, 500)))
+    def test_cubic_lookup_resolves_the_contact_square_roots(self):
+        # The singular terms the table is built to absorb: a square root at the last contact and
+        # a 3/2 power at the limb contact. A 39-node table uniform in g is off by 3e-2 for the
+        # square root; in the piece coordinates both terms are polynomials next to their contact.
+        k = 0.1; gc = split_point(k)
+        assert self._lookup_error(lambda x: sqrt(abs(1.0 - x ** 2)), k, 39) < 1e-4
+        assert self._lookup_error(lambda x: abs(x ** 2 - gc ** 2) ** 1.5, k, 39) < 1e-4
+
+    def test_cubic_lookup_is_fourth_order_for_smooth_functions(self):
+        errs = [self._lookup_error(lambda x: cos(3.0 * x), 0.1, ng) for ng in (48, 96, 192)]
         assert errs[0] / errs[1] > 8 and errs[1] / errs[2] > 8
+
+    def test_cubic_lookup_is_fourth_order_across_the_contacts(self):
+        k = 0.1; gc = split_point(k)
+        f = lambda x: cos(3.0 * x) * (1.0 + sqrt(abs(1.0 - x ** 2))) + abs(x ** 2 - gc ** 2) ** 1.5
+        errs = [self._lookup_error(f, k, ng) for ng in (48, 96, 192)]
+        assert errs[0] / errs[1] > 8 and errs[1] / errs[2] > 8
+
+    def test_squared_distance_lookup_matches_the_general_lookup(self):
+        for k in (0.05, 0.3):
+            gc = split_point(k)
+            gs, n1 = g_nodes(k, 39)
+            coef = zeros((36, 4))
+            split_cubic_coefficients(cos(2.0 * gs), n1, coef)
+            for z in linspace(0.0, (1.0 - k) * (1.0 - 1e-9), 200):
+                assert ldm_lookup_full(z * z, 1.0 / (1.0 - k) ** 2, n1, coef) == pytest.approx(
+                    ldm_lookup(z / (1.0 + k), gc, n1, coef), abs=1e-12)
 
 
 class TestModelAccuracy:
-    """Defaults (nq=8, ng=100) against the analytic Mandel & Agol model, worst over impact parameters."""
+    """Defaults (nq=8, ng=39) against the analytic Mandel & Agol model, worst over impact parameters."""
     a, p = 13.0, 4.0
     times = linspace(-0.08, 0.08, 800)
 
@@ -119,7 +164,7 @@ class TestModelAccuracy:
         i = arccos(b / self.a)
         return 1e6 * abs(tm.evaluate(k, list(LDC), 0.0, self.p, self.a, i) - ref.evaluate(k, list(LDC), 0.0, self.p, self.a, i)).max()
 
-    @pytest.mark.parametrize('k,tol', [(0.02, 0.3), (0.05, 1.0), (0.1, 2.5), (0.2, 5.0), (0.3, 10.0)])
+    @pytest.mark.parametrize('k,tol', [(0.02, 0.5), (0.05, 1.0), (0.1, 1.0), (0.2, 3.0), (0.3, 3.0)])
     def test_defaults(self, k, tol):
         assert max(self._err(k, b) for b in (0.0, 0.7, 0.9)) < tol
 
@@ -136,7 +181,7 @@ class TestDeprecatedArguments:
     def test_old_arguments_warn_and_are_ignored(self, kw):
         with pytest.warns(FutureWarning):
             tm = RoadRunnerModel(**kw)
-        assert tm.nq == 8 and tm.ng == 100
+        assert tm.nq == 8 and tm.ng == 39
 
     def test_new_arguments_do_not_warn(self):
         with warnings.catch_warnings():

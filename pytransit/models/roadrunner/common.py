@@ -506,28 +506,10 @@ def valid_radius_ratios(k: ndarray) -> bool:
 def split_point(k: float) -> float:
     """The grazing parameter at which the planet first touches the stellar limb, (1 - k) / (1 + k).
 
-    The mean intensity under the planet has a kink here, so the g table is split at it.
+    The mean intensity under the planet has a square-root singularity here, so the g table is
+    split at it.
     """
     return (1.0 - k) / (1.0 + k)
-
-
-@njit
-def g_nodes(k: float, ng: int):
-    """Grazing parameter nodes for the mean intensity table: two uniform segments meeting at the limb contact.
-
-    Returns the nodes and the number of nodes in the first segment. The segments share the
-    split node, and each has at least four nodes so that a cubic can be fitted in it.
-    """
-    gc = split_point(k)
-    n1 = int(round(ng * gc))
-    if n1 < 4:
-        n1 = 4
-    if ng - n1 < 4:
-        n1 = ng - 4
-    gs = empty(ng)
-    gs[:n1] = linspace(0.0, gc, n1)
-    gs[n1:] = linspace(gc, 1.0, ng - n1)
-    return gs, n1
 
 
 @njit(fastmath=True)
@@ -695,49 +677,123 @@ def cubic_coefficients_into(tab: ndarray, out: ndarray) -> None:
                          + CUBIC_MATRICES[s, r, 2] * tab[j + 2] + CUBIC_MATRICES[s, r, 3] * tab[j + 3])
 
 
+# ----------------------------------------------------------------------------------------------
+# Mean intensity table in contact-regularised coordinates
+# ----------------------------------------------------------------------------------------------
+#
+# The mean intensity under the planet behaves like a square root of the distance to the two limb
+# contacts, g = gc (the planet touches the limb from the inside) and g = 1 (from the outside). A
+# cubic on a grid uniform in g cannot follow a square root, which limits such a table to roughly
+# first-order convergence. The table is therefore split into three pieces, each uniform in a
+# coordinate that grows like the square root of the distance to its contact,
+#
+# - piece 1, g in [0, gc]:    s = sqrt(1 - (g / gc)**2),
+# - piece 2, x in [0, 1/2]:   s = sqrt(2 x),          x = (g - gc) / (1 - gc),
+# - piece 3, x in [1/2, 1]:   s = sqrt(2 (1 - x)),
+#
+# with s running from 0 at the contact to 1 at the far end of the piece. The mean intensity is a
+# smooth function of s in each piece, so the cubic interpolation is fourth order everywhere.
+#
+# The first piece uses the square of g / gc rather than g / gc itself for two reasons. The mean
+# intensity is an even function of the impact parameter, so it is a smooth function of g**2 at the
+# disk centre, and 1 - (g / gc)**2 = (1 - g / gc)(1 + g / gc) still vanishes linearly at the
+# contact; the coordinate therefore suits both ends of the piece. And since g / gc = z / (1 - k)
+# for a planet at projected distance z, the coordinate follows from z**2 directly, which lets a
+# flux loop look up a full-transit sample with `ldm_lookup_full` without taking the square root
+# that turns z**2 into z.
+
+@njit
+def table_sizes(ng: int):
+    """Number of nodes in the full-transit piece and in each of the two ingress pieces of an `ng`-node table."""
+    n2 = ng // 3
+    return ng - 2 * n2, n2
+
+
+@njit
+def g_nodes(k: float, ng: int):
+    """Grazing parameter nodes of the contact-regularised mean intensity table.
+
+    Returns the nodes and the number of nodes in the first piece. The nodes of the three pieces
+    are stored back to back, each piece ordered from its contact outwards, so the nodes are not
+    monotonic in g. Each piece needs at least four nodes for a cubic, so `ng` must be at least 12.
+    """
+    gc = split_point(k)
+    n1, n2 = table_sizes(ng)
+    gs = empty(ng)
+    for j in range(n1):
+        s = j / (n1 - 1)
+        gs[j] = gc * sqrt(1.0 - s * s)
+    for j in range(n2):
+        s = j / (n2 - 1)
+        gs[n1 + j] = gc + (1.0 - gc) * 0.5 * s * s
+        gs[n1 + n2 + j] = gc + (1.0 - gc) * (1.0 - 0.5 * s * s)
+    return gs, n1
+
+
+@njit(fastmath=True)
+def split_cubic_coefficients(tab: ndarray, n1: int, out: ndarray) -> None:
+    """Cubic coefficients of the three table pieces, written back to back into `out`.
+
+    `out` has ``tab.size - 3`` rows: ``n1 - 1`` intervals for the full-transit piece followed by
+    the intervals of the two ingress pieces, which is the layout `ldm_lookup` reads.
+    """
+    n2 = (tab.size - n1) // 2
+    cubic_coefficients_into(tab[:n1], out[:n1 - 1])
+    cubic_coefficients_into(tab[n1:n1 + n2], out[n1 - 1:n1 + n2 - 2])
+    cubic_coefficients_into(tab[n1 + n2:], out[n1 + n2 - 2:])
+
+
 @njit(fastmath=True)
 def ldm_interval(g: float, gc: float, n1: int, nc: int):
-    """The interval of the split cubic table holding grazing parameter g, and g's position in it.
+    """The interval of the mean intensity table holding grazing parameter g, and g's position in it.
 
     `nc` is the number of intervals in the table. Returns the interval index and the local
-    position in [0, 1) that `ldm_lookup` evaluates the interval's cubic at.
+    position in [0, 1] that `ldm_lookup` evaluates the interval's cubic at.
     """
     if g < gc:
-        x = g / gc * (n1 - 1)
-        i = int(x)
-        if i > n1 - 2:
-            i = n1 - 2
+        r = g / gc
+        u = sqrt(1.0 - r * r) * (n1 - 1)
+        m = n1 - 2
+        i0 = 0
     else:
-        n2 = nc - (n1 - 1) + 1
-        x = (g - gc) / (1.0 - gc) * (n2 - 1)
-        i = int(x)
-        if i > n2 - 2:
-            i = n2 - 2
-        x += n1 - 1
-        i += n1 - 1
-    return i, x - i
+        m2 = (nc - n1 + 1) // 2          # Intervals in each ingress piece
+        x = (g - gc) / (1.0 - gc)
+        if x < 0.5:
+            u = sqrt(2.0 * x) * m2
+            i0 = n1 - 1
+        else:
+            # Beyond the last contact the overlap area is zero, so the value only has to be finite.
+            u = sqrt(2.0 * max(1.0 - x, 0.0)) * m2
+            i0 = n1 - 1 + m2
+        m = m2 - 1
+    i = int(u)
+    if i > m:
+        i = m
+    return i0 + i, u - i
 
 
 @njit(fastmath=True)
 def ldm_lookup(g: float, gc: float, n1: int, coef: ndarray) -> float:
-    """The mean intensity under the planet at grazing parameter g from the split cubic table.
+    """The mean intensity under the planet at grazing parameter g from the contact-regularised table.
 
-    `coef` holds the interval coefficients of both segments back to back: ``n1 - 1`` intervals
-    covering [0, gc] and the rest covering [gc, 1].
+    `coef` holds the interval coefficients of the three pieces back to back, as written by
+    `split_cubic_coefficients`.
     """
     i, a = ldm_interval(g, gc, n1, coef.shape[0])
     return coef[i, 0] + a * (coef[i, 1] + a * (coef[i, 2] + a * coef[i, 3]))
 
 
-
 @njit(fastmath=True)
-def split_cubic_coefficients(tab: ndarray, n1: int, out: ndarray) -> None:
-    """Cubic coefficients of a g table split at node ``n1 - 1``, written back to back into `out`.
+def ldm_lookup_full(z2: float, inv_z2c: float, n1: int, coef: ndarray) -> float:
+    """The mean intensity under a planet fully on the stellar disk, from its squared projected distance.
 
-    `out` has ``tab.size - 2`` rows: ``n1 - 1`` intervals for the first segment followed by the
-    second segment's intervals, which is the layout `ldm_lookup` reads.
+    Equal to `ldm_lookup` for a planet at projected distance z < 1 - k, but takes ``z2 = z**2``
+    and ``inv_z2c = 1 / (1 - k)**2``: the first table piece is uniform in
+    ``sqrt(1 - (g / gc)**2) = sqrt(1 - z2 * inv_z2c)``, so the lookup needs neither z nor g.
     """
-    # The split node is stored twice, once as the last node of the first segment and once as
-    # the first node of the second, so the second segment starts at index n1.
-    cubic_coefficients_into(tab[:n1], out[:n1 - 1])
-    cubic_coefficients_into(tab[n1:], out[n1 - 1:])
+    u = sqrt(max(1.0 - z2 * inv_z2c, 0.0)) * (n1 - 1)
+    i = int(u)
+    if i > n1 - 2:
+        i = n1 - 2
+    a = u - i
+    return coef[i, 0] + a * (coef[i, 1] + a * (coef[i, 2] + a * coef[i, 3]))

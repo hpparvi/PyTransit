@@ -35,14 +35,15 @@ __all__ = ['SETTINGS', 'run_benchmark', 'plot_benchmark']
 
 CSV = Path(__file__).with_name('rr_benchmark.csv')
 
-# The RoadRunner accuracy levels, each the cheapest (nq, ng) whose worst-case error against the
-# exact quadratic model stays below the target for radius ratios up to 0.2 and impact parameters
-# up to 0.9, with the measured worst-case error in ppm.
-SETTINGS = {'RoadRunner (1 ppm)': dict(nq=5, ng=300, error=0.93),
-            'RoadRunner (default)': dict(nq=8, ng=100, error=5.9),
-            'RoadRunner (10 ppm)': dict(nq=4, ng=75, error=7.2),
-            'RoadRunner (100 ppm)': dict(nq=3, ng=20, error=48.0),
-            'RoadRunner (500 ppm)': dict(nq=2, ng=10, error=316.0)}
+# The RoadRunner accuracy levels, each the cheapest (nq, ng) whose worst-case error stays below the
+# target for radius ratios up to 0.2 and impact parameters up to 0.9, with the measured worst-case
+# error in ppm. The errors are measured against a direct high-order quadrature of the blocked flux
+# rather than against the quadratic model, whose own error reaches 2 ppm in this range.
+SETTINGS = {'RoadRunner (1 ppm)': dict(nq=6, ng=30, error=0.93),
+            'RoadRunner (default)': dict(nq=8, ng=39, error=0.41),
+            'RoadRunner (10 ppm)': dict(nq=4, ng=21, error=9.3),
+            'RoadRunner (100 ppm)': dict(nq=3, ng=12, error=87.0),
+            'RoadRunner (500 ppm)': dict(nq=2, ng=12, error=398.0)}
 
 NPTS = (10, 30, 100, 300, 1_000, 3_000, 10_000, 30_000, 100_000, 300_000, 1_000_000)
 

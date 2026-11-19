@@ -121,7 +121,7 @@ def op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray
     klds = zeros((npv, npb))     # LD-equivalent circular planet radii
     gcs = zeros((npv, npb))              # Split point of the mean intensity table, per (pv, pb)
     n1s = zeros((npv, npb), int64)       # Nodes in the first table segment, per (pv, pb)
-    coef = zeros((npv, npb, ng - 2, 4))  # Split cubic coefficients of the mean intensity tables
+    coef = zeros((npv, npb, ng - 3, 4))  # Cubic coefficients of the mean intensity tables
     mu = empty((ng, 2 * nq))
     wf = zeros((ng, 2 * nq))
     ldm = empty(ng)

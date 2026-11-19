@@ -1,10 +1,11 @@
 from math import floor
 
-from meepmeep.backends.numba.point2d import sep_c, solve2d, bounding_box
+from meepmeep.backends.numba.point2d import pos_c, solve2d, bounding_box
 from numba import njit, prange
-from numpy import zeros, ndarray, isnan, full, nan, empty, sqrt
+from numpy import zeros, ndarray, isnan, full, nan, empty, sqrt, pi
 
-from .common import (g_nodes, ldm_nodes, ldm_table, split_cubic_coefficients, split_point, ldm_lookup,
+from .common import (g_nodes, table_sizes, ldm_nodes, ldm_table, split_cubic_coefficients, split_point, ldm_lookup,
+                     ldm_lookup_full,
                      profile_at)
 from .common import circle_circle_intersection_area_kite as ccia
 
@@ -50,14 +51,14 @@ def rr_simple_precompute(k: float, p: float, a: float, i: float, e: float, w: fl
     """Precompute the per-orbit quantities needed by the flux stage.
 
     Builds the mean intensity table under the planet as a function of the grazing parameter
-    (skipped in the small-planet mode) and its split cubic coefficients, the Taylor series
+    (skipped in the small-planet mode) and its cubic coefficients, the Taylor series
     expansion coefficients for the planet position, and the transit bounding box.
     """
     bad = isnan(a) or (a <= 1.0) or (e < 0.0) or isnan(ldp[0]) or not (0.0 < k <= 1.0)
     small_planet = k <= splimit
     nq = rules.shape[2]
-    n1 = 4
-    coef = zeros((ng - 2, 4))
+    n1 = table_sizes(ng)[0]
+    coef = zeros((ng - 3, 4))
 
     # Nothing below is defined for a bad parameter vector; the caller returns NaN fluxes.
     if bad:
@@ -100,25 +101,40 @@ def _rr_simple_flux(times: ndarray, k: float, t0: float, p: float, xyc: ndarray,
     coef = coef.copy()
     ldp = ldp.copy()
 
+    # The divisions are hoisted out of the loops as reciprocals.
+    inv_p = 1.0 / p
+    inv_k1 = 1.0 / (1.0 + k)
+    scale = 1.0 / (istar * nsamples)
+    dt = exptimes / nsamples
+    t_first = 0.5 * (dt - exptimes)      # Offset of the first supersample from the exposure centre
+
+    # A planet fully on the disk blocks its whole area, and its mean intensity table is laid out
+    # in a coordinate that follows from the squared projected distance, so those samples need
+    # neither the distance itself nor the overlap area calculation.
+    z2c = (1.0 - k) ** 2
+    inv_z2c = 1.0 / z2c if z2c > 0.0 else 0.0
+    area_full = pi * k * k
+
     npt = times.size
     flux = zeros(npt)
     for ipt in prange(npt):
-        epoch = floor((times[ipt] - t0 + 0.5 * p) / p)
+        epoch = floor((times[ipt] - t0) * inv_p + 0.5)
         tc = times[ipt] - (t0 + epoch * p)
         if not (bt1 <= tc <= bt4):
             flux[ipt] = 1.0
         else:
             fsum = 0.0
-            for isample in range(1, nsamples + 1):
-                time_offset = exptimes * ((isample - 0.5) / nsamples - 0.5)
-                z = sep_c(tc + time_offset, xyc)
+            for isample in range(nsamples):
+                px, py = pos_c(tc + t_first + isample * dt, xyc)
+                z2 = px * px + py * py
                 if small_planet:
-                    iplanet = profile_at(sqrt(max(0.0, 1.0 - z * z)), pt0, pdt, ldp)
+                    fsum += profile_at(sqrt(max(0.0, 1.0 - z2)), pt0, pdt, ldp) * ccia(1.0, k, sqrt(z2))[0]
+                elif z2 < z2c:
+                    fsum += ldm_lookup_full(z2, inv_z2c, n1, coef) * area_full
                 else:
-                    iplanet = ldm_lookup(z / (1.0 + k), gc, n1, coef)
-                aplanet = ccia(1.0, k, z)[0]
-                fsum += (istar - iplanet * aplanet) / istar
-            flux[ipt] = fsum / nsamples
+                    z = sqrt(z2)
+                    fsum += ldm_lookup(z * inv_k1, gc, n1, coef) * ccia(1.0, k, z)[0]
+            flux[ipt] = 1.0 - fsum * scale
     return flux
 
 

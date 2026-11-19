@@ -5,7 +5,7 @@ and, where an analytic solution exists, a disk-integrated stellar intensity
 function ``ldi_<model>(pv)`` returning 2*pi * int_0^1 I(mu) mu dmu, and a
 derivative function ``ldd_<model>(mu, pv)``.
 """
-from .evaluation import evaluate_ld, evaluate_ldi
+from .evaluation import evaluate_ld, evaluate_ldi, ld_evaluator
 from .exponential import ld_exponential, ldi_exponential
 from .general import ld_general, ldi_general
 from .linear import ld_linear, ldi_linear, ldd_linear
@@ -28,4 +28,4 @@ __all__ = ['ld_uniform', 'ldi_uniform',
            'ld_square_root', 'ldi_square_root',
            'ld_logarithmic', 'ldi_logarithmic',
            'ld_exponential', 'ldi_exponential',
-           'evaluate_ld', 'evaluate_ldi']
+           'evaluate_ld', 'evaluate_ldi', 'ld_evaluator']
