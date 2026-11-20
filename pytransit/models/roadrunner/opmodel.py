@@ -74,7 +74,7 @@ class OblatePlanetModel(RoadRunnerModel):
     def __init__(self, ldmodel: Union[str, Callable, Tuple[Callable, Callable]] = 'quadratic',
                  precompute_weights: Optional[bool] = None, klims: Optional[tuple] = None, nk: Optional[int] = None,
                  nzin: Optional[int] = None, nzlimb: Optional[int] = None, zcut: Optional[float] = None,
-                 ng: int = 100, nlines: int = 100, nthreads: int = 1, small_planet_limit: float = 0.05,
+                 ng: int = 39, nlines: int = 100, nthreads: int = 1, small_planet_limit: float = 0.05,
                  exact_areas: bool = False, exact_ld: bool = False, nannuli: int = 20, nz: Optional[int] = None,
                  nq: int = 8, **kwargs):
         """Initialize the oblate planet transit model.
@@ -102,7 +102,8 @@ class OblatePlanetModel(RoadRunnerModel):
         nzin, nzlimb, zcut
             Deprecated; see :class:`~pytransit.models.roadrunner.rrmodel.RoadRunnerModel`.
         ng
-            Size of the grazing value table used by the mean limb darkening interpolation.
+            Number of grazing parameter nodes in the mean intensity table, see
+            :class:`~pytransit.models.roadrunner.rrmodel.RoadRunnerModel`. Must be at least 12.
         nlines
             Number of scanlines used by the θ-sampled scanline planet-star intersection area
             calculation. The scanline discretization error decreases as ``nlines**-2`` in

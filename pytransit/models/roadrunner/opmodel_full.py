@@ -2,7 +2,7 @@ from math import floor, sqrt
 
 from meepmeep.backends.numba.point2d import pos_c, solve2d, bounding_box
 from numba import njit, prange
-from numpy import zeros, dot, ndarray, isnan, nan, full, squeeze, atleast_2d, atleast_1d, empty, int64
+from numpy import zeros, ndarray, isnan, nan, full, squeeze, atleast_2d, atleast_1d, empty, int64
 
 from .common import (population_arrays, g_nodes, ldm_nodes, ldm_table, split_cubic_coefficients,
                      split_point, ldm_lookup, profile_at,
@@ -74,37 +74,105 @@ def op_full(times: ndarray, k: ndarray, f: ndarray, alpha: ndarray,
             exact_areas: bool = False, exact_ld: bool = False, nannuli: int = 20):
     """Full oblate planet model for heterogeneous light curves.
 
-    The evaluation is split into a serial per-parameter-vector precompute stage and a flux stage
-    parallelized over all (parameter vector, time sample) pairs. Only the flux stage is compiled
-    with ``parallel=True``: compiling the precompute stage in parallel would turn its many small
-    array operations into per-iteration thread-pool launches, which costs far more than it saves.
+    The evaluation is split into a per-parameter-vector precompute stage and a flux stage over
+    all (parameter vector, time sample) pairs. Both are compiled in serial and in parallel. The
+    parallel precompute distributes the parameter vectors over the numba threads and keeps
+    everything inside one parameter vector serial, so its many small array operations never
+    launch the thread pool on their own.
     """
-    ks, klds, pv_is_good, gcs, n1s, coef, xyc, bbs, exs, eys, ews = op_precompute(
-        k, f, alpha, p, a, i, e, w, nlc, npb, npl, exptimes,
-        ldp, pt0, pdt, rules, ng, exact_areas)
-
     if parallelize:
+        ks, klds, pv_is_good, gcs, n1s, coef, xyc, bbs, exs, eys, ews = op_precompute_parallel(
+            k, f, alpha, p, a, i, e, w, nlc, npb, npl, exptimes,
+            ldp, pt0, pdt, rules, ng, exact_areas)
         return op_flux_parallel(times, f, alpha, t0, p, ks, klds, pv_is_good, gcs, n1s, coef, xyc, bbs, exs, eys, ews,
                                 lcids, pbids, epids, nsamples, exptimes, ldp, istar, pt0, pdt,
                                 exact_areas, exact_ld, nannuli)
     else:
+        ks, klds, pv_is_good, gcs, n1s, coef, xyc, bbs, exs, eys, ews = op_precompute(
+            k, f, alpha, p, a, i, e, w, nlc, npb, npl, exptimes,
+            ldp, pt0, pdt, rules, ng, exact_areas)
         return op_flux_serial(times, f, alpha, t0, p, ks, klds, pv_is_good, gcs, n1s, coef, xyc, bbs, exs, eys, ews,
                               lcids, pbids, epids, nsamples, exptimes, ldp, istar, pt0, pdt,
                               exact_areas, exact_ld, nannuli)
 
 
-@njit(parallel=False)
-def op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray, i: ndarray,
-                  e: ndarray, w: ndarray, nlc: int, npb: int, npl: int, exptimes: ndarray,
-                  ldp: ndarray, pt0: float, pdt: float, rules: ndarray, ng: int, exact_areas: bool):
+@njit
+def op_precompute_pv(k: ndarray, f: float, alpha: float, p: float, a: float, i: float, e: float, w: float,
+                     exptimes: ndarray, ldp: ndarray, pt0: float, pdt: float, rules: ndarray, ng: int,
+                     exact_areas: bool, klds: ndarray, gcs: ndarray, n1s: ndarray, coef: ndarray,
+                     xyc: ndarray, bbs: ndarray, exs: ndarray, eys: ndarray, ews: ndarray) -> bool:
+    """Precompute the quantities of a single parameter vector.
+
+    Fills the vector's rows of the output arrays and returns whether the vector is valid. The
+    work arrays are allocated here so that the function can be called from several threads at
+    once. The scanline arrays are left untouched when the exact intersection areas are used.
+    """
+    if isnan(a) or (a <= 1.0) or (e < 0.0) or isnan(ldp[0, 0]) or not valid_radius_ratios(k):
+        return False
+
+    npb = k.size
+    nq = rules.shape[2]
+    mu = empty((ng, 2 * nq))
+    wf = zeros((ng, 2 * nq))
+    ldm = empty(ng)
+
+    # -----------------------------------#
+    # Calculate the limb darkening means #
+    # -----------------------------------#
+    # The mean limb darkening is evaluated for an area-equivalent circular planet with a
+    # radius k*sqrt(1-f): using the ellipse's semi-major axis would overestimate the
+    # intensity-sampling footprint and bias the blocked flux (see the accuracy tests in
+    # tests/test_opmodel.py).
+    # The quadrature nodes depend on the radius ratio, so they are rebuilt whenever it
+    # differs from the previous passband's.
+    for ipb in range(npb):
+        klds[ipb] = k[ipb] * sqrt(1.0 - f)
+        if ipb == 0 or klds[ipb] != klds[ipb - 1]:
+            gs, n1 = g_nodes(klds[ipb], ng)
+            ldm_nodes(klds[ipb], gs, rules, mu, wf)
+        gcs[ipb] = split_point(klds[ipb])
+        n1s[ipb] = n1
+        ldm_table(mu, wf, pt0, pdt, ldp[ipb], ldm)
+        split_cubic_coefficients(ldm, n1, coef[ipb])
+
+    # ------------------------------------------------------#
+    # Calculate the Taylor series expansions for the orbits #
+    # ------------------------------------------------------#
+    xyc[:, :] = solve2d(0.0, p, a, i, e, w)
+
+    # -----------------------------#
+    # Calculate the bounding boxes #
+    # -----------------------------#
+    bt1, bt4 = bounding_box(k[0], xyc)
+    for ilc in range(exptimes.size):
+        bbs[ilc, 0] = bt1 - (0.0015 + exptimes[ilc])
+        bbs[ilc, 1] = bt4 + (0.0015 + exptimes[ilc])
+
+    # -------------------------------------------#
+    # Create the ellipse scanline (x, y) points  #
+    # -------------------------------------------#
+    if not exact_areas:
+        for ipb in range(npb):
+            _y, _x, _w = create_ellipse_theta(eys.shape[1], k[ipb], f, alpha)
+            exs[ipb, :, :] = _x
+            eys[ipb, :] = _y
+            ews[ipb, :] = _w
+    return True
+
+
+def _op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray, i: ndarray,
+                   e: ndarray, w: ndarray, nlc: int, npb: int, npl: int, exptimes: ndarray,
+                   ldp: ndarray, pt0: float, pdt: float, rules: ndarray, ng: int, exact_areas: bool):
     """Precompute the per-parameter-vector quantities needed by the flux stage.
 
     For each parameter vector: the mean limb darkening profiles, the Taylor series expansion
     coefficients for the planet position, the transit bounding boxes, and (when not using exact
     intersection areas) the θ-sampled ellipse scanline grids per passband.
+
+    Compiled both in serial and in parallel; in the parallel version the loop over the parameter
+    vectors is distributed over the numba threads.
     """
     npv = k.shape[0]
-    nq = rules.shape[2]
 
     if k.shape[1] > 1 and k.shape[1] != npb:
         raise ValueError('Radius ratios should be given either as an [npv, 1] or [npv, npb] array.')
@@ -115,78 +183,39 @@ def op_precompute(k: ndarray, f: ndarray, alpha: ndarray, p: ndarray, a: ndarray
         ks = k
     else:
         ks = zeros((npv, npb))
-        ks[:, :] = k[:, 0:npb]
+        for ipb in range(npb):
+            ks[:, ipb] = k[:, 0]
 
     pv_is_good = full(npv, True)
-    klds = zeros((npv, npb))     # LD-equivalent circular planet radii
-    gcs = zeros((npv, npb))              # Split point of the mean intensity table, per (pv, pb)
-    n1s = zeros((npv, npb), int64)       # Nodes in the first table segment, per (pv, pb)
+    klds = zeros((npv, npb))             # LD-equivalent circular planet radii
+    gcs = zeros((npv, npb))              # Limb contact point of the mean intensity table, per (pv, pb)
+    n1s = zeros((npv, npb), int64)       # Nodes in the first table piece, per (pv, pb)
     coef = zeros((npv, npb, ng - 3, 4))  # Cubic coefficients of the mean intensity tables
-    mu = empty((ng, 2 * nq))
-    wf = zeros((ng, 2 * nq))
-    ldm = empty(ng)
-    xyc = zeros((npv, 2, 5))     # Taylor series coefficients for the (x, y) position
-    bbs = zeros((npv, nlc, 2))   # Bounding boxes per (pv, lc)
+    xyc = zeros((npv, 2, 5))             # Taylor series coefficients for the (x, y) position
+    bbs = zeros((npv, nlc, 2))           # Bounding boxes per (pv, lc)
 
-    # θ-sampled ellipse scanline grids per (pv, pb), used when exact_areas is False
+    # θ-sampled ellipse scanline grids per (pv, pb), used when exact_areas is False. With exact
+    # areas they are single-line placeholders, kept at the full (pv, pb) shape so that the flux
+    # stage can index them the same way in both modes.
     if exact_areas:
-        exs = zeros((1, 1, 1, 2))
-        eys = zeros((1, 1, 1))
-        ews = zeros((1, 1, 1))
+        exs = zeros((npv, npb, 1, 2))
+        eys = zeros((npv, npb, 1))
+        ews = zeros((npv, npb, 1))
     else:
         exs = zeros((npv, npb, npl, 2))  # Scanline x-coordinates
         eys = zeros((npv, npb, npl))     # Scanline y-coordinates
         ews = zeros((npv, npb, npl))     # Scanline quadrature weights
 
-    for ipv in range(npv):
-        if (isnan(a[ipv]) or (a[ipv] <= 1.0) or (e[ipv] < 0.0) or (isnan(ldp[ipv, 0, 0]))
-                or not valid_radius_ratios(ks[ipv])):
-            pv_is_good[ipv] = False
-            continue
-
-        # -----------------------------------#
-        # Calculate the limb darkening means #
-        # -----------------------------------#
-        # The mean limb darkening is evaluated for an area-equivalent circular planet with a
-        # radius k*sqrt(1-f): using the ellipse's semi-major axis would overestimate the
-        # intensity-sampling footprint and bias the blocked flux (see the accuracy tests in
-        # tests/test_opmodel.py).
-        # The quadrature nodes depend on the radius ratio, so they are rebuilt whenever it
-        # differs from the previous passband's.
-        for ipb in range(npb):
-            klds[ipv, ipb] = ks[ipv, ipb] * sqrt(1.0 - f[ipv])
-            if ipb == 0 or klds[ipv, ipb] != klds[ipv, ipb - 1]:
-                gs, n1 = g_nodes(klds[ipv, ipb], ng)
-                ldm_nodes(klds[ipv, ipb], gs, rules, mu, wf)
-            gcs[ipv, ipb] = split_point(klds[ipv, ipb])
-            n1s[ipv, ipb] = n1
-            ldm_table(mu, wf, pt0, pdt, ldp[ipv, ipb], ldm)
-            split_cubic_coefficients(ldm, n1, coef[ipv, ipb])
-
-        # ------------------------------------------------------#
-        # Calculate the Taylor series expansions for the orbits #
-        # ------------------------------------------------------#
-        xyc[ipv, :, :] = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-
-        # -----------------------------#
-        # Calculate the bounding boxes #
-        # -----------------------------#
-        bt1, bt4 = bounding_box(ks[ipv, 0], xyc[ipv])
-        for ilc in range(nlc):
-            bbs[ipv, ilc, 0] = bt1 - (0.0015 + exptimes[ilc])
-            bbs[ipv, ilc, 1] = bt4 + (0.0015 + exptimes[ilc])
-
-        # -------------------------------------------#
-        # Create the ellipse scanline (x, y) points  #
-        # -------------------------------------------#
-        if not exact_areas:
-            for ipb in range(npb):
-                _y, _x, _w = create_ellipse_theta(npl, ks[ipv, ipb], f[ipv], alpha[ipv])
-                exs[ipv, ipb, :, :] = _x
-                eys[ipv, ipb, :] = _y
-                ews[ipv, ipb, :] = _w
-
+    for ipv in prange(npv):
+        pv_is_good[ipv] = op_precompute_pv(ks[ipv], f[ipv], alpha[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv],
+                                           exptimes[:nlc], ldp[ipv], pt0, pdt, rules, ng, exact_areas,
+                                           klds[ipv], gcs[ipv], n1s[ipv], coef[ipv], xyc[ipv], bbs[ipv],
+                                           exs[ipv], eys[ipv], ews[ipv])
     return ks, klds, pv_is_good, gcs, n1s, coef, xyc, bbs, exs, eys, ews
+
+
+op_precompute = njit(parallel=False)(_op_precompute)
+op_precompute_parallel = njit(parallel=True)(_op_precompute)
 
 
 def _op_flux(times: ndarray, f: ndarray, alpha: ndarray, t0: ndarray, p: ndarray,

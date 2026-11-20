@@ -106,8 +106,7 @@ Threads
 With ``nthreads`` greater than one, the bins are divided between the threads. Each bin's table and
 light curve are independent of the others', so the threads never wait for each other, but the gain
 depends on how much work there is to divide: on eight threads, a thousand-bin spectrum of a
-thousand exposures drops from 2.6 ms to 0.92 ms, while a hundred bins go only from 0.32 ms to
-0.28 ms.
+thousand exposures drops from 2.0 ms to 0.76 ms, while a hundred bins stay at 0.24 ms.
 
 The threads divide the bins *within* each parameter vector, and the parameter vectors are
 evaluated one after another. Threads therefore speed up large spectra, not large populations of
@@ -142,7 +141,7 @@ darkening profile to get its mean intensity table. Then, for each exposure, it e
 from that table at the shared position, and scales the shared overlap area to its own radius ratio:
 exactly by :math:`(k/\bar{k})^2` while the planet is fully on the disk, and to first order in
 :math:`k - \bar{k}` while it crosses the limb. The two steps take roughly equal time, about
-2.6 µs per bin together for a thousand exposures.
+1.9 µs per bin together for a thousand exposures.
 
 Two quantities are therefore taken from the mean planet rather than from each bin's own: the mean
 intensity under the planet, and the overlap area across the limb. When every bin has the same

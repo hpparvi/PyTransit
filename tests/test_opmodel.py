@@ -16,6 +16,8 @@
 
 from math import cos, sin, sqrt
 
+import pytest
+
 from numpy import pi, linspace, zeros, array, abs, isfinite, nanmin
 from scipy.integrate import quad
 
@@ -172,3 +174,37 @@ class TestOblatePlanetModelAccuracy:
         assert (f1 == tm0.evaluate(**kw, exact_ld=True)).all()
         assert (f0 == tm1.evaluate(**kw, exact_ld=False)).all()
         assert abs(f0 - f1).max() > 0.0
+
+
+class TestParallelPrecompute:
+    """The parallel precompute and flux stages must reproduce the serial ones exactly."""
+
+    @pytest.mark.parametrize('mode', [dict(), dict(exact_areas=True)])
+    def test_parallel_matches_serial(self, mode):
+        from numpy import linspace, zeros, isnan, isfinite
+        from numpy.random import default_rng
+        from pytransit import OblatePlanetModel
+        times = linspace(-0.08, 0.08, 300)
+        lcids = zeros(times.size, int)
+        lcids[times.size // 2:] = 1
+        rng = default_rng(2)
+        npv = 23
+        ks = rng.uniform(0.05, 0.15, (npv, 2))
+        ks[5, 1] = -0.1                                   # An invalid vector must stay NaN in both
+        args = (ks, rng.uniform(0.0, 0.2, npv), rng.uniform(0.0, 1.0, npv), rng.uniform(0.1, 0.4, (npv, 4)),
+                rng.normal(0.0, 1e-3, npv), rng.normal(4.0, 1e-3, npv), rng.normal(13.0, 0.1, npv),
+                rng.normal(0.49 * pi, 1e-3, npv))
+        serial = OblatePlanetModel('quadratic')
+        serial.set_data(times, lcids, [0, 1])
+        fs = serial.evaluate(*args, **mode)
+        parallel = OblatePlanetModel('quadratic', nthreads=2)
+        parallel.set_data(times, lcids, [0, 1])
+        fp = parallel.evaluate(*args, **mode)
+        assert isnan(fs[5]).all() and isnan(fp[5]).all()
+        good = isfinite(fs)
+        assert good.sum() == (npv - 1) * times.size
+        assert abs(fs[good] - fp[good]).max() == 0.0
+
+    def test_default_table_size(self):
+        from pytransit import OblatePlanetModel
+        assert OblatePlanetModel().ng == 39

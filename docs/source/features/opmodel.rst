@@ -86,7 +86,8 @@ exact elliptical footprint and brings the error below 1 ppm, except in grazing t
 numerically computed intersection areas set a floor of up to about 7 ppm. Adding ``exact_areas``,
 which computes those areas analytically, brings the grazing case below 1 ppm too.
 
-The accuracy has a price. Timing a 1000-point light curve on one machine:
+The accuracy has a price. Timing the example transit above, tilted by :math:`\alpha = 45°` and
+sampled at 1000 points, on one thread of one machine:
 
 .. list-table::
     :header-rows: 1
@@ -96,20 +97,20 @@ The accuracy has a price. Timing a 1000-point light curve on one machine:
       - Time per evaluation
       - Relative cost
     * - Default
-      - 0.12 ms
+      - 0.15 ms
       - 1
     * - ``exact_areas``
-      - 0.17 ms
-      - 1.4
+      - 0.22 ms
+      - 1.5
     * - ``exact_ld``
-      - 2.9 ms
-      - 24
+      - 3.9 ms
+      - 26
     * - ``exact_ld`` and ``exact_areas``
-      - 9.5 ms
-      - 78
+      - 12.9 ms
+      - 88
 
 For comparison, ``RoadRunnerModel`` evaluates the same light curve for a spherical planet in
-0.054 ms. ``exact_areas`` on its own changes little, since the limb darkening approximation, not
+0.030 ms. ``exact_areas`` on its own changes little, since the limb darkening approximation, not
 the areas, dominates the default error.
 
 Fit fast, check exactly

@@ -13,6 +13,20 @@ Development began in 2009 to fill the need for a fast and reliable exoplanet tra
 toolkit for Python. PyTransit has since gone through several iterations, always aiming to be *the
 fastest and most versatile* exoplanet transit modelling tool for Python.
 
+.. plot::
+    :context: close-figs
+
+    from _figures.landing import plot_showcase
+    plot_showcase()
+
+Three of the models, each computed with PyTransit as shown. The
+:doc:`RoadRunner model <features/roadrunner>` takes any stellar intensity profile, including one
+you write as a function, and is faster than the analytic quadratic model for all but the shortest
+light curves. The :doc:`transmission spectroscopy model <features/tsmodel>` returns the light
+curves of hundreds of wavelength bins from a single call. The
+:doc:`gravity-darkened star model <features/gdmodel>` reproduces the lopsided transits across
+rapidly rotating stars, from which the spin-orbit angle can be measured.
+
 Features
 --------
 

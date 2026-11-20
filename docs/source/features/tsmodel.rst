@@ -8,7 +8,7 @@ only the radius ratio and the limb darkening change with wavelength.
 :class:`~pytransit.models.roadrunner.tsmodel.TransmissionSpectroscopyModel`, exported as
 ``TSModel``, is the :doc:`RoadRunner model <roadrunner>` built around this. It computes the
 geometry once and evaluates every wavelength bin against it. For a spectrum of a thousand bins,
-this is about twenty times faster than evaluating RoadRunner bin by bin.
+this is about twelve times faster than evaluating RoadRunner bin by bin.
 
 .. plot::
     :context:
@@ -69,26 +69,27 @@ the passbands of a single dataset:
       - ``RoadRunnerModel``, one call per bin
       - ``RoadRunnerModel``, all bins in one call
     * - 1
-      - 0.064 ms
-      - 0.058 ms
-      - 0.054 ms
+      - 0.045 ms
+      - 0.024 ms
+      - 0.032 ms
     * - 10
-      - 0.090 ms
-      - 0.59 ms
-      - 0.50 ms
+      - 0.063 ms
+      - 0.24 ms
+      - 0.32 ms
     * - 100
-      - 0.33 ms
-      - 5.7 ms
-      - 4.8 ms
+      - 0.24 ms
+      - 2.4 ms
+      - 3.0 ms
     * - 1000
-      - 2.6 ms
-      - 57 ms
-      - 54 ms
+      - 2.0 ms
+      - 24 ms
+      - 30 ms
 
-With one bin there is nothing to share. Beyond that the difference grows with the number of bins:
-about six times at ten bins, fifteen at a hundred, and twenty at a thousand. Each bin adds about
-2.6 µs to an evaluation, where a separate RoadRunner evaluation costs 55 µs. Large spectra can also
-be divided between threads with ``nthreads``: on eight threads, the thousand bins take 0.92 ms.
+With one bin there is nothing to share, and RoadRunner is the faster of the two. Beyond that the
+difference grows with the number of bins: about four times at ten bins, ten at a hundred, and
+twelve at a thousand. Each bin adds about 1.9 µs to an evaluation, where a separate RoadRunner
+evaluation costs 24 µs. Large spectra can also be divided between threads with ``nthreads``: on
+eight threads, the thousand bins take 0.76 ms.
 
 Accuracy
 --------

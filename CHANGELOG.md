@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.12.0] - 2026-11-19
 
 ### Added
 
@@ -8,10 +8,12 @@
 
 ### Changed
 
-- **Breaking**: `RoadRunnerModel`, `TSModel`, `OblatePlanetModel`, and `RoadRunnerModelCL` space the mean intensity
+- `RoadRunnerModel`, `TSModel`, `OblatePlanetModel`, and `RoadRunnerModelCL` space the mean intensity
   table in the square root of the distance to the limb contacts; fluxes change at the ppm level and `ng` must be >= 12.
-- **Breaking**: The default `ng` of `RoadRunnerModel`, `TSModel`, and `RoadRunnerModelCL` is 39 (was 100).
-- `RoadRunnerModel` is about twice as fast for a short light curve, and builds its tables in parallel with `nthreads > 1`.
+- The default `ng` of `RoadRunnerModel`, `TSModel`, `OblatePlanetModel`, and `RoadRunnerModelCL` is 39
+  (was 100).
+- `RoadRunnerModel` is about twice as fast for a short light curve.
+- `RoadRunnerModel` and `OblatePlanetModel` build their per-parameter-vector tables in parallel with `nthreads > 1`.
 
 ## [2.11.0] - 2026-11-19
 
