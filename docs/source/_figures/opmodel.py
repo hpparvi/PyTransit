@@ -25,17 +25,19 @@ integration of the stellar disk.
 import warnings
 from math import cos, sin, sqrt
 
-from matplotlib.patches import Circle, Ellipse
+from matplotlib.patches import Circle, Ellipse, Polygon
 from matplotlib.pyplot import subplots, setp
-from numpy import abs as npabs, arccos, arcsin, array, degrees, linspace, pi
+from numpy import (abs as npabs, arccos, arcsin, arctan2, array, column_stack, concatenate, cos as npcos, degrees,
+                   floor, isfinite, linspace, meshgrid, nan, pi, sin as npsin, sqrt as npsqrt, where)
 from scipy.integrate import IntegrationWarning, quad
 from scipy.optimize import least_squares
 
 from meepmeep.backends.numba.point2d import pos_c, solve2d
 
 from pytransit import OPModel, RoadRunnerModel
+from pytransit.models.roadrunner.ecintersection import create_ellipse_theta
 
-__all__ = ['plot_oblateness_signal', 'plot_accuracy_levels']
+__all__ = ['plot_oblateness_signal', 'plot_accuracy_levels', 'plot_integration_schemes']
 
 # The example transit used throughout the page: a Saturn-like planet on a ten-day orbit.
 P, A = 10.0, 15.0
@@ -200,5 +202,87 @@ def plot_accuracy_levels(k=0.1, f=0.1, alpha=pi / 4, bs=(0.5, 1.0), ldc=LDC):
         _despine(ax)
     setp(axs[0], ylabel='Model error [ppm]')
     axs[0].legend(fontsize='small', frameon=False, loc='upper left')
+    fig.tight_layout()
+    return fig
+
+
+def plot_integration_schemes(k=0.32, f=0.4, alpha=pi / 5, cx=0.80, cy=0.42, nlines=24, nannuli=8, ldc=LDC):
+    """Sketch how the model computes the covered area and the limb darkening behind the planet.
+
+    The planet is drawn far larger and flatter than a real one, and with fewer scanlines and annuli
+    than the defaults, so that the constructions can be seen. The scanlines are the ones the model
+    uses.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    blue, orange = '#2a78d6', '#eb6834'
+    b = 1.0 - f
+    ca, sa = cos(alpha), sin(alpha)
+
+    def ellipse(t):
+        return cx + k * (ca * npcos(t) - b * sa * npsin(t)), cy + k * (sa * npcos(t) + b * ca * npsin(t))
+
+    fig, axs = subplots(1, 3, figsize=(9, 3.5))
+    for ax in axs:
+        ax.add_patch(Circle((0, 0), 1.0, fc='0.94', ec='0.5', lw=0.8, zorder=0))
+        setp(ax, xlim=(cx - 0.58, cx + 0.58), ylim=(cy - 0.58, cy + 0.58))
+        ax.set_aspect('equal')
+        ax.axis('off')
+
+    # Scanlines: each chord of the planet is clipped against the stellar disk at its height.
+    ax = axs[0]
+    ys, xs, ws = create_ellipse_theta(nlines, k, f, alpha)
+    for y, (x0, x1) in zip(ys, xs):
+        if not isfinite(x0):
+            continue
+        ax.plot([cx + x0, cx + x1], [cy + y, cy + y], c='0.75', lw=1, solid_capstyle='butt')
+        if abs(cy + y) < 1.0:
+            w = sqrt(1.0 - (cy + y) ** 2)
+            c0, c1 = max(-w, cx + x0), min(w, cx + x1)
+            if c1 > c0:
+                ax.plot([c0, c1], [cy + y, cy + y], c=blue, lw=1.6, solid_capstyle='butt')
+    ax.plot(*ellipse(linspace(0, 2 * pi, 300)), c='k', lw=1)
+    ax.set_title('Scanlines', fontsize='medium')
+
+    # Exact: the boundary of the covered region is one arc of the ellipse and one of the limb.
+    ax = axs[1]
+    t = linspace(0, 2 * pi, 20001)
+    ex, ey = ellipse(t)
+    inside = ex ** 2 + ey ** 2 < 1.0
+    edges = where(inside[1:] != inside[:-1])[0]
+    ax.plot(ex, ey, c='0.75', lw=1)
+    ax.plot(where(inside, ex, nan), where(inside, ey, nan), c=blue, lw=2, label='Arc of the planet')
+    px, py = ex[edges], ey[edges]
+    th = arctan2(py, px)
+    arc = linspace(th.min(), th.max(), 100)
+    ax.plot(npcos(arc), npsin(arc), c=orange, lw=2, label='Arc of the limb')
+    region = concatenate([column_stack([ex[inside], ey[inside]])[::20], column_stack([npcos(arc), npsin(arc)])])
+    centre = region.mean(0)
+    order = arctan2(region[:, 1] - centre[1], region[:, 0] - centre[0]).argsort()
+    ax.add_patch(Polygon(region[order], fc='0.8', ec='none', zorder=1))
+    ax.plot(px, py, 'o', c='k', ms=5, zorder=5)
+    ax.legend(fontsize='small', frameon=False, loc='lower left', handlelength=1.2)
+    ax.set_title('Exact area', fontsize='medium')
+
+    # Exact limb darkening: the covered region cut into stellar annuli spaced evenly in mu.
+    ax = axs[2]
+    z = sqrt(cx * cx + cy * cy)
+    rlo, rhi = max(z - k, 0.0), min(z + k, 1.0)
+    mu_hi, mu_lo = sqrt(1.0 - rlo ** 2), sqrt(1.0 - rhi ** 2)
+    dmu = (mu_hi - mu_lo) / nannuli
+    gx, gy = meshgrid(linspace(cx - 0.58, cx + 0.58, 700), linspace(cy - 0.58, cy + 0.58, 700))
+    r2 = gx ** 2 + gy ** 2
+    u, v = (gx - cx) * ca + (gy - cy) * sa, (gy - cy) * ca - (gx - cx) * sa
+    covered = (r2 < 1.0) & ((u / k) ** 2 + (v / (k * b)) ** 2 < 1.0)
+    mu = npsqrt(where(r2 < 1.0, 1.0 - r2, 0.0))
+    mmid = mu_lo + (floor((mu - mu_lo) / dmu).clip(0, nannuli - 1) + 0.5) * dmu
+    intensity = 1.0 - ldc[0] * (1.0 - mmid) - ldc[1] * (1.0 - mmid) ** 2
+    ax.imshow(where(covered, intensity, nan), extent=(cx - 0.58, cx + 0.58, cy - 0.58, cy + 0.58), origin='lower',
+              cmap='inferno', vmin=0.0, vmax=1.25, zorder=1)
+    ax.plot(*ellipse(linspace(0, 2 * pi, 300)), c='k', lw=1, zorder=3)
+    ax.add_patch(Circle((cx, cy), k * sqrt(b), fc='none', ec='k', lw=1, ls='--', zorder=3))
+    ax.set_title('Limb darkening by annuli', fontsize='medium')
     fig.tight_layout()
     return fig

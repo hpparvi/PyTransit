@@ -14,21 +14,32 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Plotting helpers for the transmission spectroscopy feature page.
+"""Plotting helpers for the transmission spectroscopy pages.
 
-The page is about many wavelength bins sharing one transit geometry, so the figures show a whole
+The pages are about many wavelength bins sharing one transit geometry, so the figures show a whole
 spectroscopic dataset at once and measure what sharing the geometry costs in accuracy. Keeping the
-plotting and the toy spectrum here lets the page show only the PyTransit calls.
+plotting and the toy spectrum here lets the pages show only the PyTransit calls.
+
+`plot_shared_work` illustrates how the model works: the map from a limb darkening profile to a
+mean intensity table that all the bins share, the tables it gives for a few bins, and how the
+covered area is scaled from the mean planet to a bin's own radius ratio.
 """
 
+from matplotlib import colormaps
+from matplotlib.colors import Normalize
+from matplotlib.patches import Circle, Polygon
 from matplotlib.pyplot import subplots, setp
 from matplotlib.ticker import MaxNLocator
 from meepmeep.backends.numba.point2d import sep_c, solve2d
-from numpy import abs as npabs, array, exp, geomspace, linspace, pi, stack, tile
+from numpy import (abs as npabs, arctan2, array, column_stack, concatenate, cos, empty, exp, geomspace, linspace,
+                   pi, sin, stack, tile, where, zeros)
 
 from pytransit import RoadRunnerModel, TSModel
+from pytransit.models.limb_darkening import evaluate_ld, evaluate_ldi
+from pytransit.models.roadrunner.common import (g_nodes, ldm_lookup, ldm_nodes, ldm_table_banded, ldm_table_map,
+                                                split_cubic_coefficients, split_point)
 
-__all__ = ['toy_spectrum', 'plot_spectroscopic_transit', 'plot_accuracy']
+__all__ = ['toy_spectrum', 'plot_spectroscopic_transit', 'plot_accuracy', 'plot_shared_work']
 
 # The example transit used throughout the page.
 WINDOW = 3.5 / 24
@@ -185,5 +196,94 @@ def plot_accuracy(kmean=0.1, deviation=0.01, ldc=(0.4, 0.2),
 
     _despine(al)
     _despine(ar)
+    fig.tight_layout()
+    return fig
+
+
+def plot_shared_work(npb=7, kmean=0.1):
+    """Illustrate the work the wavelength bins share and the work each bin does on its own.
+
+    The left panel shows the map from a limb darkening profile to a mean intensity table, the
+    middle panel the tables the map gives for a few bins of the toy spectrum, and the right panel
+    how the covered area changes with the radius ratio while the planet crosses the limb. The map
+    and the tables are computed with the model's own code; the right panel is a sketch with the
+    planet and the change in its radius drawn much larger than in a real spectrum.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    tm = TSModel('quadratic')
+    ng, nmu, nq = tm.ng, tm.mu.size, tm._rules.shape[2]
+    wl, _, ldc = toy_spectrum(npb)
+
+    # The shared map, built exactly as in the model.
+    mu, wf = empty((ng, 2 * nq)), zeros((ng, 2 * nq))
+    gs, n1 = g_nodes(kmean, ng)
+    ldm_nodes(kmean, gs, tm._rules, mu, wf)
+    wt, lo, hi = ldm_table_map(mu, wf, tm._t0, tm._dt, nmu)
+
+    # One mean intensity table per bin, from the same map.
+    ldp = evaluate_ld(tm.ldmodel, tm.mu, ldc.reshape((1, npb, 2)))[0]
+    istar = evaluate_ldi(tm.ldmmean, ldc.reshape((1, npb, 2)))[0]
+    tables = empty((npb, ng))
+    for ipb in range(npb):
+        ldm_table_banded(wt, lo, hi, ldp[ipb], pi / istar[ipb], tables[ipb])
+
+    cmap = colormaps['plasma']
+    colours = cmap(Normalize(wl[0], wl[0] + (wl[-1] - wl[0]) / 0.88)(wl))
+
+    fig, axs = subplots(1, 3, figsize=(9, 3.4))
+
+    ax = axs[0]
+    order = gs.argsort()
+    # Only the pattern matters here: which profile nodes each table node reads.
+    ax.imshow(where(wt[order] != 0.0, 0.75, 0.0), aspect='auto', origin='lower', cmap='Blues', vmin=0.0, vmax=1.0,
+              extent=(-0.5, nmu - 0.5, -0.5, ng - 0.5), interpolation='nearest')
+    ax.set_title('One shared map', fontsize='medium')
+    setp(ax, xlabel='Profile node, limb to centre', ylabel='Table node, disk centre to limb')
+
+    ax = axs[1]
+    # The tables are drawn as the model reads them, with a cubic through the nodes.
+    gc, coef, g = split_point(kmean), empty((ng - 3, 4)), linspace(0.0, 1.0, 400)
+    for ipb in range(npb):
+        split_cubic_coefficients(tables[ipb], n1, coef)
+        ax.plot(g, [ldm_lookup(x, gc, n1, coef) for x in g], c=colours[ipb], lw=1.5)
+    ax.text(0.02, tables[0].max() + 0.03, f'{wl[0]:.1f} µm', fontsize='small', color='0.15')
+    ax.text(0.02, tables[-1].max() - 0.03, f'{wl[-1]:.1f} µm', fontsize='small', color='0.15', va='top')
+    ax.set_ylim(top=tables[0].max() + 0.12)
+    ax.set_title('One table per bin', fontsize='medium')
+    setp(ax, xlabel='Grazing parameter $b / (1 + k)$', ylabel='Mean intensity under the planet')
+    _despine(ax)
+
+    # The covered area across the limb: a larger planet gains a crescent along its arc inside the star.
+    ax = axs[2]
+    k0, k1, z = 0.30, 0.37, 0.92
+    ax.add_patch(Circle((0, 0), 1.0, fc='0.94', ec='0.5', lw=0.8, zorder=0))
+    t = linspace(0, 2 * pi, 2001)
+
+    def arc_inside(r):
+        # The part of a planet's edge that lies inside the star, a single arc around t = pi.
+        m = (z + r * cos(t)) ** 2 + (r * sin(t)) ** 2 < 1.0
+        return column_stack([z + r * cos(t[m]), r * sin(t[m])])
+
+    def limb(p0, p1):
+        # The stellar limb from the point p0 to the point p1.
+        a = linspace(arctan2(p0[1], p0[0]), arctan2(p1[1], p1[0]), 30)
+        return column_stack([cos(a), sin(a)])
+
+    arc0, arc1 = arc_inside(k0), arc_inside(k1)
+    crescent = concatenate([arc1, limb(arc1[-1], arc0[-1]), arc0[::-1], limb(arc0[0], arc1[0])])
+    ax.add_patch(Polygon(crescent, fc='#eb6834', ec='none', alpha=0.85, zorder=1))
+    ax.add_patch(Polygon(concatenate([arc0, limb(arc0[-1], arc0[0])]), fc='0.55', ec='none', zorder=1))
+    ax.plot(z + k0 * cos(t), k0 * sin(t), c='k', lw=1, zorder=3)
+    ax.plot(z + k1 * cos(t), k1 * sin(t), c='k', lw=1, ls='--', zorder=3)
+    ax.plot(arc0[:, 0], arc0[:, 1], c='#2a78d6', lw=2.5, zorder=4)
+    ax.text(z - k1 - 0.05, 0.0, 'Arc inside\nthe star', color='0.15', fontsize='small', ha='right', va='center')
+    ax.set_title('Area across the limb', fontsize='medium')
+    setp(ax, xlim=(z - 0.75, z + 0.45), ylim=(-0.6, 0.6))
+    ax.set_aspect('equal')
+    ax.axis('off')
+
     fig.tight_layout()
     return fig

@@ -115,39 +115,109 @@ small ones.
 How it works
 ------------
 
-The model splits the work into the part that depends on the bin and the part that does not.
+The model is the :doc:`RoadRunner model <roadrunner>` with its work divided into the part that
+depends on the wavelength bin and the part that does not. As in RoadRunner, the flux of a bin at a
+given time is
 
-For each parameter vector, it computes **once**:
+.. math::
 
-- the solution of the orbit and the time window where the planet can overlap the star;
-- the mean radius ratio over the bins, :math:`\bar{k}`, and the quadrature nodes for a planet of
-  that size;
-- the map from a limb darkening profile to a table of the mean stellar intensity under the planet
-  against the planet's position;
+    F_\lambda = 1 - \frac{\bar{I}_\lambda A_\lambda}{F_{\star,\lambda}},
 
-and for each exposure, **once**:
+where :math:`A_\lambda` is the area of the stellar disk the planet covers,
+:math:`\bar{I}_\lambda` the mean stellar intensity over that area, and :math:`F_{\star,\lambda}`
+the flux of the whole disk. The bins see the same orbit, so the planet is at the same position in
+every bin. Only its size and the star's limb darkening change from bin to bin, and for a
+transmission spectrum the size changes by a percent or two.
 
-- the projected star-planet distance, and where it falls in the mean intensity table;
-- the area of the stellar disk covered by a planet of radius :math:`\bar{k}`, and how fast that
-  area changes with the radius.
+The model therefore computes the geometry for one planet, with the mean radius ratio of the bins,
+:math:`\bar{k}`, and gives each bin only the two things that are its own: a mean intensity table
+for its limb darkening, and a correction of the covered area to its radius ratio.
 
-The map is what makes the limb darkening cheap. The mean intensity table is linear in the profile,
-and the quadrature nodes, weights, and interpolation stencils that produce it depend only on the
-planet, so they fold into a single linear map. Each table entry reads the profile only across the
-planet, which keeps the map sparse.
+.. plot::
+    :context: close-figs
 
-What remains **per bin** is two short steps. The bin applies the shared map to its own limb
-darkening profile to get its mean intensity table. Then, for each exposure, it evaluates one cubic
-from that table at the shared position, and scales the shared overlap area to its own radius ratio:
-exactly by :math:`(k/\bar{k})^2` while the planet is fully on the disk, and to first order in
-:math:`k - \bar{k}` while it crosses the limb. The two steps take roughly equal time, about
-1.9 µs per bin together for a thousand exposures.
+    from _figures.tsmodel import plot_shared_work
+    plot_shared_work()
 
-Two quantities are therefore taken from the mean planet rather than from each bin's own: the mean
-intensity under the planet, and the overlap area across the limb. When every bin has the same
-radius ratio both are exact, and the model reproduces
+One map for all the limb darkening profiles
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+RoadRunner tabulates the mean intensity under the planet against the planet's position, and builds
+the table by reading the star's intensity profile at a set of quadrature nodes (see
+:doc:`roadrunner`). Where the nodes are, and how much each one weighs, depends only on the size of
+the planet. The profile enters only through the values read at the nodes, so the table is a linear
+function of the profile:
+
+.. math::
+
+    \mathbf{T}_\lambda = \mathsf{W}\,\mathbf{p}_\lambda,
+
+where :math:`\mathbf{p}_\lambda` is the bin's intensity profile on the model's fixed grid of 200
+points in :math:`\mu` and :math:`\mathbf{T}_\lambda` its mean intensity table. The matrix
+:math:`\mathsf{W}` folds together the quadrature nodes, their weights, and the interpolation of
+the profile between its grid points. It is built once per parameter vector, for a planet of radius
+:math:`\bar{k}`.
+
+The left panel shows which profile points each table node reads. A table node is a planet
+position, and the planet covers a narrow range of distances from the disk centre, so each row of
+:math:`\mathsf{W}` is mostly zeros: on average a row reads 28 of the 200 profile points, and the
+model sums only over the band that contains them. A bin's table is one short sum per row, and the
+middle panel shows the result for seven bins of a toy spectrum whose limb darkening weakens towards
+the red.
+
+One geometry for all the bins
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For every exposure, or every subsample of a supersampled one, the model computes once
+
+- the planet's distance from the disk centre, and from it the interval of the mean intensity table
+  the planet falls in and the position within the interval;
+- the area a planet of radius :math:`\bar{k}` covers, and how fast that area changes with the
+  radius.
+
+Samples where the planet does not touch the star are dropped at this stage, so the bins only loop
+over the in-transit samples.
+
+Each bin then scales the area to its own radius ratio.
+
+- **While the planet is fully on the disk**, the covered area is the planet's own area, and the
+  scaling is exact: :math:`A_\lambda = \bar{A}\,(k_\lambda / \bar{k})^2`. This is used whenever
+  the largest planet of the spectrum is inside the limb.
+- **While the planet crosses the limb**, the area is corrected to first order. A slightly larger
+  planet gains a thin crescent along the part of its edge that lies inside the star (right panel,
+  orange along the blue arc). If that arc spans the angle :math:`2\kappa`, its length is
+  :math:`2\kappa\bar{k}`, and
+
+  .. math::
+
+      A_\lambda \approx \bar{A} + 2\kappa\bar{k}\,(k_\lambda - \bar{k}).
+
+  The angle comes for free from the calculation of :math:`\bar{A}`.
+
+What a bin does
+^^^^^^^^^^^^^^^
+
+A bin's own work is two short steps. It applies the shared map to its limb darkening profile to
+get its mean intensity table, and turns the table into cubic coefficients. Then, for every
+in-transit sample, it evaluates one cubic at the shared position and multiplies it by the scaled
+area, which is about a dozen multiplications and additions with no square roots or trigonometric
+functions.
+
+Together the two steps take about 1.9 µs per bin for a thousand exposures, roughly a third of it
+for the table and two thirds for the light curve. The cost of the shared geometry does not depend
+on the number of bins.
+
+What is approximated
+^^^^^^^^^^^^^^^^^^^^
+
+Two quantities are taken from the mean planet instead of from each bin's own: the mean intensity
+under the planet, and the covered area while the planet crosses the limb. When every bin has the
+same radius ratio both are exact, and the model reproduces
 :class:`~pytransit.models.roadrunner.rrmodel.RoadRunnerModel` to rounding error. How far they drift
 when the radius ratios differ is the subject of the next section.
+
+The bins also share one exposure time and one supersampling rate, those of the first light curve
+given to `set_data`.
 
 Accuracy
 --------
@@ -158,6 +228,7 @@ difference is the error of sharing the geometry alone, not the quadrature error 
 common (see :doc:`roadrunner` for that).
 
 .. plot::
+    :context: close-figs
 
     from _figures.tsmodel import plot_accuracy
     plot_accuracy()
