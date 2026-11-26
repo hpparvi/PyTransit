@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `nthreads` argument to `QuadraticModel`, which evaluates a single light curve in parallel.
+
 ### Changed
 
 - `QuadraticModel` is about 20% faster without supersampling.
@@ -12,6 +16,9 @@
   ratios above 0.5, and errors of up to 0.1% between 0.45 and 0.5.
 - `QuadraticModel` errors of up to 45 ppm next to `z = k`, 15 ppm next to `z = 1 - k`, and 100 ppm for radius
   ratios within 1e-4 of 0.5, and a `ZeroDivisionError` or wrong flux at exactly `z = 1 - k`.
+- `QuadraticModel` supersampled transits clipped for exposures longer than 0.05 d, and for a passband with a
+  larger radius ratio than the first one.
+- `QuadraticModel` raising a `ZeroDivisionError` or returning NaN instead of infinite flux for a NaN parameter.
 
 ## [2.12.0] - 2026-11-20
 

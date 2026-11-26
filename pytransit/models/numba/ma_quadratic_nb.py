@@ -43,7 +43,7 @@ from typing import Tuple
 
 from numba import njit, prange
 from numpy import pi, sqrt, arccos, abs, log, zeros, linspace, array, atleast_2d, floor, inf, isnan, atleast_1d, ndarray, nan, copysign, \
-    fmax, any
+    fmax, any, full
 
 from meepmeep.backends.numba.point2d import solve2d, sep_c, bounding_box
 
@@ -470,6 +470,74 @@ def quadratic_interpolated_z_s(z, k, u, edt, ldt, let, kt, zt):
     return flux
 
 
+# Light curve kernels
+# -------------------
+# Everything that depends only on the parameters or on the light curve setup is computed once per
+# call: the limb darkening enters through three coefficients per passband, and the supersampling
+# through a step, a first offset and a reciprocal per light curve.
+
+#: Margin added to both sides of the transit bounding box [d], on top of half the longest exposure.
+BBOX_MARGIN = 0.003
+
+
+@njit(cache=False)
+def flux_coefficients(ldc: ndarray, npb: int) -> ndarray:
+    """The weights of the three model terms for each passband, as an ``(npb, 3)`` array.
+
+    The flux is ``1 - (c[0] * le + c[1] * ld + c[2] * ed)``. A NaN limb darkening coefficient
+    gives NaN weights.
+    """
+    cf = zeros((npb, 3))
+    for ipb in range(npb):
+        u0 = ldc[2 * ipb]
+        u1 = ldc[2 * ipb + 1]
+        inv_omega = 1.0 / (1.0 - u0 / 3.0 - u1 / 6.0)
+        cf[ipb, 0] = (1.0 - u0 - 2.0 * u1) * inv_omega
+        cf[ipb, 1] = (u0 + 2.0 * u1) * inv_omega
+        cf[ipb, 2] = u1 * inv_omega
+    return cf
+
+
+@njit(cache=False)
+def supersampling_steps(nsamples: ndarray, exptimes: ndarray) -> ndarray:
+    """The supersample step, the offset of the first supersample and 1 / nsamples for each light curve."""
+    ss = zeros((nsamples.size, 3))
+    for ilc in range(nsamples.size):
+        ss[ilc, 2] = 1.0 / nsamples[ilc]
+        ss[ilc, 0] = exptimes[ilc] * ss[ilc, 2]
+        ss[ilc, 1] = 0.5 * (ss[ilc, 0] - exptimes[ilc])
+    return ss
+
+
+@njit(cache=False)
+def bounding_box_padding(nsamples: ndarray, exptimes: ndarray) -> float:
+    """How far outside the transit an exposure can be centred and still reach into it [d]."""
+    pad = 0.0
+    for ilc in range(nsamples.size):
+        if nsamples[ilc] > 1:
+            pad = max(pad, 0.5 * exptimes[ilc])
+    return BBOX_MARGIN + pad
+
+
+@njit(cache=False)
+def largest_radius_ratio(k: ndarray) -> float:
+    """The largest radius ratio, ignoring NaNs: the one that sets the transit bounding box."""
+    kmax = 0.0
+    for i in range(k.size):
+        if k[i] > kmax:
+            kmax = k[i]
+    return kmax
+
+
+@njit(cache=False, fastmath=True)
+def quad_flux_c(z: float, k: float, cle: float, cld: float, ced: float) -> float:
+    """The quadratic transit model for a non-negative distance and the weights of `flux_coefficients`."""
+    if k >= 1.0 and z <= k - 1.0:
+        return 0.0
+    le, ld, ed = quad_terms(z, k)
+    return 1.0 - (cle * le + cld * ld + ced * ed)
+
+
 # Quadratic model for vector parameters
 # -------------------------------------
 @njit(parallel=True, fastmath=False)
@@ -487,6 +555,9 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
     if epids.max() != t0.shape[1] - 1:
         raise ValueError("The number of transit centers must equal to the number of individual epoch IDs.")
 
+    ss = supersampling_steps(nsamples, exptimes)
+    pad = bounding_box_padding(nsamples, exptimes)
+
     flux = zeros((npv, npt))
     for ipv in prange(npv):
 
@@ -494,15 +565,16 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
             flux[ipv, :] = inf
             continue
 
-        if any(isnan(k[ipv])) or isnan(a[ipv]):
+        if any(isnan(k[ipv])) or isnan(p[ipv]) or isnan(a[ipv]) or isnan(i[ipv]) or isnan(e[ipv]) or isnan(w[ipv]):
             flux[ipv, :] = inf
             continue
 
         c = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
-        bt1, bt4 = bounding_box(k[ipv, 0], c)
-        bt1 -= 0.025
-        bt4 += 0.025
+        bt1, bt4 = bounding_box(largest_radius_ratio(k[ipv]), c)
+        bt1 -= pad
+        bt4 += pad
         inv_p = 1.0 / p[ipv]
+        cf = flux_coefficients(ldc[ipv], npb)
 
         for j in range(npt):
             ilc = lcids[j]
@@ -521,34 +593,36 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
                 else:
                     _k = k[ipv, ipb]
 
-                u0 = ldc[ipv, 2 * ipb]
-                u1 = ldc[ipv, 2 * ipb + 1]
-                if isnan(u0) or isnan(u1):
+                cle, cld, ced = cf[ipb, 0], cf[ipb, 1], cf[ipb, 2]
+                if isnan(cle):
                     flux[ipv, j] = inf
                 elif nsamples[ilc] == 1 and not interpolate:
                     z = sep_c(tc, c)
-                    flux[ipv, j] = 1.0 if z > 1.0 + _k else quad_flux(z, _k, u0, u1)
+                    flux[ipv, j] = 1.0 if z > 1.0 + _k else quad_flux_c(z, _k, cle, cld, ced)
                 else:
                     ld = ldc[ipv, 2 * ipb:2 * (ipb + 1)]
-                    inv_ns = 1.0 / nsamples[ilc]
-                    for isample in range(1, nsamples[ilc] + 1):
-                        time_offset = exptimes[ilc] * ((isample - 0.5) * inv_ns - 0.5)
-                        z = sep_c(tc + time_offset, c)
+                    dt, t_first = ss[ilc, 0], ss[ilc, 1]
+                    fsum = 0.0
+                    for isample in range(nsamples[ilc]):
+                        z = sep_c(tc + t_first + isample * dt, c)
                         if z > 1.0 + _k:
-                            flux[ipv, j] += 1.
+                            fsum += 1.0
+                        elif interpolate:
+                            fsum += quadratic_interpolated_z_s(z, _k, ld, edt, ldt, let, kt, zt)
                         else:
-                            if interpolate:
-                                flux[ipv, j] += quadratic_interpolated_z_s(z, _k, ld, edt, ldt, let, kt, zt)
-                            else:
-                                flux[ipv, j] += quad_flux(z, _k, u0, u1)
-                    flux[ipv, j] *= inv_ns
+                            fsum += quad_flux_c(z, _k, cle, cld, ced)
+                    flux[ipv, j] = fsum * ss[ilc, 2]
     return flux
 
 
 # Quadratic model for scalar parameters
 # -------------------------------------
-@njit(parallel=False, fastmath=True)
-def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsamples, exptimes, npb, edt, ldt, let, kt, zt, interpolate):
+def _quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsamples, exptimes, npb, edt, ldt, let, kt, zt, interpolate):
+    """The quadratic model for a single parameter vector.
+
+    Compiled both in serial and in parallel; in the parallel version the loop over the time
+    samples is distributed over the numba threads.
+    """
     ldc = atleast_1d(ldc)
     k = atleast_1d(k)
     t0 = atleast_1d(t0)
@@ -559,20 +633,28 @@ def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
     if epids.max() != t0.size - 1:
         raise ValueError("The number of transit centers must equal to the number of individual epoch IDs.")
 
-    c = solve2d(0.0, p, a, i, e, w)
-    bt1, bt4 = bounding_box(k[0], c)
-    bt1 -= 0.025
-    bt4 += 0.025
-    inv_p = 1.0 / p
-
     npt = t.size
+
+    # A NaN orbital parameter cannot be solved for an orbit.
+    if isnan(p) or isnan(a) or isnan(i) or isnan(e) or isnan(w):
+        return full(npt, inf)
+
+    c = solve2d(0.0, p, a, i, e, w)
+    pad = bounding_box_padding(nsamples, exptimes)
+    bt1, bt4 = bounding_box(largest_radius_ratio(k), c)
+    bt1 -= pad
+    bt4 += pad
+    inv_p = 1.0 / p
+    cf = flux_coefficients(ldc, npb)
+    ss = supersampling_steps(nsamples, exptimes)
+
     flux = zeros(npt)
 
     if interpolate and (any(k < kt[0]) or any(k > kt[-1])):
         flux[:] = inf
         return flux
 
-    for j in range(npt):
+    for j in prange(npt):
         ilc = lcids[j]
         iep = epids[ilc]
 
@@ -588,27 +670,29 @@ def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
             else:
                 _k = k[ipb]
 
-            u0 = ldc[2 * ipb]
-            u1 = ldc[2 * ipb + 1]
-            if isnan(_k) or isnan(a) or isnan(u0) or isnan(u1):
+            cle, cld, ced = cf[ipb, 0], cf[ipb, 1], cf[ipb, 2]
+            if isnan(_k) or isnan(cle):
                 flux[j] = inf
 
             elif nsamples[ilc] == 1 and not interpolate:
                 z = sep_c(tc, c)
-                flux[j] = 1.0 if z > 1.0 + _k else quad_flux(z, _k, u0, u1)
+                flux[j] = 1.0 if z > 1.0 + _k else quad_flux_c(z, _k, cle, cld, ced)
 
             else:
                 ld = ldc[2 * ipb:2 * (ipb + 1)]
-                inv_ns = 1.0 / nsamples[ilc]
-                for isample in range(1, nsamples[ilc] + 1):
-                    time_offset = exptimes[ilc] * ((isample - 0.5) * inv_ns - 0.5)
-                    z = sep_c(tc + time_offset, c)
+                dt, t_first = ss[ilc, 0], ss[ilc, 1]
+                fsum = 0.0
+                for isample in range(nsamples[ilc]):
+                    z = sep_c(tc + t_first + isample * dt, c)
                     if z > 1.0 + _k:
-                        flux[j] += 1.
+                        fsum += 1.0
+                    elif interpolate:
+                        fsum += quadratic_interpolated_z_s(z, _k, ld, edt, ldt, let, kt, zt)
                     else:
-                        if interpolate:
-                            flux[j] += quadratic_interpolated_z_s(z, _k, ld, edt, ldt, let, kt, zt)
-                        else:
-                            flux[j] += quad_flux(z, _k, u0, u1)
-                flux[j] *= inv_ns
+                        fsum += quad_flux_c(z, _k, cle, cld, ced)
+                flux[j] = fsum * ss[ilc, 2]
     return flux
+
+
+quadratic_model_s = njit(parallel=False, fastmath=False)(_quadratic_model_s)
+quadratic_model_s_parallel = njit(parallel=True, fastmath=False)(_quadratic_model_s)

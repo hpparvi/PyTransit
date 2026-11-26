@@ -28,9 +28,11 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Union, Optional, List
 
+from numba import set_num_threads, config as numba_config
 from numpy import ndarray, array, squeeze, atleast_2d, atleast_1d, zeros, asarray, inf, isscalar
 
-from .numba.ma_quadratic_nb import calculate_interpolation_tables, quadratic_model_v, quadratic_model_s
+from .numba.ma_quadratic_nb import (calculate_interpolation_tables, quadratic_model_v, quadratic_model_s,
+                                    quadratic_model_s_parallel)
 from ._deprecation import deprecated_evaluation_method
 from .transitmodel import TransitModel
 
@@ -40,7 +42,8 @@ class QuadraticModel(TransitModel):
     """Transit model with quadratic limb darkening (Mandel & Agol, ApJ 580, L171-L175 2002).
     """
 
-    def __init__(self, interpolate: bool = False, klims: tuple = (0.01, 0.5), nk: int = 256, nz: int = 256):
+    def __init__(self, interpolate: bool = False, klims: tuple = (0.01, 0.5), nk: int = 256, nz: int = 256,
+                 nthreads: int = 1):
         """Transit model with quadratic limb darkening (Mandel & Agol, ApJ 580, L171-L175 2002).
 
         Parameters
@@ -53,9 +56,20 @@ class QuadraticModel(TransitModel):
             Radius ratio grid size for the interpolated model.
         nz : int, optional
             Normalized distance grid size for the interpolated model.
+        nthreads : int, optional
+            Number of threads to use when evaluating the model for a single parameter set. Values
+            above one distribute the light curve over the numba threads and set the numba thread
+            count. Note that the numba thread count is process-global, so the model created last
+            defines the thread count for all models, and the value cannot exceed numba's
+            launch-time maximum (NUMBA_NUM_THREADS). A parameter population is always evaluated
+            in parallel over the parameter sets.
         """
         super().__init__()
         self.interpolate = interpolate
+        self.nthreads: int = min(nthreads, numba_config.NUMBA_NUM_THREADS)
+        self.parallel: bool = self.nthreads > 1
+        if self.parallel:
+            set_num_threads(self.nthreads)
 
         # Interpolation tables for the model components
         # ---------------------------------------------
@@ -194,9 +208,10 @@ class QuadraticModel(TransitModel):
         if ldc.size != 2 * self.npb:
             raise ValueError("The quadratic model needs two limb darkening coefficients per passband")
 
-        flux = quadratic_model_s(self.time, k, t0, p, a, i, e, w, ldc,
-                                 self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes, self.npb,
-                                 self.ed, self.ld, self.le, self.kt, self.zt, self.interpolate)
+        model = quadratic_model_s_parallel if self.parallel else quadratic_model_s
+        flux = model(self.time, k, t0, p, a, i, e, w, ldc,
+                     self.lcids, self.pbids, self.epids, self.nsamples, self.exptimes, self.npb,
+                     self.ed, self.ld, self.le, self.kt, self.zt, self.interpolate)
         return squeeze(flux)
 
     def to_opencl(self):

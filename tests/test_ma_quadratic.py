@@ -14,7 +14,9 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from numpy import pi, array
+import pytest
+from numba import get_num_threads, set_num_threads
+from numpy import pi, array, arange, arccos, linspace, repeat, isinf, nan, abs
 
 from pytransit import QuadraticModel
 
@@ -116,3 +118,60 @@ class TestQuadraticModel:
     #    tm.set_data(self.time)
     #    tm2 = tm.to_opencl()
     #    assert isinstance(tm2, QuadraticModelCL)
+
+
+class TestQuadraticModelKernels:
+    """The light curve loop around the model: transit window, supersampling, threads and bad parameters."""
+
+    LDC = array([0.3, 0.1])
+    P, A = 4.0, 13.0
+    INC = arccos(0.3 / 13.0)
+
+    @pytest.mark.parametrize("exptime", [0.02, 0.2])
+    def test_supersampling_equals_the_average_over_the_exposure(self, exptime):
+        # An exposure can reach into the transit from far outside it when it is long, so the
+        # window in which the model is evaluated has to grow with the exposure time.
+        ns = 50
+        time = linspace(-0.3, 0.3, 61)
+        offsets = exptime * ((arange(ns) + 0.5) / ns - 0.5)
+        tm = QuadraticModel()
+        tm.set_data((time[:, None] + offsets[None, :]).ravel())
+        reference = tm.evaluate(0.1, self.LDC, 0.0, self.P, self.A, self.INC).reshape(time.size, ns).mean(1)
+        tm.set_data(time, nsamples=ns, exptimes=exptime)
+        assert abs(tm.evaluate(0.1, self.LDC, 0.0, self.P, self.A, self.INC) - reference).max() < 1e-12
+
+    def test_the_largest_radius_ratio_sets_the_transit_window(self):
+        # The second passband has the larger object, and its transit starts 0.06 d earlier.
+        p, a, inc = 100.0, 80.0, 0.5 * pi
+        time = linspace(-0.6, 0.6, 400)
+        ks = array([0.05, 0.4])
+        ldc = array([[0.3, 0.1], [0.3, 0.1]])
+        tm = QuadraticModel()
+        tm.set_data(time)
+        single = tm.evaluate(ks[1], self.LDC, 0.0, p, a, inc)
+        tm.set_data(time, lcids=repeat([0, 1], 200), pbids=[0, 1])
+        both = tm.evaluate(ks, ldc, 0.0, p, a, inc)
+        assert abs(both[200:] - single[200:]).max() < 1e-12
+        assert (single[200:] < 1.0).sum() > 50
+
+    @pytest.mark.parametrize("supersampling", [{}, dict(nsamples=5, exptimes=0.01)])
+    def test_parallel_model_equals_the_serial_model(self, supersampling):
+        nthreads = get_num_threads()
+        try:
+            time = linspace(-0.2, 0.2, 5000)
+            serial, parallel = QuadraticModel(), QuadraticModel(nthreads=2)
+            assert parallel.parallel and not serial.parallel
+            serial.set_data(time, **supersampling)
+            parallel.set_data(time, **supersampling)
+            pv = (0.1, self.LDC, 0.0, self.P, self.A, self.INC)
+            assert abs(parallel.evaluate(*pv) - serial.evaluate(*pv)).max() < 1e-13
+        finally:
+            set_num_threads(nthreads)
+
+    @pytest.mark.parametrize("name", ["k", "ldc", "p", "a", "i"])
+    def test_nan_parameter_gives_infinite_flux_in_transit(self, name):
+        pv = dict(k=0.1, ldc=self.LDC.copy(), t0=0.0, p=self.P, a=self.A, i=self.INC)
+        pv[name] = array([nan, 0.1]) if name == 'ldc' else nan
+        tm = QuadraticModel()
+        tm.set_data(array([-0.01, 0.0, 0.01]))
+        assert isinf(tm.evaluate(**pv)).all()
