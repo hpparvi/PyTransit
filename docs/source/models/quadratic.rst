@@ -50,6 +50,27 @@ precomputed on a grid of radius ratios and projected distances and interpolated 
 `nk` and `nz` set the radius ratio and distance grid sizes. Larger grids are more accurate and cost
 more memory and initialisation time.
 
+Threading
+---------
+
+``nthreads`` above one evaluates a single light curve in parallel.
+
+.. code-block:: python
+
+    tm = QuadraticModel(nthreads=4)
+
+The light curve is dealt out to the threads in small interleaved blocks, so that each thread gets
+an even share of the in-transit points. A light curve of 100 000 points is about seven times
+faster on eight threads than on one. Threads do not help a short light curve, for which starting
+them costs more than the model itself; the model notices this and evaluates such a light curve
+serially, so setting ``nthreads`` never slows it down by more than a fraction of a microsecond.
+
+A parameter population (1D or 2D parameter arrays) is always evaluated in parallel over the
+parameter sets, whatever the value of ``nthreads``.
+
+Numba's thread count is process-global, so the most recently created model sets it for every model
+in the process, and it is capped at the ``NUMBA_NUM_THREADS`` value fixed when Numba was imported.
+
 Converting to OpenCL
 --------------------
 

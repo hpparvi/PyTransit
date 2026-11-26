@@ -42,8 +42,33 @@ Usage
 
     flux = tm.evaluate(k=0.1, t0=0.0, p=1.0, a=3.0, i=0.5*pi)
 
+Threading
+---------
+
+The model evaluates a single light curve on one thread by default. ``nthreads`` above one
+evaluates it in parallel.
+
+.. code-block:: python
+
+    tm = ChromosphereModel(nthreads=4)
+
+The light curve is dealt out to the threads in small interleaved blocks, so that each thread gets
+an even share of the in-transit points. A light curve of 100 000 points is about seven times
+faster on eight threads than on one, and a light curve too short to gain from the threads is
+evaluated serially. A parameter population is always evaluated in parallel over the parameter
+sets.
+
+Numba's thread count is process-global, so the most recently created model sets it for every model
+in the process, and it is capped at the ``NUMBA_NUM_THREADS`` value fixed when Numba was imported.
+
+.. note::
+
+    Up to PyTransit 2.12 the model always used every Numba thread. Pass ``nthreads`` to get that
+    behaviour back for long light curves.
+
 API
 ---
 
 .. autoclass:: pytransit.models.ma_chromosphere.ChromosphereModel
     :members: evaluate
+    :special-members: __init__
