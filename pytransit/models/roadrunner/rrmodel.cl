@@ -162,11 +162,12 @@ inline REAL mu_from_z(const REAL z){
    Global size (npv, npb, ng). Port of `common.ldm_nodes` followed by `common.ldm_table`: the
    quadrature nodes and geometric factors for this node's geometry are generated and consumed
    on the fly. `rules` holds the Gauss-Legendre nodes and weights followed by the Gauss-Jacobi
-   (0.5, 0) nodes and weights, nq of each. The work item of node 0 also stores the limb contact
+   (0.5, 0) nodes and weights and by the sines and cosines of `common.quadrature_rules`, nq of
+   each. The work item of node 0 also stores the limb contact
    and the first piece size for the other kernels. A NaN radius ratio gives a NaN table. */
 __kernel void calculate_ldm(__global const REAL *ks,    /* (npv, npb)      */
                             __global const REAL *ldp,   /* (npv, npb, nmu) */
-                            __global const REAL *rules, /* (4, nq)         */
+                            __global const REAL *rules, /* (6, nq)         */
                             const REAL pt0, const REAL pdt, const int nmu, const int nq,
                             __global REAL *gcs,         /* (npv, npb)      */
                             __global int   *n1s,        /* (npv, npb)      */
@@ -202,6 +203,8 @@ __kernel void calculate_ldm(__global const REAL *ks,    /* (npv, npb)      */
     __global const REAL *w_gl = rules + nq;
     __global const REAL *t_gj = rules + 2 * nq;
     __global const REAL *w_gj = rules + 3 * nq;
+    __global const REAL *s_gl = rules + 4 * nq;
+    __global const REAL *c_gl = rules + 5 * nq;
 
     const REAL g = g_node(ig, gc, n1, ng);
 
@@ -233,13 +236,15 @@ __kernel void calculate_ldm(__global const REAL *ks,    /* (npv, npb)      */
                 num += w * profile_at(m, pt0, pdt, prof, nmu);
                 den += w;
             }
-            /* z in [k - b, b + k] with z = (k - b) + s**2: regular at s = 0, sqrt zero at the end. */
-            c = h = (REAL)0.5 * sqrt((REAL)2.0 * b);
+            /* z in [k - b, b + k] with z = (k - b) + 2 b sin(phi)**2: theta leaves 2 pi and reaches
+               zero as a square root of the distance to each end, and both are regular in phi. */
+            h = (REAL)0.25 * PI_R;
             for (int q = 0; q < nq; q++){
-                sq = c + h * t_gj[q];
-                z = k - b + sq * sq;
+                const REAL sp = s_gl[q];
+                const REAL cp = c_gl[q];
+                z = k - b + (REAL)2.0 * b * sp * sp;
                 m = mu_from_z(z);
-                w = w_gj[q] * planet_angular_extent(z, b, k) * z * (REAL)2.0 * sq * h;
+                w = w_gl[q] * planet_angular_extent(z, b, k) * z * (REAL)4.0 * b * sp * cp * h;
                 num += w * profile_at(m, pt0, pdt, prof, nmu);
                 den += w;
             }
@@ -259,16 +264,35 @@ __kernel void calculate_ldm(__global const REAL *ks,    /* (npv, npb)      */
         }
     }
     else{
-        /* z in [b - k, 1]: integrated in mu from the limb, where the profile is regular, to
-           mu_lo, where theta has its sqrt zero. The distance of the inner contact from the limb,
+        /* The planet crosses the limb. The distance of the planet's inner edge from the limb,
            1 - (b - k), is formed without the cancellation of b - k near 1. */
         const REAL dlimb = (ig >= n1) ? limb_distance(ig, k, n1, ng) : ((REAL)1.0 - g) * ((REAL)1.0 + k);
-        const REAL mu_lo = sqrt(dlimb * ((REAL)2.0 - dlimb));
-        c = h = (REAL)0.5 * mu_lo;
+        const REAL zi = fabs(b - k);
+        const REAL span = (b < k) ? (REAL)2.0 - dlimb : dlimb;     /* 1 - zi */
+        if (b < k){
+            /* A planet larger than half the star can cover the disk centre at the same time, and
+               theta = 2 pi for z in [0, k - b]. Integrated in mu with Gauss-Legendre. */
+            const REAL mu_mid = mu_from_z(zi);
+            c = (REAL)0.5 * (mu_mid + (REAL)1.0);
+            h = (REAL)0.5 * ((REAL)1.0 - mu_mid);
+            for (int q = 0; q < nq; q++){
+                m = c + h * t_gl[q];
+                w = w_gl[q] * TWO_PI_R * m * h;
+                num += w * profile_at(m, pt0, pdt, prof, nmu);
+                den += w;
+            }
+        }
+        /* z in [|b - k|, 1] with z = zi + (1 - zi) sin(phi)**2. Theta leaves its value at zi (zero,
+           or 2 pi for b < k) as a square root of z - zi, and the profile meets the limb as a square
+           root of 1 - z; both are regular in phi, so Gauss-Legendre applies. */
+        h = (REAL)0.25 * PI_R;
         for (int q = 0; q < nq; q++){
-            m = c + h * t_gj[q];
-            z = mu_from_z(m);
-            w = w_gj[q] * planet_angular_extent_limb(z, m * m / ((REAL)1.0 + z), dlimb, b, k) * m * h;
+            const REAL sp = s_gl[q];
+            const REAL cp = c_gl[q];
+            const REAL omz = span * cp * cp;
+            z = (REAL)1.0 - omz;
+            m = cp * sqrt(span * ((REAL)1.0 + z));
+            w = w_gl[q] * planet_angular_extent_limb(z, omz, dlimb, b, k) * z * (REAL)2.0 * span * sp * cp * h;
             num += w * profile_at(m, pt0, pdt, prof, nmu);
             den += w;
         }

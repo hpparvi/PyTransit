@@ -19,7 +19,7 @@
 import warnings
 
 import pytest
-from numpy import pi, linspace, sqrt, zeros, empty, abs, allclose, isfinite, arccos, array, cos, concatenate
+from numpy import pi, linspace, sqrt, zeros, empty, abs, allclose, isfinite, arccos, array, cos, sin, concatenate
 from scipy.integrate import quad
 
 from pytransit import RoadRunnerModel, QuadraticModel, OblatePlanetModel, TSModel
@@ -71,6 +71,43 @@ class TestQuadratureNodes:
             ldm_nodes(k, gs, rules, mu, wf)
             prof = ld_quadratic(mu[0], LDC)
             assert abs((wf[0] * prof).sum() / wf[0].sum() - _exact_mean_intensity(k, g * (1 + k))) < 1e-4, (k, g)
+
+    # A planet larger than half the star can cover the disk centre while it crosses the limb, a
+    # geometry that does not exist for k < 0.5. The cases below cover it (b < k and b + k > 1)
+    # together with its neighbours.
+    LARGE_PLANETS = [(0.6, 0.1), (0.6, 0.3), (0.6, 0.37), (0.6, 0.38), (0.6, 0.8), (0.8, 0.05), (0.8, 0.2),
+                     (0.8, 0.44), (0.8, 0.7), (1.0, 0.01), (1.0, 0.3), (1.0, 0.5), (1.0, 0.9)]
+
+    def test_geometric_factors_integrate_to_the_overlap_area_for_large_planets(self):
+        rules = quadrature_rules(8)
+        for k, g in self.LARGE_PLANETS:
+            gs = array([g]); mu = empty((1, 16)); wf = zeros((1, 16))
+            ldm_nodes(k, gs, rules, mu, wf)
+            assert wf.sum() == pytest.approx(area(1.0, k, g * (1 + k)), rel=2e-4), (k, g)
+
+    def test_mean_intensity_matches_adaptive_quadrature_for_large_planets(self):
+        rules = quadrature_rules(8)
+        for k, g in self.LARGE_PLANETS:
+            gs = array([g]); mu = empty((1, 16)); wf = zeros((1, 16))
+            ldm_nodes(k, gs, rules, mu, wf)
+            prof = ld_quadratic(mu[0], LDC)
+            assert abs((wf[0] * prof).sum() / wf[0].sum() - _exact_mean_intensity(k, g * (1 + k))) < 1e-5, (k, g)
+
+    @pytest.mark.parametrize('k', [0.55, 0.7, 0.9, 1.0])
+    @pytest.mark.parametrize('b', [0.0, 0.3, 0.9])
+    def test_large_planet_light_curve_matches_adaptive_quadrature(self, k, b):
+        # The reference is integrated directly because the analytic quadratic model is itself
+        # off by some tens of ppm for a planet this large when its edge passes the disk centre.
+        a, p = 40.0, 30.0
+        time = linspace(-0.25, 0.25, 60)
+        inc = arccos(b / a)
+        phase = 2 * pi * time / p
+        z = a * sqrt(sin(phase) ** 2 + (cos(inc) * cos(phase)) ** 2)
+        star = pi * (1.0 - LDC[0] / 3.0 - LDC[1] / 6.0)
+        ref = array([1.0 - _exact_mean_intensity(k, x) * area(1.0, k, x) / star if x < 1.0 + k - 1e-9 else 1.0 for x in z])
+        tm = RoadRunnerModel('quadratic')
+        tm.set_data(time)
+        assert abs(tm.evaluate(k, LDC, 0.0, p, a, inc) - ref).max() < 2e-5
 
     def test_nodes_lie_on_the_disk(self):
         rules = quadrature_rules(8)

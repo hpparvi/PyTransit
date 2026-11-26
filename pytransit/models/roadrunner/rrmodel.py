@@ -153,8 +153,8 @@ class RoadRunnerModel(TransitModel):
         power-2 and non-linear laws, over impact parameters from zero to grazing, the defaults
         (``nq=8``, ``ng=39``) are accurate to better than 0.5 ppm for radius ratios up to 0.2 and
         to about 1.4 ppm at k = 0.3. ``ng=60`` is accurate to 0.5 ppm and ``nq=12, ng=200`` to
-        0.05 ppm for radius ratios up to 0.3. The accuracy degrades quickly for radius ratios above
-        about 0.45.
+        0.05 ppm for radius ratios up to 0.3. For larger objects, up to k = 1, the defaults stay
+        within about 10 ppm and ``nq=16, ng=200`` within 0.05 ppm (measured for the quadratic law).
         """
         super().__init__()
 

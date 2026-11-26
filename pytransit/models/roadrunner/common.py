@@ -1,7 +1,7 @@
 from numba import njit
 from typing import Optional
 
-from numpy import (sqrt, sin, arctan2, pi, nan, zeros, floor, arccos, linspace, ndarray, atleast_1d,
+from numpy import (sqrt, sin, cos, arctan2, pi, nan, zeros, floor, arccos, linspace, ndarray, atleast_1d,
                    atleast_2d, asarray, full, empty, concatenate, array, broadcast_to, int64)
 from numpy.polynomial import Polynomial
 from scipy.special import roots_jacobi, roots_legendre
@@ -388,31 +388,39 @@ def radius_ratio_array(k, npv: int) -> ndarray:
 # where theta(z) is the angular extent of the planet disk at stellar radius z. Wherever the
 # integrand has a square-root endpoint -- theta vanishing like sqrt at a contact, or the profile
 # behaving like sqrt(1 - z) at the limb -- the quadrature is matched to it, either by a Gauss-Jacobi
-# rule with the square root in its weight function or by substituting z = z0 +/- s**2, which turns
-# the square root into a regular function of s:
+# rule with the square root in its weight function or by a substitution that turns the square root
+# into a regular function: z = z0 +/- s**2 for one end, and z = z0 + (z1 - z0) sin(phi)**2 for both
+# ends at once.
 #
 # - planet fully on the disk: z = (b + k) - s**2 makes the limb end regular (both theta's zero and
 #   the profile's sqrt), and Gauss-Jacobi absorbs theta's sqrt zero at z = b - k;
 # - star centre inside the planet: theta is 2 pi from z = 0 to z = k - b (regular, Gauss-Legendre
-#   in mu), then z = (k - b) + s**2 makes that end regular and Gauss-Jacobi absorbs the zero at
-#   z = b + k;
-# - planet crossing the limb: integrated in mu, where every built-in law is polynomial, so the limb
-#   end is regular and Gauss-Jacobi absorbs the sqrt zero at the inner end.
+#   in mu), and the rest, from z = k - b to z = b + k, is integrated in phi with Gauss-Legendre;
+# - planet crossing the limb: from z = |b - k| to the limb in phi with Gauss-Legendre, which is
+#   regular both where theta has its square root and where the profile has its own at the limb.
+#   A planet larger than half the star can cover the star centre at the same time, and the part
+#   from z = 0 to z = k - b is then added as in the previous case.
+#
+# The Jacobi rule can only take a square root that falls to zero, while theta approaches 2 pi, not
+# zero, at z = k - b when the planet covers the star centre; hence the substitution there.
 #
 # The profile is read from a table on a fixed grid, so a profile source only ever has to be
 # evaluated on that grid.
 
 def quadrature_rules(nq: int) -> ndarray:
-    """The two fixed quadrature rules on [-1, 1] used by `ldm_nodes`, as a ``(2, 2, nq)`` array.
+    """The fixed quadrature rules on [-1, 1] used by `ldm_nodes`, as a ``(3, 2, nq)`` array.
 
     ``rules[0]`` is Gauss-Legendre and ``rules[1]`` is Gauss-Jacobi with the weight function
     ``(1 - t)**0.5`` folded into the weights, for integrands with a square-root zero at t = 1.
-    Each holds the nodes in row 0 and the weights in row 1.
+    Each holds the nodes in row 0 and the weights in row 1. ``rules[2]`` holds the sine and the
+    cosine of the Gauss-Legendre nodes mapped to phi in [0, pi/2], for the integrals taken in
+    ``z = z0 + (z1 - z0) sin(phi)**2``.
     """
     t_gl, w_gl = roots_legendre(nq)
     t_gj, w_gj = roots_jacobi(nq, 0.5, 0.0)
     w_gj = w_gj / sqrt(1.0 - t_gj)
-    return array([[t_gl, w_gl], [t_gj, w_gj]])
+    phi = 0.25 * pi * (1.0 + t_gl)
+    return array([[t_gl, w_gl], [t_gj, w_gj], [sin(phi), cos(phi)]])
 
 
 @njit(fastmath=True)
@@ -458,14 +466,15 @@ def ldm_nodes(k: float, gs: ndarray, rules: ndarray, mu: ndarray, wf: ndarray) -
                     z = sqrt(1.0 - m * m)
                     mu[ig, q] = m
                     wf[ig, q] = rules[0, 1, q] * planet_angular_extent(z, b, k) * m * h
-                # z in [k - b, b + k] with z = (k - b) + s**2: regular at s = 0, sqrt zero at the end.
-                sm = sqrt(2.0 * b)
-                c = h = 0.5 * sm
+                # z in [k - b, b + k] with z = (k - b) + 2 b sin(phi)**2: theta leaves 2 pi and
+                # reaches zero as a square root of the distance to each end, and both are regular
+                # in phi.
+                h = 0.25 * pi
                 for q in range(nq):
-                    sq = c + h * rules[1, 0, q]
-                    z = k - b + sq * sq
+                    sp, cp = rules[2, 0, q], rules[2, 1, q]
+                    z = k - b + 2.0 * b * sp * sp
                     mu[ig, nq + q] = sqrt(1.0 - z * z)
-                    wf[ig, nq + q] = rules[1, 1, q] * planet_angular_extent(z, b, k) * z * 2.0 * sq * h
+                    wf[ig, nq + q] = rules[0, 1, q] * planet_angular_extent(z, b, k) * z * 4.0 * b * sp * cp * h
             else:
                 # z in [b - k, b + k] with z = (b + k) - s**2: the limb end is regular, and the
                 # sqrt zero of theta at z = b - k sits at s_max, where the Jacobi weight takes it.
@@ -477,15 +486,26 @@ def ldm_nodes(k: float, gs: ndarray, rules: ndarray, mu: ndarray, wf: ndarray) -
                     mu[ig, q] = sqrt(1.0 - z * z)
                     wf[ig, q] = rules[1, 1, q] * planet_angular_extent(z, b, k) * z * 2.0 * sq * h
         else:
-            # z in [b - k, 1]: integrated in mu from the limb, where the profile is regular, to
-            # mu_lo, where theta has its sqrt zero.
-            mu_lo = sqrt(1.0 - (b - k) ** 2)
-            c = h = 0.5 * mu_lo
+            # The planet crosses the limb. A planet larger than half the star can cover the disk
+            # centre at the same time, and theta = 2 pi for z in [0, k - b]; this part is integrated
+            # in mu with Gauss-Legendre.
+            zi = abs(b - k)
+            if b < k:
+                mu_mid = sqrt(1.0 - zi * zi)
+                c, h = 0.5 * (mu_mid + 1.0), 0.5 * (1.0 - mu_mid)
+                for q in range(nq):
+                    m = c + h * rules[0, 0, q]
+                    mu[ig, nq + q] = m
+                    wf[ig, nq + q] = rules[0, 1, q] * 2.0 * pi * m * h
+            # z in [|b - k|, 1] with z = zi + (1 - zi) sin(phi)**2. Theta leaves its value at zi (zero,
+            # or 2 pi for b < k) as a square root of z - zi, and the profile meets the limb as a
+            # square root of 1 - z; both are regular in phi, so Gauss-Legendre applies.
+            h = 0.25 * pi
             for q in range(nq):
-                m = c + h * rules[1, 0, q]
-                z = sqrt(1.0 - m * m)
-                mu[ig, q] = m
-                wf[ig, q] = rules[1, 1, q] * planet_angular_extent(z, b, k) * m * h
+                sp, cp = rules[2, 0, q], rules[2, 1, q]
+                z = zi + (1.0 - zi) * sp * sp
+                mu[ig, q] = cp * sqrt((1.0 - zi) * (1.0 + z))
+                wf[ig, q] = rules[0, 1, q] * planet_angular_extent(z, b, k) * z * 2.0 * (1.0 - zi) * sp * cp * h
 
 
 @njit

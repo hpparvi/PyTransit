@@ -97,7 +97,7 @@ only just touches the planet its arc is vanishingly short, and moving inwards th
 square root of the distance to the edge: steeply at first, then levelling off. Evenly spaced
 samples handle an edge like this poorly, and would need many rings crowded against it.
 
-The model deals with the two edges in two ways.
+The model deals with the two edges in two ways, or, where neither fits, stretches both at once.
 
 - **One edge is stretched away.** Writing the distance from that edge as a square,
   :math:`z = z_\mathrm{edge} - s^2`, turns the steep square-root rise into a smooth curve in
@@ -110,6 +110,8 @@ The model deals with the two edges in two ways.
   intensity and the rest of the geometry. On an integrand of this shape, eight Gauss-Jacobi nodes
   reach machine precision, while eight Gauss-Legendre nodes, the standard rule for smooth
   integrands, are still wrong in the third decimal place.
+- **Both edges are stretched away.** Writing :math:`z = z_0 + (z_1 - z_0) \sin^2\phi` does at
+  both ends what the square does at one, after which the plain Gauss-Legendre rule is enough.
 
 The result is a short list: a few distances from the disk centre at which to read the intensity,
 and a weight for each reading. The mean intensity is the weighted average of those readings. Each
@@ -127,11 +129,13 @@ Where the planet is decides how the integral is set up:
 - **On the disk**, one Gauss-Jacobi segment covers the planet. The stretched edge is the outer
   one, and the nodes crowd towards it.
 - **Over the disk centre**, the rings inside the planet are complete circles with no edge to
-  handle, so they take a plain Gauss-Legendre segment. The partial rings further out take a
-  Gauss-Jacobi segment.
-- **Across the limb**, the integral runs in :math:`\mu` from the limb inwards, which also removes
-  the square root the intensity profile itself has at the limb. The planet's inner edge goes to
-  Gauss-Jacobi.
+  handle, so they take a plain Gauss-Legendre segment. The partial rings further out start as
+  nearly complete circles rather than from nothing, which the Gauss-Jacobi rule cannot describe,
+  so that segment is stretched at both ends.
+- **Across the limb**, the segment from the planet's inner edge to the limb is stretched at both
+  ends, which also removes the square root the intensity profile itself has at the limb. An object
+  larger than half the star can cover the disk centre while it crosses the limb, and the complete
+  circles inside it are then added as above.
 
 Because the profile is read only at the nodes, the integration assumes that it varies smoothly
 between them. A profile with a true discontinuity leaves small steps in the light curve, which a
@@ -219,6 +223,10 @@ With the default settings (``nq=8, ng=39``) the error is below 0.5 ppm for radiu
 and about 1.4 ppm at :math:`k = 0.3`, taking the worst case over impact parameters from zero to
 grazing. ``ng=60`` brings it to 0.5 ppm and ``nq=12, ng=200`` to 0.05 ppm for radius ratios up to
 0.3.
+
+The model covers radius ratios up to one, so it can also be used for eclipsing binaries. For
+:math:`k` between 0.5 and 1 the defaults stay within about 10 ppm of a direct integration of the
+quadratic law, and ``nq=16, ng=200`` within 0.05 ppm. A radius ratio above one gives NaN fluxes.
 
 For most work the defaults are appropriate: a few ppm is far below the noise of a real transit
 observation. Raise the resolution when the *model* error would compete with the signal you are
