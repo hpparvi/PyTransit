@@ -140,6 +140,126 @@ def calculate_interpolation_tables(kmin: float = 0.05, kmax: float = 0.2, nk: in
     return ed, le, ld, ks, zs
 
 
+# The Mandel & Agol (2002) expressions are singular at three coincidences, where the general
+# expressions divide zero by zero or take the logarithm of zero, and each has a closed form of its
+# own. The closed form is used inside a window around the coincidence, and since it is exact only
+# at the coincidence itself, the windows are as narrow as the arithmetic of the general expressions
+# allows: the flux error they leave is below 0.01 ppm.
+
+EDGE_TOL = 1e-8    #: |z - k| below which the occulter's edge is taken to pass through the disk centre
+LIMB_TOL = 1e-10   #: |z - (1 - k)| below which the occulter is taken to touch the limb from the inside
+HALF_TOL = 1e-10   #: |k - 0.5| below which an occulter with its edge at the disk centre also touches the limb
+
+
+@njit(cache=False, fastmath=True)
+def quad_terms(z: float, k: float):
+    """The three terms of the Mandel & Agol (2002) quadratic model for a non-negative distance.
+
+    Parameters
+    ----------
+    z: float
+        Normalized distance, z >= 0
+    k: float
+        Planet-star radius ratio
+
+    Returns
+    -------
+    le, ld, ed: float
+        The uniform-disk term and the two limb darkening terms. All three are zero for an
+        unocculted source and one for a completely occulted source.
+    """
+    # The source is unocculted
+    if z > 1.0 + k:
+        return 0.0, 0.0, 0.0
+
+    # The source is completely occulted
+    if k >= 1.0 and z <= k - 1.0:
+        return 1.0, 1.0, 1.0
+
+    k2 = k * k
+    z2 = z * z
+    x1 = (k - z) ** 2
+    x2 = (k + z) ** 2
+    x3 = k2 - z2
+
+    # LE and ED
+    # ---------
+    # The occulting object is fully inside the disk of the source
+    if z <= 1.0 - k:
+        le = k2
+        ed = 0.5 * k2 * (k2 + 2.0 * z2)
+
+    # Ingress and egress
+    else:
+        kap1 = arccos(max(min((1.0 - k2 + z2) / (2.0 * z), 1.0), -1.0))
+        kap0 = arccos(max(min((k2 + z2 - 1.0) / (2.0 * k * z), 1.0), -1.0))
+        sq = sqrt(max((1.0 - x1) * (x2 - 1.0), 0.0))
+        le = (k2 * kap0 + kap1 - 0.5 * sq) * INV_PI
+        ed = 0.5 * INV_PI * (kap1 + k2 * (k2 + 2.0 * z2) * kap0 - 0.25 * (1.0 + 5.0 * k2 + z2) * sq)
+
+    # LD
+    # --
+    # The edge of the occulting object lies at the origin
+    if abs(z - k) < EDGE_TOL:
+        if abs(k - 0.5) < HALF_TOL:
+            ld = 1.0 / 3.0 - 4.0 * INV_PI / 9.0
+        elif k > 0.5:
+            q = 0.5 / k
+            Kk = ellk(q)
+            Ek = ellec(q)
+            ld = (1.0 / 3.0 + 16.0 * k / 9.0 * INV_PI * (2.0 * k2 - 1.0) * Ek
+                  - (32.0 * k2 * k2 - 20.0 * k2 + 3.0) / 9.0 * INV_PI / k * Kk)
+        else:
+            q = 2.0 * k
+            Kk = ellk(q)
+            Ek = ellec(q)
+            ld = 1.0 / 3.0 + 2.0 / 9.0 * INV_PI * (4.0 * (2.0 * k2 - 1.0) * Ek + (1.0 - 4.0 * k2) * Kk)
+
+    # The occulting object touches the limb of the source from the inside
+    elif abs(z + k - 1.0) < LIMB_TOL:
+        ld = (2.0 / 3.0 * INV_PI * arccos(max(1.0 - 2.0 * k, -1.0))
+              - 4.0 / 9.0 * INV_PI * sqrt(max(k * (1.0 - k), 0.0)) * (3.0 + 2.0 * k - 8.0 * k2))
+
+    # The occulting object is fully inside the disk of the source
+    elif z < 1.0 - k:
+        q = sqrt((x2 - x1) / (1.0 - x1))
+        Kk = ellk(q)
+        Ek = ellec(q)
+        Pk = ellpicb(x2 / x1 - 1.0, q)
+        ld = 2.0 / 9.0 * INV_PI / sqrt(1.0 - x1) * ((1.0 - 5.0 * z2 + k2 + x3 * x3) * Kk
+                                                    + (1.0 - x1) * (z2 + 7.0 * k2 - 4.0) * Ek - 3.0 * x3 / x1 * Pk)
+        if z < k:
+            ld += 2.0 / 3.0
+
+    # Ingress and egress
+    else:
+        q = sqrt((1.0 - x1) / (4.0 * z * k))
+        Kk = ellk(q)
+        Ek = ellec(q)
+        Pk = ellpicb(1.0 / x1 - 1.0, q)
+        ld = 1.0 / 9.0 * INV_PI / sqrt(k * z) * (((1.0 - x2) * (2.0 * x2 + x1 - 3.0) - 3.0 * x3 * (x2 - 2.0)) * Kk
+                                                 + 4.0 * k * z * (z2 + 7.0 * k2 - 4.0) * Ek - 3.0 * x3 / x1 * Pk)
+        if z < k:
+            ld += 2.0 / 3.0
+
+    return le, ld, ed
+
+
+@njit(cache=False, fastmath=True)
+def quad_flux(z: float, k: float, u0: float, u1: float) -> float:
+    """The quadratic transit model for a scalar distance and the two limb darkening coefficients.
+
+    A negative distance, including a negative zero, marks an unocculted source.
+    """
+    if z > 1.0 + k or (copysign(1.0, z) < 0.0):
+        return 1.0
+    if k >= 1.0 and z <= k - 1.0:
+        return 0.0
+    le, ld, ed = quad_terms(z, k)
+    omega = 1.0 - u0 / 3.0 - u1 / 6.0
+    return 1.0 - ((1.0 - u0 - 2.0 * u1) * le + (u0 + 2.0 * u1) * ld + u1 * ed) / omega
+
+
 @njit(cache=False, parallel=False)
 def eval_quad_z_v(zs, k, u: ndarray):
     """Evaluates the transit model for an array of normalized distances.
@@ -158,13 +278,9 @@ def eval_quad_z_v(zs, k, u: ndarray):
     Transit model evaluated at `z`.
 
     """
-    if abs(k - 0.5) < 1.0e-4:
-        k = 0.5
-
     npt = len(zs)
     npb = u.shape[0]
 
-    k2 = k ** 2
     omega = zeros(npb)
     flux = zeros((npt, npb))
     le = zeros(npt)
@@ -177,96 +293,17 @@ def eval_quad_z_v(zs, k, u: ndarray):
     for i in prange(npt):
         z = zs[i]
 
-        if abs(z - k) < 1e-6:
-            z += 1e-6
-
         # The source is unocculted
         if z > 1.0 + k or z < 0.0:
             flux[i, :] = 1.0
-            le[i] = 0.0
-            ld[i] = 0.0
-            ed[i] = 0.0
             continue
+
+        le[i], ld[i], ed[i] = quad_terms(z, k)
 
         # The source is completely occulted
-        elif (k >= 1.0 and z <= k - 1.0):
+        if k >= 1.0 and z <= k - 1.0:
             flux[i, :] = 0.0
-            le[i] = 1.0
-            ld[i] = 1.0
-            ed[i] = 1.0
             continue
-
-        z2 = z ** 2
-        x1 = (k - z) ** 2
-        x2 = (k + z) ** 2
-        x3 = k ** 2 - z ** 2
-
-        # The source is partially occulted and the occulting object crosses the limb
-        # Equation (26):
-        if z >= abs(1.0 - k) and z <= 1.0 + k:
-            kap1 = arccos(min((1.0 - k2 + z2) / (2.0 * z), 1.0))
-            kap0 = arccos(min((k2 + z2 - 1.0) / (2.0 * k * z), 1.0))
-            le[i] = k2 * kap0 + kap1
-            le[i] = (le[i] - 0.5 * sqrt(max(4.0 * z2 - (1.0 + z2 - k2) ** 2, 0.0))) * INV_PI
-
-        # The occulting object transits the source star (but doesn't completely cover it):
-        if z <= 1.0 - k:
-            le[i] = k2
-
-        # The edge of the occulting star lies at the origin- special expressions in this case:
-        if abs(z - k) < 1.e-4 * (z + k):
-            # ! Table 3, Case V.:
-            if (k == 0.5):
-                ld[i] = 1.0 / 3.0 - 4.0 * INV_PI / 9.0
-                ed[i] = 3.0 / 32.0
-            elif (z > 0.5):
-                q = 0.50 / k
-                Kk = ellk(q)
-                Ek = ellec(q)
-                ld[i] = 1.0 / 3.0 + 16.0 * k / 9.0 * INV_PI * (2.0 * k2 - 1.0) * Ek - (
-                                                                                       32.0 * k ** 4 - 20.0 * k2 + 3.0) / 9.0 * INV_PI / k * Kk
-                ed[i] = 1.0 / 2.0 * INV_PI * (
-                    kap1 + k2 * (k2 + 2.0 * z2) * kap0 - (1.0 + 5.0 * k2 + z2) / 4.0 * sqrt((1.0 - x1) * (x2 - 1.0)))
-            elif (z < 0.5):
-                # ! Table 3, Case VI.:
-                q = 2.0 * k
-                Kk = ellk(q)
-                Ek = ellec(q)
-                ld[i] = 1.0 / 3.0 + 2.0 / 9.0 * INV_PI * (4.0 * (2.0 * k2 - 1.0) * Ek + (1.0 - 4.0 * k2) * Kk)
-                ed[i] = k2 / 2.0 * (k2 + 2.0 * z2)
-
-        # The occulting star partly occults the source and crosses the limb:
-        # Table 3, Case III:
-        if ((z > 0.5 + abs(k - 0.5) and z < 1.0 + k) or (k > 0.50 and z > abs(1.0 - k) and z < k)):
-            q = sqrt((1.0 - (k - z) ** 2) / 4.0 / z / k)
-            Kk = ellk(q)
-            Ek = ellec(q)
-            n = 1.0 / x1 - 1.0
-            Pk = ellpicb(n, q)
-            ld[i] = 1.0 / 9.0 * INV_PI / sqrt(k * z) * (
-                ((1.0 - x2) * (2.0 * x2 + x1 - 3.0) - 3.0 * x3 * (x2 - 2.0)) * Kk + 4.0 * k * z * (
-                    z2 + 7.0 * k2 - 4.0) * Ek - 3.0 * x3 / x1 * Pk)
-            if (z < k):
-                ld[i] = ld[i] + 2.0 / 3.0
-            ed[i] = 1.0 / 2.0 * INV_PI * (
-                kap1 + k2 * (k2 + 2.0 * z2) * kap0 - (1.0 + 5.0 * k2 + z2) / 4.0 * sqrt((1.0 - x1) * (x2 - 1.0)))
-
-        # The occulting star transits the source:
-        # Table 3, Case IV.:
-        if k <= 1.0 and z < (1.0 - k):
-            q = sqrt((x2 - x1) / (1.0 - x1))
-            Kk = ellk(q)
-            Ek = ellec(q)
-            n = x2 / x1 - 1.0
-            Pk = ellpicb(n, q)
-            ld[i] = 2.0 / 9.0 * INV_PI / sqrt(1.0 - x1) * (
-                (1.0 - 5.0 * z2 + k2 + x3 * x3) * Kk + (1.0 - x1) * (z2 + 7.0 * k2 - 4.0) * Ek - 3.0 * x3 / x1 * Pk)
-            if (z < k):
-                ld[i] = ld[i] + 2.0 / 3.0
-            if (abs(k + z - 1.0) < 1.e-4):
-                ld[i] = 2.0 / 3.0 * INV_PI * arccos(1.0 - 2.0 * k) - 4.0 / 9.0 * INV_PI * sqrt(k * (1.0 - k)) * (
-                    3.0 + 2.0 * k - 8.0 * k2)
-            ed[i] = k2 / 2.0 * (k2 + 2.0 * z2)
 
         for j in range(npb):
             flux[i, j] = 1.0 - ((1.0 - u[j,0] - 2.0 * u[j,1]) * le[i] + (u[j,0] + 2.0 * u[j,1]) * ld[i] + u[j,1] * ed[i]) / omega[j]
@@ -292,101 +329,7 @@ def eval_quad_z_s(z: float, k: float, u: ndarray):
     Transit model evaluated at `z`.
 
     """
-    if abs(k - 0.5) < 1.0e-4:
-        k = 0.5
-
-    k2 = k ** 2
-    omega = 1.0 - u[0] / 3.0 - u[1] / 6.0
-
-    if abs(z - k) < 1e-6:
-        z += 1e-6
-
-    # The source is unocculted
-    if z > 1.0 + k or (copysign(1, z) < 0.0):
-        return 1.0
-
-    # The source is completely occulted
-    elif (k >= 1.0 and z <= k - 1.0):
-        return 0.0
-
-    z2 = z ** 2
-    x1 = (k - z) ** 2
-    x2 = (k + z) ** 2
-    x3 = k ** 2 - z ** 2
-
-    # LE
-    # --
-    # Case I: The occulting object fully inside the disk of the source
-    if z <= 1.0 - k:
-        le = k2
-
-    # Case II: ingress and egress
-    elif z >= abs(1.0 - k) and z <= 1.0 + k:
-        kap1 = arccos(min((1.0 - k2 + z2) / (2.0 * z), 1.0))
-        kap0 = arccos(min((k2 + z2 - 1.0) / (2.0 * k * z), 1.0))
-        le = k2 * kap0 + kap1
-        le = (le - 0.5 * sqrt(max(4.0 * z2 - (1.0 + z2 - k2) ** 2, 0.0))) * INV_PI
-
-    # LD and ED
-    # ---------
-    is_edge_at_origin = abs(z - k) < 1.e-4 * (z + k)
-    is_full_transit = k <= 1.0 and z < (1.0 - k)
-
-    # Case 0: The edge of the occulting object lies at the origin
-    if is_edge_at_origin:
-        if (k == 0.5):
-            ld = 1.0 / 3.0 - 4.0 * INV_PI / 9.0
-            ed = 3.0 / 32.0
-
-        elif (z > 0.5):
-            q = 0.50 / k
-            Kk = ellk(q)
-            Ek = ellec(q)
-            ld = 1.0 / 3.0 + 16.0 * k / 9.0 * INV_PI * (2.0 * k2 - 1.0) * Ek - (
-                        32.0 * k ** 4 - 20.0 * k2 + 3.0) / 9.0 * INV_PI / k * Kk
-            ed = 1.0 / 2.0 * INV_PI * (kap1 + k2 * (k2 + 2.0 * z2) * kap0 - (1.0 + 5.0 * k2 + z2) / 4.0 * sqrt(
-                (1.0 - x1) * (x2 - 1.0)))
-
-        elif (z < 0.5):
-            q = 2.0 * k
-            Kk = ellk(q)
-            Ek = ellec(q)
-            ld = 1.0 / 3.0 + 2.0 / 9.0 * INV_PI * (4.0 * (2.0 * k2 - 1.0) * Ek + (1.0 - 4.0 * k2) * Kk)
-            ed = k2 / 2.0 * (k2 + 2.0 * z2)
-    else:
-        # Case I: The occulting object fully inside the disk of the source
-        if is_full_transit:
-            q = sqrt((x2 - x1) / (1.0 - x1))
-            Kk = ellk(q)
-            Ek = ellec(q)
-            n = x2 / x1 - 1.0
-            Pk = ellpicb(n, q)
-            ld = 2.0 / 9.0 * INV_PI / sqrt(1.0 - x1) * ((1.0 - 5.0 * z2 + k2 + x3 * x3) * Kk + (1.0 - x1) * (
-                        z2 + 7.0 * k2 - 4.0) * Ek - 3.0 * x3 / x1 * Pk)
-            if (z < k):
-                ld = ld + 2.0 / 3.0
-            if (abs(k + z - 1.0) < 1.e-4):
-                ld = 2.0 / 3.0 * INV_PI * arccos(1.0 - 2.0 * k) - 4.0 / 9.0 * INV_PI * sqrt(k * (1.0 - k)) * (
-                            3.0 + 2.0 * k - 8.0 * k2)
-            ed = k2 / 2.0 * (k2 + 2.0 * z2)
-
-        # Case II: ingress and egress
-        else:
-            q = sqrt((1.0 - (k - z) ** 2) / 4.0 / z / k)
-            Kk = ellk(q)
-            Ek = ellec(q)
-            n = 1.0 / x1 - 1.0
-            Pk = ellpicb(n, q)
-            ld = 1.0 / 9.0 * INV_PI / sqrt(k * z) * (
-                    ((1.0 - x2) * (2.0 * x2 + x1 - 3.0) - 3.0 * x3 * (x2 - 2.0)) * Kk + 4.0 * k * z * (
-                    z2 + 7.0 * k2 - 4.0) * Ek - 3.0 * x3 / x1 * Pk)
-            if (z < k):
-                ld = ld + 2.0 / 3.0
-            ed = 1.0 / 2.0 * INV_PI * (kap1 + k2 * (k2 + 2.0 * z2) * kap0 - (1.0 + 5.0 * k2 + z2) / 4.0 * sqrt(
-                (1.0 - x1) * (x2 - 1.0)))
-
-    flux = 1.0 - ((1.0 - u[0] - 2.0 * u[1]) * le + (u[0] + 2.0 * u[1]) * ld + u[1] * ed) / omega
-    return flux
+    return quad_flux(z, k, u[0], u[1])
 
 
 @njit(cache=False, parallel=False, fastmath=True)
@@ -559,12 +502,13 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
         bt1, bt4 = bounding_box(k[ipv, 0], c)
         bt1 -= 0.025
         bt4 += 0.025
+        inv_p = 1.0 / p[ipv]
 
         for j in range(npt):
             ilc = lcids[j]
             iep = epids[ilc]
 
-            epoch = floor((t[j] - t0[ipv, iep] + 0.5 * p[ipv]) / p[ipv])
+            epoch = floor((t[j] - t0[ipv, iep] + 0.5 * p[ipv]) * inv_p)
             tc = t[j] - (t0[ipv, iep] + epoch * p[ipv])
 
             if not (bt1 <= tc <= bt4):
@@ -577,12 +521,18 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
                 else:
                     _k = k[ipv, ipb]
 
-                ld = ldc[ipv, 2 * ipb:2 * (ipb + 1)]
-                if isnan(ld[0]) or isnan(ld[1]):
+                u0 = ldc[ipv, 2 * ipb]
+                u1 = ldc[ipv, 2 * ipb + 1]
+                if isnan(u0) or isnan(u1):
                     flux[ipv, j] = inf
+                elif nsamples[ilc] == 1 and not interpolate:
+                    z = sep_c(tc, c)
+                    flux[ipv, j] = 1.0 if z > 1.0 + _k else quad_flux(z, _k, u0, u1)
                 else:
+                    ld = ldc[ipv, 2 * ipb:2 * (ipb + 1)]
+                    inv_ns = 1.0 / nsamples[ilc]
                     for isample in range(1, nsamples[ilc] + 1):
-                        time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                        time_offset = exptimes[ilc] * ((isample - 0.5) * inv_ns - 0.5)
                         z = sep_c(tc + time_offset, c)
                         if z > 1.0 + _k:
                             flux[ipv, j] += 1.
@@ -590,8 +540,8 @@ def quadratic_model_v(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
                             if interpolate:
                                 flux[ipv, j] += quadratic_interpolated_z_s(z, _k, ld, edt, ldt, let, kt, zt)
                             else:
-                                flux[ipv, j] += eval_quad_z_s(z, _k, ld)
-                    flux[ipv, j] /= nsamples[ilc]
+                                flux[ipv, j] += quad_flux(z, _k, u0, u1)
+                    flux[ipv, j] *= inv_ns
     return flux
 
 
@@ -613,6 +563,7 @@ def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
     bt1, bt4 = bounding_box(k[0], c)
     bt1 -= 0.025
     bt4 += 0.025
+    inv_p = 1.0 / p
 
     npt = t.size
     flux = zeros(npt)
@@ -625,7 +576,7 @@ def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
         ilc = lcids[j]
         iep = epids[ilc]
 
-        epoch = floor((t[j] - t0[iep] + 0.5 * p) / p)
+        epoch = floor((t[j] - t0[iep] + 0.5 * p) * inv_p)
         tc = t[j] - (t0[iep] + epoch * p)
         if not (bt1 <= tc <= bt4):
             flux[j] = 1.0
@@ -637,13 +588,20 @@ def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
             else:
                 _k = k[ipb]
 
-            ld = ldc[2 * ipb:2 * (ipb + 1)]
-            if isnan(_k) or isnan(a) or isnan(ld[0]) or isnan(ld[1]):
+            u0 = ldc[2 * ipb]
+            u1 = ldc[2 * ipb + 1]
+            if isnan(_k) or isnan(a) or isnan(u0) or isnan(u1):
                 flux[j] = inf
 
+            elif nsamples[ilc] == 1 and not interpolate:
+                z = sep_c(tc, c)
+                flux[j] = 1.0 if z > 1.0 + _k else quad_flux(z, _k, u0, u1)
+
             else:
+                ld = ldc[2 * ipb:2 * (ipb + 1)]
+                inv_ns = 1.0 / nsamples[ilc]
                 for isample in range(1, nsamples[ilc] + 1):
-                    time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
+                    time_offset = exptimes[ilc] * ((isample - 0.5) * inv_ns - 0.5)
                     z = sep_c(tc + time_offset, c)
                     if z > 1.0 + _k:
                         flux[j] += 1.
@@ -651,6 +609,6 @@ def quadratic_model_s(t, k, t0, p, a, i, e, w, ldc, lcids, pbids, epids, nsample
                         if interpolate:
                             flux[j] += quadratic_interpolated_z_s(z, _k, ld, edt, ldt, let, kt, zt)
                         else:
-                            flux[j] += eval_quad_z_s(z, _k, ld)
-                flux[j] /= nsamples[ilc]
+                            flux[j] += quad_flux(z, _k, u0, u1)
+                flux[j] *= inv_ns
     return flux

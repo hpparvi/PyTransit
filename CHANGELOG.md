@@ -2,10 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `QuadraticModel` is about 20% faster without supersampling.
+
 ### Fixed
 
 - `RoadRunnerModel`, `TSModel`, `OblatePlanetModel`, and `RoadRunnerModelCL` transits too shallow for radius
   ratios above 0.5, and errors of up to 0.1% between 0.45 and 0.5.
+- `QuadraticModel` errors of up to 45 ppm next to `z = k`, 15 ppm next to `z = 1 - k`, and 100 ppm for radius
+  ratios within 1e-4 of 0.5, and a `ZeroDivisionError` or wrong flux at exactly `z = 1 - k`.
 
 ## [2.12.0] - 2026-11-20
 
