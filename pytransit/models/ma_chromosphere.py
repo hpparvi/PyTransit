@@ -15,10 +15,10 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Union
 
+from numba import set_num_threads, config as numba_config
 from numpy import ndarray, array, squeeze, asarray, zeros, isscalar
 
-from ..orbits.orbits_py import ta_ip_calculate_table
-from .numba.ma_chromosphere_nb import chromosphere_model_v, chromosphere_model_s
+from .numba.ma_chromosphere_nb import chromosphere_model_v, chromosphere_model_s, chromosphere_model_s_parallel
 from ._deprecation import deprecated_evaluation_method
 from .transitmodel import TransitModel
 
@@ -48,17 +48,34 @@ class ChromosphereModel(TransitModel):
         flux = tm.evaluate(k=0.1, t0=0.0, p=1.0, a=3.0, i=0.5*pi)
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, nthreads: int = 1) -> None:
+        """Transit over an optically thin shell (Schlawin et al., ApJL 722, L75, 2010).
 
-        # Interpolation tables for the true anomaly. The model computes the projected
-        # star-planet distance with `z_ip_s`, which needs them.
-        self._tae, self._es, self._ms = ta_ip_calculate_table()
+        Parameters
+        ----------
+        nthreads : int, optional
+            Number of threads to use when evaluating the model for a single parameter set. Values
+            above one distribute the light curve over the numba threads and set the numba thread
+            count. Note that the numba thread count is process-global, so the model created last
+            defines the thread count for all models, and the value cannot exceed numba's
+            launch-time maximum (NUMBA_NUM_THREADS). A parameter population is always evaluated
+            in parallel over the parameter sets.
+        """
+        super().__init__()
+        self.nthreads: int = min(nthreads, numba_config.NUMBA_NUM_THREADS)
+        self.parallel: bool = self.nthreads > 1
+        if self.parallel:
+            set_num_threads(self.nthreads)
+
+    def _evaluate_s(self, k, t0, p, a, i, e, w) -> ndarray:
+        model = chromosphere_model_s_parallel if self.parallel else chromosphere_model_s
+        return model(self.time, asarray(k, dtype='d'), t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples,
+                     self.exptimes)
 
     def evaluate(self, k: Union[float, ndarray], t0: Union[float, ndarray], p: Union[float, ndarray],
                  a: Union[float, ndarray], i: Union[float, ndarray], e: Union[float, ndarray] = None, w: Union[float, ndarray] = None,
                  copy: bool = True) -> ndarray:
-        """Evaluates the uniform transit model for a set of scalar or vector parameters.
+        """Evaluates the transit model for a set of scalar or vector parameters.
 
         Parameters
         ----------
@@ -88,28 +105,26 @@ class ChromosphereModel(TransitModel):
         Transit model
         """
 
-        k = asarray(k)
-
         # Scalar parameters branch
         # ------------------------
         if isscalar(p):
-            if e is None:
-                e, w = 0., 0.
+            e = 0. if e is None else e
+            w = 0. if w is None else w
+            flux = self._evaluate_s(k, t0, p, a, i, e, w)
 
-            flux = chromosphere_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples,
-                                   self.exptimes, self._es, self._ms, self._tae)
         # Parameter population branch
         # ---------------------------
         else:
-            npv = t0.size
-            if e is None:
-                e, w = zeros(npv), zeros(npv)
+            k, t0, p, a, i = asarray(k, dtype='d'), asarray(t0), asarray(p), asarray(a), asarray(i)
+            npv = p.size
+            e = zeros(npv) if e is None else asarray(e)
+            w = zeros(npv) if w is None else asarray(w)
 
             if k.ndim == 1:
-                k = k.reshape((k.size,1))
+                k = k.reshape((k.size, 1))
 
             flux = chromosphere_model_v(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples,
-                                   self.exptimes, self._es, self._ms, self._tae)
+                                        self.exptimes)
         return squeeze(flux)
 
     @deprecated_evaluation_method()
@@ -147,8 +162,5 @@ class ChromosphereModel(TransitModel):
         if self.time is None:
             raise ValueError("Need to set the data before calling the transit model.")
 
-        k = asarray(k)
-        flux = chromosphere_model_s(self.time, k, t0, p, a, i, e, w, self.lcids, self.pbids, self.nsamples, self.exptimes,
-                               self._es, self._ms, self._tae)
-        return squeeze(flux)
+        return squeeze(self._evaluate_s(k, t0, p, a, i, e, w))
 

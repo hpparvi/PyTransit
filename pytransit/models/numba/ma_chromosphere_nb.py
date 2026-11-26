@@ -13,203 +13,237 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-#
-#  This program is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation, either version 3 of the License, or
-#  (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Transit over an optically thin shell (Schlawin, Agol, Walkowicz, Covey & Lloyd, ApJL 722, L75, 2010).
+
+The surface brightness of the shell is ``1 / sqrt(1 - r^2)``, which integrates to ``2 pi`` over the
+disk. The blocked flux has a closed form in the complete elliptic integrals of all three kinds,
+evaluated together by `ellkepi`.
+"""
 
 from numba import njit, prange
-from numpy import pi, sqrt, abs, log, ones_like, zeros, atleast_2d, atleast_1d, nan
+from numpy import pi, sqrt, arctan, abs, zeros, atleast_1d, ndarray, floor, inf, isnan, copysign, full, empty, int64
 
-from ...orbits.orbits_py import z_ip_s
+from meepmeep.backends.numba.point2d import solve2d, sep_c, bounding_box
 
-HALF_PI = 0.5 * pi
+from .ma_quadratic_nb import (ellke, ellkepi, supersampling_steps, bounding_box_padding, largest_radius_ratio,
+                              parallel_block_layout, too_short_for_threads, infinite_flux)
+
+TWO_PI = 2.0 * pi
 FOUR_PI = 4.0 * pi
-INV_PI = 1 / pi
+INV_FOUR_PI = 0.25 / pi
 
-@njit(cache=False)
-def ellpicb(n, k):
-    """The complete elliptical integral of the third kind
+# The general formula stays accurate right up to its two singular points, so the windows around
+# them only need to catch the distances where it divides by zero.
+EDGE_TOL = 1e-12   #: |z - k| below which the occulter's edge is taken to pass through the disk centre
+LIMB_TOL = 1e-12   #: |z - (1 - k)| below which the occulter is taken to touch the limb from the inside
+HALF_TOL = 1e-10   #: |k - 0.5| below which an occulter with its edge at the disk centre also touches the limb
 
-    Bulirsch 1965, Numerische Mathematik, 7, 78
-    Bulirsch 1965, Numerische Mathematik, 7, 353
 
-    Adapted from L. Kreidbergs C version in BATMAN
-    (Kreidberg, L. 2015, PASP 957, 127)
-    (https://github.com/lkreidberg/batman)
-    which is translated from J. Eastman's IDL routine
-    in EXOFAST (Eastman et al. 2013, PASP 125, 83)"""
+@njit(cache=False, fastmath=True)
+def shell_flux(z: float, k: float) -> float:
+    """The optically thin shell model for a non-negative distance.
 
-    kc = sqrt(1.0 - k * k)
-    e = kc
-    p = sqrt(n + 1.0)
-    ip = 1.0 / p
-    m0 = 1.0
-    c = 1.0
-    d = 1.0 / p
+    Parameters
+    ----------
+    z: float
+        Normalized distance, z >= 0
+    k: float
+        Planet-star radius ratio
 
-    for nit in range(1000):
-        f = c
-        c = d / p + c
-        g = e / p
-        d = 2.0 * (f * g + d)
-        p = g + p
-        g = m0
-        m0 = kc + m0
+    Returns
+    -------
+    float
+        Normalized flux: one for an unocculted source, zero for a completely occulted one.
+    """
+    # The source is unocculted
+    if z >= 1.0 + k:
+        return 1.0
 
-        if (abs(1.0 - kc / g) > 1e-8):
-            kc = 2.0 * sqrt(e)
-            e = kc * m0
+    # The source is completely occulted
+    if k >= 1.0 and z <= k - 1.0:
+        return 0.0
+
+    d = z - k
+    zk = z * k
+
+    # The edge of the occulting object lies at the origin
+    if abs(d) < EDGE_TOL:
+        if abs(k - 0.5) < HALF_TOL:
+            b = TWO_PI - 4.0
+        elif k < 0.5:
+            Kk, Ek = ellke(2.0 * k)
+            b = TWO_PI - 4.0 * Ek
         else:
-            return HALF_PI * (c * m0 + d) / (m0 * (m0 + p))
-    return 0.0
+            Kk, Ek = ellke(0.5 / k)
+            b = TWO_PI - 8.0 * k * Ek + (8.0 * k - 2.0 / k) * Kk
 
+    # The occulting object touches the limb of the source from the inside
+    elif abs(z + k - 1.0) < LIMB_TOL:
+        s = sqrt(zk)
+        if d > 0.0:
+            b = 4.0 * arctan(2.0 * s / d) - 8.0 * s
+        else:
+            b = FOUR_PI - 4.0 * arctan(-2.0 * s / d) - 8.0 * s
 
-@njit(cache=False)
-def ellec(k):
-    a1 = 0.443251414630
-    a2 = 0.062606012200
-    a3 = 0.047573835460
-    a4 = 0.017365064510
-    b1 = 0.249983683100
-    b2 = 0.092001800370
-    b3 = 0.040696975260
-    b4 = 0.005264496390
-
-    m1 = 1.0 - k * k
-    ee1 = 1.0 + m1 * (a1 + m1 * (a2 + m1 * (a3 + m1 * a4)))
-    ee2 = m1 * (b1 + m1 * (b2 + m1 * (b3 + m1 * b4))) * log(1.0 / m1)
-    return ee1 + ee2
-
-
-@njit(cache=False)
-def ellk(k):
-    a0 = 1.386294361120
-    a1 = 0.096663442590
-    a2 = 0.035900923830
-    a3 = 0.037425637130
-    a4 = 0.014511962120
-    b0 = 0.50
-    b1 = 0.124985935970
-    b2 = 0.068802485760
-    b3 = 0.033283553460
-    b4 = 0.004417870120
-
-    m1 = 1.0 - k * k
-    ek1 = a0 + m1 * (a1 + m1 * (a2 + m1 * (a3 + m1 * a4)))
-    ek2 = (b0 + m1 * (b1 + m1 * (b2 + m1 * (b3 + m1 * b4)))) * log(m1)
-    return ek1 - ek2
-
-@njit(cache=False)
-def chromosphere_z_v(zs, k):
-    """Optically thin chromosphere model presented in
-       Schlawin, Agol, Walkowicz, Covey & Lloyd (2010)"""
-    nz = len(zs)
-    flux = ones_like(zs)
-
-    for i in range(nz):
-        z = zs[i]
-        if (z > 0.0) and (z - k < 1.0):
-            zmk2 = (z - k) ** 2
-            if z + k < 1.0:
-                t = sqrt(4.0 * z * k / (1.0 - zmk2))
-                flux[i] = (4.0 / sqrt(1.0 - zmk2) *
-                           ((zmk2 - 1.0) * ellec(t)
-                            - (z ** 2 - k ** 2) * ellk(t)
-                            + (z + k) / (z - k) * ellpicb(4.0 * z * k / zmk2, t)))
-
-            elif z + k > 1.0:
-                t = sqrt((1.0 - zmk2) / (4.0 * z * k))
-                flux[i] = (2.0 / (z - k) / sqrt(z * k) *
-                           (4.0 * z * k * (k - z) * ellec(t)
-                            + (-z + 2.0 * z ** 2 * k + k - 2.0 * k ** 3) * ellk(t)
-                            + (z + k) * ellpicb(1.0 / zmk2 - 1.0, t)))
-            if (k > z):
-                flux[i] += FOUR_PI
-            flux[i] = 1.0 - flux[i] / FOUR_PI
-    return flux
-
-@njit(cache=False)
-def chromosphere_z_s(z, k):
-    """Optically thin chromosphere model presented in
-       Schlawin, Agol, Walkowicz, Covey & Lloyd (2010)"""
-    if (z < 0.0) or (z > 1.0 + k):
-        flux = 1.0
     else:
-        zmk2 = (z - k) ** 2
-        if z + k < 1.0:
-            t = sqrt(4.0 * z * k / (1.0 - zmk2))
-            flux = (4.0 / sqrt(1.0 - zmk2) *
-                       ((zmk2 - 1.0) * ellec(t)
-                        - (z ** 2 - k ** 2) * ellk(t)
-                        + (z + k) / (z - k) * ellpicb(4.0 * z * k / zmk2, t)))
+        zmk2 = d * d
+        izmk2 = 1.0 / zmk2
 
-        elif z + k > 1.0:
-            t = sqrt((1.0 - zmk2) / (4.0 * z * k))
-            flux = (2.0 / (z - k) / sqrt(z * k) *
-                       (4.0 * z * k * (k - z) * ellec(t)
-                        + (-z + 2.0 * z ** 2 * k + k - 2.0 * k ** 3) * ellk(t)
-                        + (z + k) * ellpicb(1.0 / zmk2 - 1.0, t)))
-        if (k > z):
-            flux += FOUR_PI
-        flux = 1.0 - flux / FOUR_PI
+        # The occulting object is fully inside the disk of the source
+        if z + k < 1.0:
+            rs = 1.0 / sqrt(1.0 - zmk2)
+            Kk, Ek, Pk = ellkepi(4.0 * zk * izmk2, 2.0 * sqrt(zk) * rs)
+            b = 4.0 * rs * ((zmk2 - 1.0) * Ek - (z + k) * d * Kk + (z + k) * d * izmk2 * Pk)
+
+        # Ingress and egress
+        else:
+            rzk = 1.0 / sqrt(zk)
+            Kk, Ek, Pk = ellkepi(izmk2 - 1.0, 0.5 * sqrt(1.0 - zmk2) * rzk)
+            b = 2.0 * rzk * (-4.0 * zk * Ek + (2.0 * k * (z + k) - 1.0) * Kk + (z + k) * d * izmk2 * Pk)
+
+        if k > z:
+            b += FOUR_PI
+
+    return 1.0 - b * INV_FOUR_PI
+
+
+@njit(cache=False, fastmath=True)
+def chromosphere_z_s(z: float, k: float) -> float:
+    """Optically thin chromosphere model presented in
+       Schlawin, Agol, Walkowicz, Covey & Lloyd (2010) for a scalar distance.
+
+    A negative distance, including a negative zero, marks an unocculted source.
+    """
+    if copysign(1.0, z) < 0.0:
+        return 1.0
+    return shell_flux(z, k)
+
+
+@njit(cache=False)
+def chromosphere_z_v(zs: ndarray, k: float) -> ndarray:
+    """Optically thin chromosphere model presented in
+       Schlawin, Agol, Walkowicz, Covey & Lloyd (2010) for an array of distances."""
+    flux = empty(zs.size)
+    for i in range(zs.size):
+        flux[i] = chromosphere_z_s(zs[i], k)
     return flux
 
 
-@njit(parallel=True, fastmath=True)
-def chromosphere_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, es, ms, tae):
+# Chromosphere model for vector parameters
+# ----------------------------------------
+@njit(parallel=True, fastmath=False)
+def chromosphere_model_v(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes):
     t0, p, a, i, e, w = atleast_1d(t0), atleast_1d(p), atleast_1d(a), atleast_1d(i), atleast_1d(e), atleast_1d(w)
-    k = atleast_2d(k)
 
     npv = k.shape[0]
+    nk = k.shape[1]
     npt = t.size
+
+    ss = supersampling_steps(nsamples, exptimes)
+    pad = bounding_box_padding(nsamples, exptimes)
+
     flux = zeros((npv, npt))
-    for j in prange(npt):
-        for ipv in range(npv):
-            ilc = lcids[j]
-            ipb = pbids[ilc]
+    for ipv in prange(npv):
+        if (isnan(t0[ipv]) or isnan(p[ipv]) or isnan(a[ipv]) or isnan(i[ipv]) or isnan(e[ipv]) or isnan(w[ipv])
+                or isnan(k[ipv]).any()):
+            flux[ipv, :] = inf
+            continue
 
-            if k.shape[1] == 1:
-                _k = k[ipv, 0]
+        c = solve2d(0.0, p[ipv], a[ipv], i[ipv], e[ipv], w[ipv])
+        bt1, bt4 = bounding_box(largest_radius_ratio(k[ipv]), c)
+        bt1 -= pad
+        bt4 += pad
+        inv_p = 1.0 / p[ipv]
+
+        for j in range(npt):
+            epoch = floor((t[j] - t0[ipv] + 0.5 * p[ipv]) * inv_p)
+            tc = t[j] - (t0[ipv] + epoch * p[ipv])
+
+            if not (bt1 <= tc <= bt4):
+                flux[ipv, j] = 1.0
             else:
-                _k = k[ipv, ipb]
-
-            for isample in range(1, nsamples[ilc] + 1):
-                time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-                z = z_ip_s(t[j] + time_offset, t0[ipv], p[ipv], a[ipv], i[ipv], e[ipv], w[ipv], es, ms, tae)
-                if z > 1.0 + _k:
-                    flux[ipv, j] += 1.
+                ilc = lcids[j]
+                if nk == 1:
+                    _k = k[ipv, 0]
                 else:
-                    flux[ipv, j] += chromosphere_z_s(z, _k)
-            flux[ipv, j] /= nsamples[ilc]
+                    _k = k[ipv, pbids[ilc]]
+
+                if nsamples[ilc] == 1:
+                    flux[ipv, j] = shell_flux(sep_c(tc, c), _k)
+                else:
+                    dt, t_first = ss[ilc, 0], ss[ilc, 1]
+                    fsum = 0.0
+                    for isample in range(nsamples[ilc]):
+                        fsum += shell_flux(sep_c(tc + t_first + isample * dt, c), _k)
+                    flux[ipv, j] = fsum * ss[ilc, 2]
     return flux
 
 
-@njit(parallel=True, fastmath=True)
-def chromosphere_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes, es, ms, tae):
-    k = atleast_1d(k)
-    npt = t.size
-    flux = zeros(npt)
-    for j in prange(npt):
-        ilc = lcids[j]
-        ipb = pbids[ilc]
-        _k = k[0] if k.size == 1 else k[ipb]
+# Chromosphere model for scalar parameters
+# ----------------------------------------
+@njit(cache=False)
+def too_short_for_threads_s(t, t0, p, bt1, bt4, lcids, nsamples) -> bool:
+    """`too_short_for_threads` for a model with a single transit centre."""
+    return too_short_for_threads(t, full(1, t0), p, bt1, bt4, lcids, zeros(nsamples.size, int64), nsamples)
 
-        for isample in range(1, nsamples[ilc] + 1):
-            time_offset = exptimes[ilc] * ((isample - 0.5) / nsamples[ilc] - 0.5)
-            z = z_ip_s(t[j] + time_offset, t0, p, a, i, e, w, es, ms, tae)
-            if z > 1.0 + _k:
-                flux[j] += 1.
-            else:
-                flux[j] += chromosphere_z_s(z, _k)
-        flux[j] /= nsamples[ilc]
-    return flux
+
+def _create_chromosphere_model_s(parallel: bool, serial_model=None):
+    def chromosphere_model_s(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes):
+        """The chromosphere model for a single parameter vector.
+
+        Compiled both in serial and in parallel; in the parallel version the time samples are
+        distributed over the numba threads in interleaved blocks (see `parallel_block_layout`).
+        """
+        k = atleast_1d(k)
+        npt = t.size
+
+        # A NaN orbital parameter cannot be solved for an orbit.
+        if isnan(t0) or isnan(p) or isnan(a) or isnan(i) or isnan(e) or isnan(w):
+            return infinite_flux(npt)
+
+        c = solve2d(0.0, p, a, i, e, w)
+        pad = bounding_box_padding(nsamples, exptimes)
+        bt1, bt4 = bounding_box(largest_radius_ratio(k), c)
+        bt1 -= pad
+        bt4 += pad
+
+        if parallel and too_short_for_threads_s(t, t0, p, bt1, bt4, lcids, nsamples):
+            return serial_model(t, k, t0, p, a, i, e, w, lcids, pbids, nsamples, exptimes)
+
+        inv_p = 1.0 / p
+        ss = supersampling_steps(nsamples, exptimes)
+
+        flux = zeros(npt)
+        block, nblocks, nthreads = parallel_block_layout(npt, parallel)
+        for ithread in prange(nthreads):
+            for iblock in range(ithread, nblocks, nthreads):
+                for j in range(iblock * block, min((iblock + 1) * block, npt)):
+                    epoch = floor((t[j] - t0 + 0.5 * p) * inv_p)
+                    tc = t[j] - (t0 + epoch * p)
+
+                    if not (bt1 <= tc <= bt4):
+                        flux[j] = 1.0
+                    else:
+                        ilc = lcids[j]
+                        if k.size == 1:
+                            _k = k[0]
+                        else:
+                            _k = k[pbids[ilc]]
+
+                        if isnan(_k):
+                            flux[j] = inf
+                        elif nsamples[ilc] == 1:
+                            flux[j] = shell_flux(sep_c(tc, c), _k)
+                        else:
+                            dt, t_first = ss[ilc, 0], ss[ilc, 1]
+                            fsum = 0.0
+                            for isample in range(nsamples[ilc]):
+                                fsum += shell_flux(sep_c(tc + t_first + isample * dt, c), _k)
+                            flux[j] = fsum * ss[ilc, 2]
+        return flux
+    return njit(parallel=parallel, fastmath=False)(chromosphere_model_s)
+
+
+chromosphere_model_s = _create_chromosphere_model_s(False)
+chromosphere_model_s_parallel = _create_chromosphere_model_s(True, chromosphere_model_s)

@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_almost_equal
 
-from pytransit.models.numba.ma_quadratic_nb import eval_quad_z_s
+from pytransit.models.numba.ma_quadratic_nb import eval_quad_z_s, ellke, ellkepi
 
 K = 0.1
 D = K ** 2
@@ -111,3 +111,36 @@ class TestSingularPoints:
         k = 0.5 + dk
         for z in (0.0, 0.2, k - 1e-9, k, k + 1e-9, 1 - k, 0.5, 0.8, 1.2):
             assert abs(eval_quad_z_s(z, k, LDC1) - _direct_flux(z, k, LDC1)) < 2e-8, z
+
+
+
+class TestEllipticIntegrals:
+    """The combined iteration against the Carlson forms of SciPy."""
+
+    MODULI = (0.0, 1e-8, 0.1, 0.5, 0.9, 0.99, 1 - 1e-6, 1 - 1e-10)
+
+    @staticmethod
+    def _rel(k):
+        # Next to k = 1 the integrals depend on 1 - k**2, which is itself only known to rounding.
+        return 1e-13 if k <= 0.99 else 1e-7
+
+    def test_first_and_second_kind(self):
+        from scipy.special import ellipk, ellipe
+        for k in self.MODULI:
+            K, E = ellke(k)
+            assert K == pytest.approx(ellipk(k * k), rel=self._rel(k)), k
+            assert E == pytest.approx(ellipe(k * k), rel=self._rel(k)), k
+
+    def test_all_three_kinds(self):
+        from scipy.special import ellipk, ellipe, elliprf, elliprj
+        for k in self.MODULI:
+            for n in (-0.9, -0.3, 0.0, 1e-6, 0.5, 10.0, 1e6, 1e12):
+                K, E, Pi = ellkepi(n, k)
+                kc2 = 1.0 - k * k
+                assert K == pytest.approx(ellipk(k * k), rel=self._rel(k)), (n, k)
+                assert E == pytest.approx(ellipe(k * k), rel=self._rel(k)), (n, k)
+                assert Pi == pytest.approx(elliprf(0.0, kc2, 1.0) - n / 3.0 * elliprj(0.0, kc2, 1.0, 1.0 + n), rel=10 * self._rel(k)), (n, k)
+
+    def test_unit_modulus_terminates_with_finite_values(self):
+        assert all(np.isfinite(ellke(1.0)))
+        assert all(np.isfinite(ellkepi(0.5, 1.0)))

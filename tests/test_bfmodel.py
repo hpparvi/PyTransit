@@ -39,8 +39,7 @@ def _zs(k):
     return concatenate([linspace(0.0, 1.0 - k, 6), [1.0 - k], linspace(1.0 - k + 1e-3, 1.0 + k - 1e-3, 9), [1.0 + k]])
 
 
-# The same, but avoiding the exact contact z = 1 - k, where the analytic quadratic and chromosphere
-# models break down (they divide by zero or return no transit at all).
+# The same, but avoiding the exact contact z = 1 - k.
 def _zs_off_contact(k):
     return concatenate([linspace(0.01, 1.0 - k - 1e-6, 6), linspace(1.0 - k + 1e-3, 1.0 + k - 1e-3, 9)])
 

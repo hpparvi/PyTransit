@@ -4,11 +4,15 @@
 
 ### Added
 
-- `nthreads` argument to `QuadraticModel`, which evaluates a single light curve in parallel.
+- `nthreads` argument to `QuadraticModel` and `ChromosphereModel`, which evaluates a single light curve in parallel.
 
 ### Changed
 
-- `QuadraticModel` is about 20% faster without supersampling.
+- `QuadraticModel` is 20-35% faster and computes its elliptic integrals to double precision (was 1e-8).
+- `QuadraticModel` with `nthreads > 1` scales to about 7x on 8 threads (was 3.5x) and no longer slows down
+  short light curves.
+- `ChromosphereModel` is 2-3.5 times faster per thread and accurate to double precision (was 1e-8), but runs on
+  one thread unless `nthreads` is set (it used all of them).
 
 ### Fixed
 
@@ -19,6 +23,8 @@
 - `QuadraticModel` supersampled transits clipped for exposures longer than 0.05 d, and for a passband with a
   larger radius ratio than the first one.
 - `QuadraticModel` raising a `ZeroDivisionError` or returning NaN instead of infinite flux for a NaN parameter.
+- `ChromosphereModel` returning no transit at exactly `z = 1 - k`, NaN at `z = k` and for radius ratios above one,
+  and errors of up to 140 ppm for eccentric orbits.
 
 ## [2.12.0] - 2026-11-20
 

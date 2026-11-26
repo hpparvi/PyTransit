@@ -17,6 +17,8 @@
 import pytest
 from numba import get_num_threads, set_num_threads
 from numpy import pi, array, arange, arccos, linspace, repeat, isinf, nan, abs
+from numpy import zeros
+from numpy.random import default_rng
 
 from pytransit import QuadraticModel
 
@@ -167,6 +169,46 @@ class TestQuadraticModelKernels:
             assert abs(parallel.evaluate(*pv) - serial.evaluate(*pv)).max() < 1e-13
         finally:
             set_num_threads(nthreads)
+
+    @pytest.mark.parametrize("nthreads", [2, 3, 8])
+    @pytest.mark.parametrize("npt", [1, 63, 64, 65, 700, 5000, 20011])
+    @pytest.mark.parametrize("interpolate", [False, True])
+    def test_interleaved_blocks_cover_every_point(self, nthreads, npt, interpolate):
+        # Unsorted times over several transits, two light curves with their own passband,
+        # radius ratio and supersampling: every point must get the serial model's value,
+        # whichever thread and block it lands in and whether or not the threads are used.
+        rng = default_rng(npt)
+        time = rng.uniform(-1.0, 9.0, npt)
+        lcids = (arange(npt) % 3 == 0).astype(int) if npt > 1 else zeros(1, int)
+        setup = dict(lcids=lcids, pbids=[0, 1][:lcids.max() + 1], nsamples=[1, 5][:lcids.max() + 1],
+                     exptimes=[0.0, 0.02][:lcids.max() + 1])
+        k = array([0.1, 0.12])[:lcids.max() + 1]
+        ldc = array([0.3, 0.1, 0.5, 0.2])[:2 * (lcids.max() + 1)]
+        current = get_num_threads()
+        try:
+            serial = QuadraticModel(interpolate=interpolate)
+            parallel = QuadraticModel(interpolate=interpolate, nthreads=nthreads)
+            serial.set_data(time, **setup)
+            parallel.set_data(time, **setup)
+            pv = (k, ldc, 0.0, self.P, self.A, self.INC)
+            flux = parallel.evaluate(*pv)
+            assert flux.shape == serial.evaluate(*pv).shape
+            assert abs(flux - serial.evaluate(*pv)).max() < 1e-13
+        finally:
+            set_num_threads(current)
+
+    def test_parallel_model_gives_infinite_flux_for_bad_parameters(self):
+        current = get_num_threads()
+        try:
+            time = linspace(-0.2, 0.2, 5000)
+            tm = QuadraticModel(nthreads=2)
+            tm.set_data(time)
+            assert isinf(tm.evaluate(0.1, self.LDC, 0.0, self.P, nan, self.INC)).all()
+            tm = QuadraticModel(interpolate=True, klims=(0.05, 0.15), nthreads=2)
+            tm.set_data(time)
+            assert isinf(tm.evaluate(0.2, self.LDC, 0.0, self.P, self.A, self.INC)).all()
+        finally:
+            set_num_threads(current)
 
     @pytest.mark.parametrize("name", ["k", "ldc", "p", "a", "i"])
     def test_nan_parameter_gives_infinite_flux_in_transit(self, name):

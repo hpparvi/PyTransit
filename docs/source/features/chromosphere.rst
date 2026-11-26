@@ -74,8 +74,8 @@ assumes a smooth profile, and the singularity at the limb leaves errors of more 
 high resolution.
 
 The analytic solution has neither problem. It agrees with a direct numerical integration of the
-shell's brightness over the planet to within :math:`10^{-8}`, and it is fast, evaluating a
-1500-point light curve in 0.08 ms.
+shell's brightness over the planet to within :math:`10^{-15}`, the rounding error of double
+precision, and it is fast, evaluating the 1500-point light curve above in 0.04 ms.
 
 .. seealso::
 
